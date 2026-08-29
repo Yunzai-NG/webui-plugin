@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  /*
+   * 仅编译插件入口（`src/`）。前端（`web/`）由 vite 构建，其类型检查走
+   * `vue-tsc -p web/tsconfig.json` —— 两者的 lib 与 DOM 依赖不同，
+   * 合入同一个 tsconfig 会使 Node 侧误得到 DOM 全局，
+   * 从而让「插件入口里误用 window」这类错误在编译期漏过。
+   */
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"]
+}

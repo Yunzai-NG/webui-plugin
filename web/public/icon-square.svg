@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="yzng-square-title">
+  <title id="yzng-square-title">Yunzai NG</title>
+  <rect width="64" height="64" rx="6" fill="#111319"/>
+  <g transform="translate(0 -3) scale(1)">
+    <path d="M 14 12 L 27 29.25 L 37 29.25 L 50 12 L 38 12 L 32 19.96 L 26 12 Z" fill="#d3bc8e"/>
+    <rect x="27" y="34.75" width="10" height="23.25" rx="2" fill="#f0d8a8"/>
+    </g>
+</svg>

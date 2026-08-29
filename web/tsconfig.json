@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  /*
+   * 只用于 `vue-tsc --noEmit` 的类型检查。刻意**不**继承 tsconfig.base.json：
+   * 那份是给插件入口用的（module NodeNext、types: ["node"]、composite），
+   * 而此处跑在浏览器里、由 vite 打包、含 .vue 单文件组件。
+   * 硬把两者合一只会得到一堆互相矛盾的选项，且会让 Node 侧误得到 DOM 全局。
+   *
+   * 严格性与仓库根配置保持一致 —— 前端代码不该是仓库里唯一的宽松角落。
+   */
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "preserve",
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "useUnknownInCatchVariables": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "types": ["vite/client", "node"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.vue", "vite.config.ts"]
+}
