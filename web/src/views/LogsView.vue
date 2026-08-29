@@ -385,7 +385,11 @@ onUnmounted(() => {
       <div v-for="(row, i) in rows" :key="`${row.rec.time}-${i}`" class="log">
         <span class="t">{{ clock(row.rec.time) }}</span>
         <span class="lv" :class="row.rec.level">{{ row.rec.level }}</span>
-        <span class="sc">{{ row.rec.scope ?? "" }}</span>
+        <!--
+          作用域超出列宽时由 CSS 省略，完整值放在 `title` 里 —— 该列定宽而文案由插件决定长度。
+          行展开时一并展开（`open` 类改为折行），故「单击看全文」对这一列同样成立。
+        -->
+        <span class="sc" :class="{ open: row.open }" :title="row.rec.scope ?? ''">{{ row.rec.scope ?? "" }}</span>
         <!--
           截断的行做成按钮：点击展开，键盘同样可达。未截断的行仍是普通文本 ——
           给一个点了没有反应的按钮比不给更费解。

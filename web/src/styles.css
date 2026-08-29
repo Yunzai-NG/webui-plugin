@@ -3163,6 +3163,32 @@ button.log-more:active:not(:disabled) {
   display: none;
 }
 
+/*
+ * 作用域超出列宽即省略
+ *
+ * 该列是定宽的（宽屏 110px），而作用域文案由插件自行决定长度 ——
+ * `renderer-puppeteer` 十八个字符约 140px，只有 `nowrap` 而不裁切时会溢出到消息列上，
+ * 表现为两段文字相互重叠而非某一段被截断。故此处补上裁切与省略号。
+ *
+ * 完整值另由 `title` 给出（见 LogsView.vue）：这一列被省略时，鼠标悬停仍读得到全名。
+ */
+.log .sc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/*
+ * 展开态显示完整作用域
+ *
+ * 「单击展开」的语义是看到这一条的全部内容，作用域也在其内。此时改为折行而非
+ * 撑开列宽 —— 后者会让这一行的四列与上下各行错开，一屏日志失去纵向对齐。
+ */
+.log .sc.open {
+  overflow: visible;
+  white-space: normal;
+  word-break: break-all;
+}
+
 @media (min-width: 860px) {
   /*
    * 第一列 96px
