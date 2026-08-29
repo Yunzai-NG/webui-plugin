@@ -57,10 +57,18 @@ jobs:
         with:
           version: 9.15.4
 
+      # Node 取 22.12.0，比内核的下限（20.11.0）高
+      #
+      # 不是随手抬的：本仓库的前端由 vite 8 构建，而它底层的 rolldown 声明
+      # `^20.19.0 || >=22.12.0` —— 那两个下限来自 `node:util` 的 `styleText`，20.12 才有。
+      # 在 20.11 上跑 `vite build` 得到的是一句与本仓库毫无关系的
+      # `SyntaxError: does not provide an export named 'styleText'`，而非「Node 太旧」。
+      #
+      # 内核插件的 CI 仍用 20.11.0：它们不依赖 vite，抬上来只会让 CI 与内核声明的下限脱节。
       - name: 安装 Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20.11.0
+          node-version: 22.12.0
           registry-url: https://registry.npmjs.org
 
       - name: 构建框架

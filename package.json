@@ -26,7 +26,7 @@
     "url": "https://github.com/Yunzai-NG/webui-plugin/issues"
   },
   "engines": {
-    "node": ">=20.11.0"
+    "node": "^20.19.0 || >=22.12.0"
   },
   "packageManager": "pnpm@9.15.4",
   "files": ["dist", "src", "web"],
