@@ -37,6 +37,7 @@ import {
   type GitRunner
 } from "@yunzai-ng/core"
 import { MULTI_ENTRY } from "./panelscan.js"
+import { INSTALL_TIMEOUT_MS, SCRIPT_TIMEOUT_MS, isScriptName, runPm, type PmRunner } from "./pm.js"
 
 /** 合法包名：与内核的 NAME_RE 及扫描器的 `isSafeName` 交集一致 */
 const NAME_RE = /^[a-z\d][a-z\d._-]*$/i
@@ -72,14 +73,6 @@ const TRANSFER_TIMEOUT_MS = 5 * 60 * 1000
 /** 只读本地仓库的 git 命令超时毫秒；不含网络往返，故与传输超时分开取值 */
 const GIT_LOCAL_TIMEOUT_MS = 10_000
 
-/**
- * 包管理器安装的超时毫秒
- *
- * 比传输超时更长：国内网络下一次冷装依赖十分钟并不罕见，而超时的后果是留下一个
- * 装了一半的 `node_modules` —— 那比等着更难查。
- */
-const INSTALL_TIMEOUT_MS = 10 * 60 * 1000
-
 /** 索引缓存的文件名，落在 webui 的数据目录下 */
 export const STORE_CACHE_FILE = "panelstore-cache.json"
 
@@ -91,6 +84,34 @@ export interface PanelInstallSpec {
   readonly url: string
   /** git 分支，缺省由远端决定 */
   readonly branch?: string
+}
+
+/**
+ * 装后步骤：装完依赖之后还要跑哪些 npm script
+ *
+ * 与内核 `MarketSetupSpec` 同义，理由亦同：`scripts` 里有开发用的（`test`、`lint`）、
+ * 有幂等的（`build`）、有会下载上百兆的，从名字分不出该跑哪些，故由**经审核的索引**说。
+ *
+ * 对面板插件包尤其要紧：带 node 侧的包，`webuiPanel.server` 多半指向 `dist/index.js`，
+ * 而那一层通常被包仓库 `.gitignore` 掉 —— 不跑 `build` 就没有那个文件，表现是「装上了、
+ * 组件也在，但 node 侧的接口一律 404」。
+ *
+ * 名字要拼进命令行，逐个过 `pm.ts` 的白名单；不合法的整条丢弃，见 `parseSetup`。
+ */
+export interface PanelSetupSpec {
+  /**
+   * 依次要跑的 script 名
+   *
+   * 顺序即依赖关系，故按序执行、**一个失败即停**：后一个多半建立在前一个的产物上。
+   */
+  readonly scripts: readonly string[]
+  /**
+   * 装依赖时是否连 devDependencies 一起装
+   *
+   * 从源码装、要靠 `build` 出产物的包必须为真：编译器在 devDependencies 里，`--prod`
+   * 装出来的目录跑 `build` 会报「找不到 tsc」，离真实原因很远。缺省为真。
+   */
+  readonly dev: boolean
 }
 
 /** 索引中的一个面板插件条目 */
@@ -125,6 +146,13 @@ export interface PanelStoreEntry {
   readonly deps?: boolean
   /** 安装来源 */
   readonly install: PanelInstallSpec
+  /**
+   * 装后步骤，缺省即「装完依赖就算完」
+   *
+   * 声明在索引里而非包的 package.json 里：要在**取到内容之前**就能让确认框说清
+   * 「这次会跑什么」，而 package.json 得等下载完才读得到。
+   */
+  readonly setup?: PanelSetupSpec
   /** 该条目来自哪个索引地址 */
   readonly source: string
 }
@@ -209,6 +237,17 @@ export interface PanelInstallResult {
   readonly packageManager?: string
   /** 跑包管理器失败的原因；成功或未跑时 undefined */
   readonly dependencyError?: string
+  /** 实际跑完的装后 script，按执行顺序 */
+  readonly ranScripts?: readonly string[]
+  /**
+   * 装后步骤失败的原因，前缀是失败在哪个 script 上
+   *
+   * 与 `dependencyError` 分成两项而非合一：后手完全不同 —— 缺依赖是去目录里执行包管理器，
+   * 缺产物是去执行那个 script。而缺产物的后果更重：带 node 侧的包，它的 `webuiPanel.server`
+   * 多半指向 `dist/index.js`，那一层没编译出来时 webui 重载会报「找不到模块」，
+   * 与真实原因隔着一层。
+   */
+  readonly setupError?: string
 }
 
 /**
@@ -253,12 +292,10 @@ export interface PanelStoreDeps {
   /**
    * 执行包管理器，缺省调用本机的 pnpm / npm
    *
-   * 可注入是为让用例钉住实际下发的命令与参数：参数错掉（漏 `--prod`、跑错目录）同样
-   * 会得到一个「命令成功了」的结果。
-   * @param dir 包目录
-   * @returns 用的是哪个包管理器
+   * 可注入是为让用例钉住实际下发的动作与参数：要不要带 devDependencies、跑的是哪个
+   * script、跑在哪个目录 —— 任一条错掉同样会得到一个「命令成功了」的结果。
    */
-  readonly install?: (dir: string) => Promise<string>
+  readonly pm?: PmRunner
 }
 
 /**
@@ -285,51 +322,6 @@ const runGit: GitRunner = (args, cwd, timeout) => {
       }
     )
   })
-}
-
-/**
- * 包管理器的候选，按优先级
- *
- * pnpm 在前：包多半照本项目的例子写，装出来的布局与包作者测过的一致。npm 是兜底，
- * 随 node 一起装。不认 yarn —— berry 默认不建 `node_modules`（PnP 模式），那时
- * `import()` node 侧入口会失败，而失败原因与包管理器的关系很难看出来。
- */
-const PACKAGE_MANAGERS: readonly string[] = ["pnpm", "npm"]
-
-/**
- * 在一个包目录里跑包管理器，`PanelStoreDeps.install` 的缺省实现
- *
- * `--omit=dev` / `--prod`：只装运行时依赖，devDependencies 运行期一个都用不到。
- *
- * 不加 `--ignore-scripts`：带 node 侧的包可能依赖原生模块（sqlite、sharp），install 脚本
- * 正是它们编译或下载预编译产物的地方，禁掉会装出一份 `require` 即报错的 `node_modules`，
- * 而报错信息指向缺少 `.node` 文件，离「我禁了脚本」很远。既然已明说要跑，就该跑成能用的。
- * @param dir 包目录
- * @returns 用的是哪个包管理器
- * @throws 全部候选都不可用，或安装失败时
- */
-async function runInstall(dir: string): Promise<string> {
-  const errors: string[] = []
-  for (const pm of PACKAGE_MANAGERS) {
-    const args = pm === "pnpm" ? ["install", "--prod"] : ["install", "--omit=dev"]
-    try {
-      await new Promise<void>((resolve, reject) => {
-        execFile(
-          pm,
-          args,
-          { cwd: dir, timeout: INSTALL_TIMEOUT_MS, env: { ...process.env }, windowsHide: true, shell: process.platform === "win32" },
-          (err, _stdout, stderr) => {
-            if (err) reject(new Error(stderr.trim() || err.message))
-            else resolve()
-          }
-        )
-      })
-      return pm
-    } catch (err) {
-      errors.push(`${pm}：${err instanceof Error ? err.message : String(err)}`)
-    }
-  }
-  throw new Error(`包管理器均不可用或安装失败 —— ${errors.join("；")}`)
 }
 
 /** 磁盘缓存的文档结构 */
@@ -381,7 +373,7 @@ export class PanelStore {
   readonly #git: GitRunner
 
   /** 执行包管理器 */
-  readonly #install: (dir: string) => Promise<string>
+  readonly #pm: PmRunner
 
   /**
    * @param deps 依赖
@@ -389,7 +381,7 @@ export class PanelStore {
   constructor(deps: PanelStoreDeps) {
     this.#deps = deps
     this.#git = deps.git ?? runGit
-    this.#install = deps.install ?? runInstall
+    this.#pm = deps.pm ?? runPm
   }
 
   /**
@@ -683,7 +675,7 @@ export class PanelStore {
       await mkdir(this.#deps.panelsDir, { recursive: true })
       await this.#move(root, target)
       this.#deps.logger.debug(`面板插件 ${name}@${version} 已装至 ${target}`)
-      return this.#finish(name, target, via, version, manifest, opts.dependencies === true)
+      return this.#finish(name, target, via, version, manifest, entry.setup, opts.dependencies === true)
     } finally {
       await rm(staging, { recursive: true, force: true })
     }
@@ -787,23 +779,39 @@ export class PanelStore {
     if (changed) this.#deps.logger.debug(`面板插件 ${name} 已就地更新至 ${version}（${wasAt.slice(0, 7)} → ${nowAt.slice(0, 7)}）`)
     else this.#deps.logger.debug(`面板插件 ${name} 已是最新版本 ${version}`)
 
-    const done = await this.#finish(name, dir, "pull", version, manifest, dependencies)
+    /*
+     * 远端没有新提交、且依赖不缺时不跑收尾
+     *
+     * 那一次「更新」什么都没改，重跑 `build` 只是白等一遍编译。缺依赖是例外 —— 那与有没有
+     * 新提交无关，使用者点这一下要的就是把它补齐。
+     */
+    const missing =
+      Object.keys(manifest?.dependencies ?? {}).length > 0 &&
+      manifest?.skipInstall !== true &&
+      !(await isDirectory(join(dir, "node_modules")))
+    const done = await this.#finish(name, dir, "pull", version, manifest, entry.setup, dependencies && (changed || missing))
     return { ...done, changed, ...(before === undefined ? {} : { fromVersion: before }) }
   }
 
   /**
-   * 收尾：算出依赖需求，按需跑包管理器，拼出结果
+   * 收尾：算出依赖需求，按需装依赖与跑装后步骤，拼出结果
    *
-   * 跑包管理器要经使用者勾选，但信任边界并未因此扩大：带 node 侧的包，它的入口下一秒就会被
-   * `import()` 进 node 进程跑 `setup()`，install 脚本不是一道新的门。
+   * 跑包管理器不是一道新的信任边界：带 node 侧的包，它的入口下一秒就会被 `import()` 进
+   * node 进程跑 `setup()`，install 脚本与它同属一道门。故缺省就跑 —— 不跑的后果是
+   * 「装完却加载失败」成为常态，而那条「请自行执行」的提示对着一个多数人不会开的终端。
    *
-   * 跑失败不让整次安装失败：包已装好，缺的只是依赖，向上抛会让使用者以为「什么都没装成」
-   * 而去重装，重装同样会在这一步失败。故失败记进 `dependencyError` 由前端说明。
+   * **装后步骤即便依赖不缺也要跑。** 包的 `dist/` 多半被它自己的仓库 `.gitignore` 掉了
+   * （hardware 的 `webuiPanel.server` 就指向 `dist/index.js`），就地拉取拉来新提交之后
+   * `node_modules` 还在而产物已旧 —— 此时跳过，跑的就还是上一版代码，且毫无迹象。
+   *
+   * 失败不向上抛：包已装好，缺的只是依赖或产物，抛出去会让使用者以为「什么都没装成」
+   * 而去重装，重装同样会在这一步失败。故记进 `dependencyError` / `setupError` 由前端说明。
    * @param name 包名
    * @param dir 包目录
    * @param via 取源方式
    * @param version 版本
    * @param manifest package.json 里的相关字段
+   * @param setup 索引声明的装后步骤
    * @param dependencies 是否跑包管理器
    * @returns 安装结果
    */
@@ -813,10 +821,12 @@ export class PanelStore {
     via: PanelInstallVia,
     version: string,
     manifest: PanelManifest | undefined,
+    setup: PanelSetupSpec | undefined,
     dependencies: boolean
   ): Promise<PanelInstallResult> {
     const declared = Object.keys(manifest?.dependencies ?? {}).length > 0 && manifest?.skipInstall !== true
     const hasServer = manifest?.hasServer === true
+    const base = { name, dir, via, version, hasServer, updatable: updatableOf(via) }
     /*
      * 「声明了依赖」与「还缺依赖」是两件事
      *
@@ -824,26 +834,44 @@ export class PanelStore {
      * 判据取「目录里有没有 node_modules」，与内核 `market.ts` 一致 —— 「旧的够不够」要比对
      * lock 文件，本模块无从判断。
      */
-    const needsDependencies = declared && !(await isDirectory(join(dir, "node_modules")))
+    const missing = declared && !(await isDirectory(join(dir, "node_modules")))
 
-    if (needsDependencies && dependencies) {
+    // 声明了装后步骤就得跑，哪怕依赖不缺 —— 理由见方法头
+    if (!dependencies || (!missing && setup === undefined)) {
+      // 依赖不缺时无须出声：那正是常态，而一条「需自行安装」的警告在此处是假的
+      if (missing) {
+        this.#deps.logger.warn(`面板插件 ${name} 声明了运行时依赖，需在 ${dir} 目录内自行执行包管理器安装`)
+      }
+      return { ...base, needsDependencies: missing }
+    }
+
+    let pm: string
+    try {
+      // 有装后步骤时连 devDependencies 一起装：`build` 要的编译器在那里，见 pm.ts 文件头
+      pm = await this.#pm({ kind: "install", dev: setup?.dev === true }, dir, INSTALL_TIMEOUT_MS)
+      this.#deps.logger.debug(`面板插件 ${name} 的依赖已由 ${pm} 装好`)
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err)
+      this.#deps.logger.error(`面板插件 ${name} 的依赖安装失败：${error}。请在 ${dir} 目录内自行执行包管理器`)
+      return { ...base, needsDependencies: true, installedDeps: false, dependencyError: error }
+    }
+
+    const ranScripts: string[] = []
+    for (const script of setup?.scripts ?? []) {
       try {
-        const pm = await this.#install(dir)
-        this.#deps.logger.debug(`面板插件 ${name} 的依赖已由 ${pm} 装好`)
-        return { name, dir, via, version, needsDependencies: false, hasServer, updatable: updatableOf(via), installedDeps: true, packageManager: pm }
+        await this.#pm({ kind: "run", script }, dir, SCRIPT_TIMEOUT_MS)
+        ranScripts.push(script)
+        this.#deps.logger.debug(`面板插件 ${name} 的装后步骤 ${script} 已执行`)
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err)
-        this.#deps.logger.error(`面板插件 ${name} 的依赖安装失败：${error}。请在 ${dir} 目录内自行执行包管理器`)
-        return { name, dir, via, version, needsDependencies: true, hasServer, updatable: updatableOf(via), installedDeps: false, dependencyError: error }
+        this.#deps.logger.error(
+          `面板插件 ${name} 的装后步骤 ${script} 失败：${error}。请在 ${dir} 目录内自行执行 ${pm} run ${script}`
+        )
+        // 一个失败即停：后一个多半建立在前一个的产物上，继续跑只会得到第二条更难懂的错
+        return { ...base, needsDependencies: false, installedDeps: true, packageManager: pm, ranScripts, setupError: `${script}：${error}` }
       }
     }
-
-    // 声明了依赖却不缺（目录里已有 node_modules —— 就地拉取保住的那一份，或使用者自己装过）
-    // 时无须出声：那正是常态，而一条「需自行安装」的警告在此处是假的
-    if (needsDependencies) {
-      this.#deps.logger.warn(`面板插件 ${name} 声明了运行时依赖，需在 ${dir} 目录内自行执行包管理器安装`)
-    }
-    return { name, dir, via, version, needsDependencies, hasServer, updatable: updatableOf(via) }
+    return { ...base, needsDependencies: false, installedDeps: true, packageManager: pm, ranScripts }
   }
 
   /**
@@ -956,6 +984,33 @@ function parseInstall(raw: unknown): PanelInstallSpec | undefined {
 }
 
 /**
+ * 解析装后步骤
+ *
+ * 返回 `null` 表示「声明了但不合法」，与 undefined（压根没声明）分开 —— 调用方据此
+ * 丢弃整条。**不合法时丢整条而非只忽略这一项**：只忽略会装出一个「依赖装了、产物没编译」
+ * 的包，那种包加载时报「找不到 dist/index.js」，离真实原因（索引里的名字写错了）很远；
+ * 而整条丢弃的表现是「这个包不出现在列表里」，与 `install` 写错时一致。
+ * @param raw 条目中的 `setup` 字段
+ * @returns 装后步骤；没声明时 undefined；声明了但不合法时 null
+ */
+function parseSetup(raw: unknown): PanelSetupSpec | undefined | null {
+  if (raw === undefined) return undefined
+  if (typeof raw !== "object" || raw === null) return null
+  const record = raw as Record<string, unknown>
+  if (!Array.isArray(record.scripts)) return null
+  const scripts: string[] = []
+  for (const item of record.scripts) {
+    // 名字要拼进命令行，逐个过白名单 —— 那道边界在 pm.ts
+    if (typeof item !== "string" || !isScriptName(item)) return null
+    scripts.push(item)
+  }
+  // 空数组与没声明是同一个意思，且留着它会让确认框多出一句后面跟着空白的「将执行：」
+  if (scripts.length === 0) return undefined
+  // 缺省连 devDependencies 一起装：声明了装后步骤就意味着有东西要跑，而那多半要编译器
+  return { scripts, dev: record.dev !== false }
+}
+
+/**
  * 把一条索引记录解析为条目
  *
  * 任一必填字段不合法即返回 undefined，由调用方整条丢弃 —— 索引写错时应当表现为
@@ -971,6 +1026,8 @@ export function parsePanelEntry(raw: unknown, source: string): PanelStoreEntry |
   if (name === undefined || !isUsableName(name)) return undefined
   const install = parseInstall(record.install)
   if (install === undefined) return undefined
+  const setup = parseSetup(record.setup)
+  if (setup === null) return undefined
   const tags = Array.isArray(record.tags) ? record.tags.filter((tag): tag is string => typeof tag === "string") : []
   const author = text(record, "author")
   const version = text(record, "version")
@@ -994,6 +1051,7 @@ export function parsePanelEntry(raw: unknown, source: string): PanelStoreEntry |
     ...(homepage === undefined ? {} : { homepage }),
     ...(minWebui === undefined ? {} : { minWebui }),
     ...(widgets === undefined ? {} : { widgets }),
+    ...(setup === undefined ? {} : { setup }),
     ...(record.server === true ? { server: true } : {}),
     ...(record.deps === true ? { deps: true } : {})
   }

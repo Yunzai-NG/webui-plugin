@@ -115,6 +115,44 @@ export function visibleItems(
 }
 
 /**
+ * 这一条装 / 更时要不要跑包管理器
+ *
+ * **两种情形都要跑**：声明了依赖的包要装依赖；声明了装后步骤的包要跑那几个 script ——
+ * 后者即便不声明依赖也得跑，因为产物那一层（`dist/`）多半被包仓库 `.gitignore` 掉了。
+ *
+ * 抽成函数是因为装与更两条路都要这个判据，而它们各有一个确认框。分两处写迟早对不上，
+ * 症状是「安装时编译了，更新时没编译」—— 那种不一致要等到某个组件行为像旧版才发现。
+ * @param item 条目
+ * @returns 是否要跑
+ */
+export function willRunPm(item: PanelStoreItem): boolean {
+  return item.deps === true || (item.setup?.scripts.length ?? 0) > 0
+}
+
+/**
+ * 「装完之后还会自动做什么」那几句，装与更的确认框共用
+ *
+ * 逐条写出会跑什么，而不是一句「会自动装依赖」：`build` 要编译、装后步骤可能下载上百兆，
+ * 事先不说会让人以为界面卡住了。那也是知情同意的「知情」那一半 —— 但它不是一道新的信任
+ * 边界，包的 node 侧入口稍后同样会被 `import()` 执行。
+ * @param item 条目
+ * @returns 说明行；这一条什么都不跑时为空数组
+ */
+export function setupNotes(item: PanelStoreItem): string[] {
+  if (!willRunPm(item)) return []
+  const notes = ["装完会在包目录内执行 pnpm install（找不到 pnpm 时退回 npm），那一步会执行该包依赖的 install 脚本"]
+  const scripts = item.setup?.scripts ?? []
+  if (scripts.length > 0) {
+    notes.push(
+      `随后按索引声明依次执行 ${scripts.join("、")} —— 其中可能包含编译，耗时可达数分钟`,
+      "**这一步不能省**：这个包的产物目录多半没进仓库，不编译就只有源码，node 侧的接口会一律 404"
+    )
+  }
+  notes.push("这不是一道新的信任边界：包的 node 侧入口稍后同样会被 import() 执行，与 install 脚本同属一道门")
+  return notes
+}
+
+/**
  * 版本一行怎么写
  *
  * 已装且索引更高时给「0.3.0 → 0.4.0」；已装且一致时只给一个数；未装时给索引里那个。
@@ -172,9 +210,22 @@ function didText(result: PanelStoreResult): string {
  * @returns 文案；无须出声时空串
  */
 function depText(result: PanelStoreResult): string {
-  if (result.installedDeps === true) return `依赖已由 ${result.packageManager ?? "包管理器"} 装好。`
+  const pm = result.packageManager ?? "包管理器"
   if (result.dependencyError !== undefined) {
     return `但依赖没装上（${result.dependencyError}），请在该目录内自行执行 pnpm install。`
+  }
+  /*
+   * 装后步骤失败要排在「依赖装好了」之前说
+   *
+   * 那一步失败多半意味着没有产物（`build` 挂了），而带 node 侧的包的入口正指向 `dist/`——
+   * 此时只说「依赖已装好」是对的却没用，使用者会去重载、再收到一条「找不到模块」。
+   */
+  if (result.setupError !== undefined) {
+    return `依赖已由 ${pm} 装好，但装后步骤失败（${result.setupError}），请在该目录内自行处理。`
+  }
+  if (result.installedDeps === true) {
+    const ran = result.ranScripts ?? []
+    return ran.length === 0 ? `依赖已由 ${pm} 装好。` : `依赖已由 ${pm} 装好，并执行了 ${ran.join("、")}。`
   }
   if (result.needsDependencies) return `该包声明了运行时依赖，请在该目录内执行 pnpm install。`
   return ""
@@ -190,6 +241,15 @@ function depText(result: PanelStoreResult): string {
  */
 function nextText(result: PanelStoreResult): string {
   if (result.via === "pull" && result.changed === false) return ""
+  /*
+   * 装后步骤失败要排在「只有浏览器侧」之前判
+   *
+   * 那一步失败意味着没有产物，而**产物对两种形态都要紧**：带 node 侧的包，入口就指向
+   * `dist/`；只有浏览器侧的包，它的组件文件本身也可能是编译出来的。此时说「刷新页面即可
+   * 看到它的组件」是假的 —— 使用者会刷新、看不到东西、以为装坏了，而真正的原因刚在
+   * 上一段说过。放在 `!hasServer` 之后判就漏掉了后一种，这一条曾经如此。
+   */
+  if (result.setupError !== undefined) return "编译通过后再重载 —— 现在缺产物，装上了也跑不起来。"
   if (!result.hasServer) return "刷新页面即可看到它的组件。"
   if (result.needsDependencies) return "装完依赖后，到插件页重载 webui，它的 node 侧才会跑起来。"
   return "这个包带 node 侧，须到插件页重载 webui 才会生效 —— 只刷新页面不够。"

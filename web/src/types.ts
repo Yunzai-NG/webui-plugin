@@ -326,10 +326,25 @@ export interface MarketItem {
   official: boolean
   /** 要求的最低内核版本 */
   minCore?: string
+  /**
+   * 索引声明的装后步骤，缺省即「装完依赖就算完」
+   *
+   * 用来在确认框里**先说清这次会跑什么**。别拿它当「装完了会有产物」的凭据 ——
+   * 它只是索引的声明，真跑没跑看返回值的 `ranScripts`。
+   */
+  setup?: MarketSetup
   /** 条目来自哪个索引地址 */
   source: string
   /** 插件目录下是否已存在同名目录 */
   installed: boolean
+}
+
+/** 一个条目声明的装后步骤 */
+export interface MarketSetup {
+  /** 依次要跑的 npm script 名 */
+  scripts: string[]
+  /** 装依赖时是否连 devDependencies 一起装 */
+  dev: boolean
 }
 
 /** 一个索引地址的获取结果 */
@@ -357,7 +372,7 @@ export interface MarketSnapshot {
 }
 
 /** `POST /api/market/install` 与 `POST /api/market/:name/update` */
-export interface MarketInstallResult {
+export interface MarketInstallResult extends SetupOutcome {
   /** 插件名 */
   name: string
   /** 安装目录 */
@@ -375,9 +390,52 @@ export interface MarketInstallResult {
   fromVersion?: string
   /** 就地拉取时是否确实有新提交；假即已是最新。仅 `via` 为 `pull` 时存在 */
   changed?: boolean
-  /** 是否声明了运行时依赖且尚未安装 */
-  needsDependencies: boolean
   /** 覆盖安装前是否卸载了旧版本 */
+  unloaded: boolean
+  /** 本次加载成功的插件名 */
+  loaded: string[]
+}
+
+/**
+ * 一次「装依赖 + 跑装后步骤」的结果
+ *
+ * 与安装结果分开成型：这一步可以单独发起（下拉框里的「装依赖并编译」），那时没有取源
+ * 方式、也没有「此后如何更新」可言。安装与更新的返回值把这几项整个并进去。
+ */
+export interface SetupOutcome {
+  /** 是否声明了运行时依赖且**仍然**缺着 */
+  needsDependencies: boolean
+  /**
+   * 本次是否确实跑了包管理器装依赖
+   *
+   * 与 `needsDependencies` 分开：后者说「还缺不缺」，这一项说「刚才做了什么」。
+   * 两者都为假的常见情形是目录里本就有 `node_modules` —— 那时既没装、也不缺。
+   */
+  installedDeps?: boolean
+  /** 用的是哪个包管理器，仅在确实跑过时存在 */
+  packageManager?: string
+  /** 装依赖失败的原因 */
+  dependencyError?: string
+  /** 实际跑完的装后 script，按执行顺序 */
+  ranScripts?: string[]
+  /**
+   * 装后步骤失败的原因，前缀是失败在哪个 script 上
+   *
+   * 与 `dependencyError` 分成两项而非合一：后手完全不同 —— 缺依赖是去目录里执行包管理器，
+   * 缺产物是去执行那个 script。合成一句只能给出两头都不准的提示。
+   */
+  setupError?: string
+}
+
+/** `POST /api/market/:name/setup` */
+export interface MarketSetupResult extends SetupOutcome {
+  /** 插件名 */
+  name: string
+  /** 插件目录 */
+  dir: string
+  /** package.json 里声明的版本，读不到时 `0.0.0` */
+  version: string
+  /** 重跑之前是否卸载了旧模块 */
   unloaded: boolean
   /** 本次加载成功的插件名 */
   loaded: string[]
@@ -421,6 +479,13 @@ export interface PanelStoreItem {
   server?: boolean
   /** 是否声明了依赖 —— 同为预告 */
   deps?: boolean
+  /**
+   * 索引声明的装后步骤，缺省即「装完依赖就算完」
+   *
+   * 与内核那份索引同一形状，故复用 `MarketSetup`。对面板插件包尤其要紧：带 node 侧的包，
+   * `webuiPanel.server` 多半指向 `dist/index.js`，而那一层通常被包仓库 `.gitignore` 掉。
+   */
+  setup?: MarketSetup
   /** 该条目来自哪个索引地址 */
   source: string
   /** 落点下是否已存在同名目录 */
@@ -498,4 +563,14 @@ export interface PanelStoreResult {
   packageManager?: string
   /** 跑包管理器失败的原因 */
   dependencyError?: string
+  /** 实际跑完的装后 script，按执行顺序 */
+  ranScripts?: string[]
+  /**
+   * 装后步骤失败的原因，前缀是失败在哪个 script 上
+   *
+   * 与 `dependencyError` 分成两项而非合一：后手不同 —— 缺依赖是去目录里执行包管理器，
+   * 缺产物是去执行那个 script。对面板插件包尤其要紧：`webuiPanel.server` 多半指向
+   * `dist/index.js`，而那一层被包仓库 gitignore 掉了，没编译就没有那个文件。
+   */
+  setupError?: string
 }

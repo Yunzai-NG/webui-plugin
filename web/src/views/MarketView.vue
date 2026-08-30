@@ -9,8 +9,13 @@
  *          **取源失败与索引里没有条目分开呈现**：前者查 `market.sources` 与 `market.mirror`，
  *          后者是索引本身为空。合成一句「没有可用插件」会让排查方向完全偏离。
  *
- *          安装后 `needsDependencies` 为真时必须提示手工装依赖：内核不代跑包管理器，而缺依赖的
- *          插件要到加载时才失败。
+ *          **内核现在代跑包管理器**（装依赖、并按索引声明跑 `build` 一类的装后步骤），故装完
+ *          多半不必再动手。但那一步可能失败，且手工放进插件目录的插件压根没经过安装动作 ——
+ *          故「装依赖并编译」是一个独立可发起的动作，收在「更多」菜单里。
+ *
+ *          确认框须把「会执行什么」写明：装依赖等于执行该插件依赖的 install 脚本，而装后步骤
+ *          是索引声明的 npm script。那是知情同意的「知情」那一半 —— 但它不是一道新的信任边界，
+ *          插件入口下一秒就会被内核 `import()` 执行。
  *
  *          「配置」按钮指向**插件页**而非配置页（配置入口已收归插件页的模态）。不带 `name` 参数 ——
  *          插件页没有「打开即展开某张卡片配置」这条深链，带一个用不上的参数只会让人以为它有效。
@@ -22,10 +27,10 @@ import { computed, onMounted, ref } from "vue"
 import { del, get, post } from "../api.js"
 import { datetime, errorText } from "../format.js"
 import { askConfirm } from "../confirm.js"
-import { resultText } from "../market.js"
+import { resultText, setupResultText } from "../market.js"
 import { hrefOf } from "../router.js"
 import PageHeader from "../components/PageHeader.vue"
-import type { MarketInstallResult, MarketItem, MarketSnapshot } from "../types.js"
+import type { MarketInstallResult, MarketItem, MarketSetupResult, MarketSnapshot } from "../types.js"
 
 const snapshot = ref<MarketSnapshot | undefined>(undefined)
 const error = ref("")
@@ -34,6 +39,9 @@ const busy = ref("")
 const loading = ref(false)
 const keyword = ref("")
 const onlyOfficial = ref(false)
+
+/** 哪张卡片的「更多」菜单是展开的，空串表示都收着；同时最多一个，与插件页一致 */
+const menuOpen = ref("")
 
 /**
  * 两个页签
@@ -93,25 +101,53 @@ async function load(refresh = false): Promise<void> {
 }
 
 /**
+ * 「装完之后还会做什么」那几句，安装与更新的确认框共用
+ *
+ * 逐条写出来而不是一句「会自动装依赖」：`install:browser` 那类装后步骤要下载上百兆的
+ * 运行时，事先不说会让人以为界面卡住了。
+ * @param item 目标条目
+ * @returns 说明行；该插件无装后步骤时只有装依赖那一条
+ */
+function setupNotes(item: MarketItem): string[] {
+  const notes = [
+    "装完会在插件目录内执行 pnpm install（找不到 pnpm 时退回 npm），那一步会执行该插件依赖的 install 脚本"
+  ]
+  const scripts = item.setup?.scripts ?? []
+  if (scripts.length > 0) {
+    notes.push(
+      `随后按索引声明依次执行 ${scripts.join("、")} —— 其中可能包含编译与运行时下载，耗时可达数分钟`
+    )
+  }
+  notes.push("这不是一道新的信任边界：插件入口下一秒就会被内核 import() 执行，与 install 脚本同属一道门")
+  return notes
+}
+
+/**
  * 安装或更新一个插件
  * @param item 目标条目
  * @param update 已安装时是否按更新处理
  */
 async function install(item: MarketItem, update: boolean): Promise<void> {
-  if (update) {
-    const ok = await askConfirm({
-      title: `更新插件「${item.name}」？`,
-      body: "更新方式由内核判定：插件目录是 git 仓库时就地拉取，否则先卸载再重新下载整个目录。",
-      okText: "更新",
-      details: [
-        `当前索引声明的版本：${item.version ?? "未声明"}`,
-        "就地拉取：目录重置到远端最新提交，已装的依赖保留；本地改动自动暂存，可用 git stash pop 取回",
-        "退回重装：先卸载当前版本，目录整份替换（含 node_modules）；下载失败时该插件将处于未加载状态",
-        "两条路都不影响插件的配置与数据库 —— 它们不在安装目录内"
-      ]
-    })
-    if (!ok) return
-  }
+  const ok = update
+    ? await askConfirm({
+        title: `更新插件「${item.name}」？`,
+        body: "更新方式由内核判定：插件目录是 git 仓库时就地拉取，否则先卸载再重新下载整个目录。",
+        okText: "更新",
+        details: [
+          `当前索引声明的版本：${item.version ?? "未声明"}`,
+          "就地拉取：目录重置到远端最新提交，已装的依赖保留；本地改动自动暂存，可用 git stash pop 取回",
+          "退回重装：先卸载当前版本，目录整份替换（含 node_modules）；下载失败时该插件将处于未加载状态",
+          "两条路都不影响插件的配置与数据库 —— 它们不在安装目录内",
+          ...setupNotes(item)
+        ]
+      })
+    : await askConfirm({
+        title: `安装插件「${item.title}」？`,
+        body: "从索引取源并装到内核的插件目录，装完自动装依赖并按索引声明完成编译。",
+        okText: "安装",
+        details: [`落点：plugins/${item.name}/`, ...setupNotes(item)]
+      })
+  if (!ok) return
   busy.value = item.name
   notice.value = ""
   try {
@@ -126,6 +162,48 @@ async function install(item: MarketItem, update: boolean): Promise<void> {
   } finally {
     busy.value = ""
   }
+}
+
+/**
+ * 单独重跑装依赖与装后步骤，不重新取源
+ *
+ * 三种情形要用到：手工放进插件目录的插件（压根没经过安装动作）、装的时候这一步失败过、
+ * 以及使用者自己 `git pull` 过而 `dist/` 已旧。
+ * @param item 目标条目
+ */
+async function setup(item: MarketItem): Promise<void> {
+  menuOpen.value = ""
+  const ok = await askConfirm({
+    title: `为「${item.name}」装依赖并编译？`,
+    body: "不重新下载插件内容，只在现有目录内装依赖、并按索引声明跑装后步骤。",
+    okText: "执行",
+    details: [
+      "依赖已装好时包管理器会自行跳过，故重复执行是安全的",
+      ...setupNotes(item),
+      "跑完会重载该插件 —— 编译产物换掉之后，内存里那份旧模块仍在响应命令"
+    ]
+  })
+  if (!ok) return
+  busy.value = item.name
+  notice.value = ""
+  try {
+    const result = await post<MarketSetupResult>(`market/${encodeURIComponent(item.name)}/setup`)
+    notice.value = setupResultText(result)
+    error.value = ""
+    await load()
+  } catch (err) {
+    error.value = errorText(err)
+  } finally {
+    busy.value = ""
+  }
+}
+
+/**
+ * 切换某张卡片的「更多」菜单
+ * @param name 插件名
+ */
+function toggleMenu(name: string): void {
+  menuOpen.value = menuOpen.value === name ? "" : name
 }
 
 /**
@@ -160,7 +238,8 @@ onMounted(() => void load())
 </script>
 
 <template>
-  <div>
+  <!-- 点空白处关掉展开的菜单，与插件页一致；菜单自身 `@click.stop` 免得点菜单项也关 -->
+  <div @click="menuOpen = ''">
     <PageHeader
       route="market"
       sub="从索引安装社区插件。内核默认不携带任何插件，此处与手工放置插件目录等效"
@@ -233,10 +312,44 @@ onMounted(() => void load())
           </button>
           <button v-else :disabled="busy === item.name" @click="void install(item, true)">更新</button>
           <a v-if="item.installed" class="button" :href="hrefOf('plugins')">配置</a>
-          <button v-if="item.installed" class="danger" :disabled="busy === item.name" @click="void remove(item)">
-            删除
-          </button>
-          <a v-if="item.homepage" class="button" :href="item.homepage" target="_blank" rel="noreferrer noopener">主页</a>
+
+          <!--
+            更多：装依赖并编译 / 主页 / 删除
+
+            收进菜单而不平铺：已安装的卡片本就有四五个动作，窄卡上必然折行。形制取插件页
+            那一个（`.menu` + `.menu-list`），`@click.stop` 拦住冒泡，否则根节点上那个
+            「点外面关菜单」会把它当场关掉。
+          -->
+          <div v-if="item.installed" class="menu" @click.stop>
+            <button :aria-expanded="menuOpen === item.name" @click="toggleMenu(item.name)">更多 ▾</button>
+            <Transition name="menu">
+              <div v-if="menuOpen === item.name" class="menu-list">
+                <button :disabled="busy === item.name" @click="void setup(item)">装依赖并编译</button>
+                <a
+                  v-if="item.homepage"
+                  class="button"
+                  :href="item.homepage"
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  @click="menuOpen = ''"
+                >
+                  主页
+                </a>
+                <button class="danger" :disabled="busy === item.name" @click="void remove(item)">删除</button>
+              </div>
+            </Transition>
+          </div>
+
+          <!-- 未安装的卡片没有菜单，主页那一项直接摆出来 —— 一个动作的菜单只是多一次点击 -->
+          <a
+            v-if="!item.installed && item.homepage"
+            class="button"
+            :href="item.homepage"
+            target="_blank"
+            rel="noreferrer noopener"
+          >
+            主页
+          </a>
         </footer>
       </article>
     </div>

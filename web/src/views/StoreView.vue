@@ -24,7 +24,18 @@ import { computed, onMounted, ref } from "vue"
 import { delAt, getAt, postAt } from "../api.js"
 import { askConfirm } from "../confirm.js"
 import { datetime, errorText } from "../format.js"
-import { STORE_TABS, storeResultText, storeUrlOf, tabCounts, tagsOf, versionText, visibleItems, type StoreTab } from "../panelstore.js"
+import {
+  STORE_TABS,
+  setupNotes,
+  storeResultText,
+  storeUrlOf,
+  tabCounts,
+  tagsOf,
+  versionText,
+  visibleItems,
+  willRunPm,
+  type StoreTab
+} from "../panelstore.js"
 import { hrefOf } from "../router.js"
 import PageHeader from "../components/PageHeader.vue"
 import type { PanelStoreItem, PanelStoreResult, PanelStoreSnapshot } from "../types.js"
@@ -84,40 +95,38 @@ function toggleTag(tag: string): void {
 }
 
 /**
- * 问一次「要不要顺带装依赖」
+ * 问一次，并把「装完之后还会自动做什么」逐条写明
  *
- * **只对声明了依赖的包问** —— 没声明的包问一句只会让人以为它也许需要。`details` 里把
- * 「会执行 install 脚本」写明，那是知情同意的「知情」那一半。
+ * **两种情形都要跑包管理器**：声明了依赖的包要装依赖；声明了装后步骤的包要跑那几个 script
+ * —— 后者即便不声明依赖也得跑，因为产物那一层（`dist/`）多半被包仓库 `.gitignore` 掉了。
+ *
+ * 逐条写出会跑什么，而不是一句「会自动装依赖」：`build` 要编译、装后步骤可能下载上百兆，
+ * 事先不说会让人以为界面卡住了。那也是知情同意的「知情」那一半 —— 但它不是一道新的信任
+ * 边界，包的 node 侧入口稍后同样会被 `import()` 执行。
  * @param item 条目
  * @param action 动作名，写进标题
- * @returns 是否继续，以及是否装依赖
+ * @returns 是否继续，以及是否要跑包管理器
  */
 async function askDeps(item: PanelStoreItem, action: string): Promise<{ go: boolean; deps: boolean }> {
-  const willInstall = item.deps === true
   const details = [
     `落点：plugins/webui/plugins/${item.name}/`,
     "**「更新 webui」会清空这个目录** —— 那是既定取舍，请对改动过的包留一份备份",
     item.server === true
       ? "这个包带 node 侧，装完须到插件页重载 webui 才会生效"
-      : "这个包只有浏览器侧，装完刷新页面即生效"
+      : "这个包只有浏览器侧，装完刷新页面即生效",
+    ...setupNotes(item)
   ]
-  if (willInstall) {
-    details.push(
-      "它声明了运行时依赖，会在包目录内执行 pnpm install（找不到 pnpm 时退回 npm）",
-      "那一步会执行该包依赖的 install 脚本 —— 与它的 node 侧入口稍后被载入同属一道信任边界"
-    )
-  }
   const ok = await askConfirm({
     title: `${action}面板插件「${item.title}」？`,
-    body: willInstall
-      ? "装完后会自动安装它声明的依赖。不需要的话可以在下方取消。"
+    body: willRunPm(item)
+      ? "从索引取源并装到 webui 的面板插件目录，装完自动装依赖并完成编译。"
       : "从索引取源并装到 webui 的面板插件目录。",
     okText: action,
     details
   })
-  // 勾选项本身借 askConfirm 的确认表达：确认即同意装依赖，取消则整个动作都不做。
+  // 借 askConfirm 的确认表达同意：确认即同意跑包管理器，取消则整个动作都不做。
   // 另做一个三态对话框（装 / 不装依赖地装 / 取消）在这一处的收益低于它带来的犹豫
-  return { go: ok, deps: ok && willInstall }
+  return { go: ok, deps: ok && willRunPm(item) }
 }
 
 /**
@@ -154,15 +163,18 @@ async function update(item: PanelStoreItem): Promise<void> {
       `当前：${versionText(item)}`,
       "就地拉取：目录重置到远端最新提交，已装的依赖保留；本地改动自动暂存，可用 git stash pop 取回",
       "退回重装：目录整份替换，含 node_modules —— 那份依赖要重装一遍",
-      "两条路都不动这个包的配置 —— 它存在 webui 的数据目录下，不在包目录里"
+      "两条路都不动这个包的配置 —— 它存在 webui 的数据目录下，不在包目录里",
+      ...setupNotes(item)
     ]
   })
   if (!ok) return
   busy.value = item.name
   notice.value = ""
   try {
+    // 判据与安装那条路同一个 `willRunPm`：两处各写一遍迟早对不上，而症状是
+    // 「装的时候编译了、更新之后没编译」—— 产物停在旧版本，且毫无迹象
     const result = await postAt<PanelStoreResult>(storeUrlOf(`${encodeURIComponent(item.name)}/update`), {
-      dependencies: item.deps === true
+      dependencies: willRunPm(item)
     })
     notice.value = storeResultText(result)
     error.value = ""

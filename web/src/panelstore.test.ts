@@ -9,12 +9,14 @@ import { describe, expect, it } from "vitest"
 import {
   STORE_TABS,
   inTab,
+  setupNotes,
   storeResultText,
   storeUrlOf,
   tabCounts,
   tagsOf,
   versionText,
-  visibleItems
+  visibleItems,
+  willRunPm
 } from "./panelstore.js"
 import type { PanelStoreItem, PanelStoreResult } from "./types.js"
 
@@ -244,5 +246,69 @@ describe("storeResultText", () => {
     // git 那条路是常态，不必出声 —— 每次都提一句反而会把真正要注意的那句淹掉
     const git = storeResultText(resultOf({ via: "git", updatable: "pull" }))
     expect(git).not.toContain("整目录重下")
+  })
+
+  it("跑过装后步骤时说出跑了哪几个 —— 一次几分钟的等待要有交代", () => {
+    const text = storeResultText(
+      resultOf({ installedDeps: true, packageManager: "pnpm", ranScripts: ["build", "install:browser"] })
+    )
+    expect(text).toContain("build、install:browser")
+  })
+
+  it("**装后步骤失败时不说「刷新即可看到组件」** —— 没编译出产物，看不到", () => {
+    const text = storeResultText(resultOf({ installedDeps: true, ranScripts: [], setupError: "build：TS2304" }))
+    expect(text).toContain("TS2304")
+    expect(text).not.toContain("刷新页面即可")
+    expect(text).toContain("自行处理")
+    /*
+     * **后手不能指向装依赖** —— 两种失败的下一步动作不同
+     *
+     * 依赖那一步是成功的（`installedDeps` 为真），此时叫人去 `pnpm install` 会让他
+     * 跑一遍幂等的命令、看到「已是最新」，然后不知道该怎么办。真正要跑的是那个 script。
+     */
+    expect(text).not.toContain("pnpm install")
+  })
+
+  it("装后步骤失败且带 node 侧时，不叫人去重载 —— 那会白跑一趟", () => {
+    const text = storeResultText(resultOf({ hasServer: true, installedDeps: true, setupError: "build：挂了" }))
+    expect(text).not.toContain("重载 webui 才会生效")
+  })
+})
+
+describe("willRunPm", () => {
+  it("声明了依赖就要跑", () => {
+    expect(willRunPm(itemOf({ deps: true }))).toBe(true)
+  })
+
+  it("**只声明了装后步骤、没声明依赖时也要跑** —— 产物那一层多半没进仓库", () => {
+    expect(willRunPm(itemOf({ setup: { scripts: ["build"], dev: true } }))).toBe(true)
+  })
+
+  it("两项都没声明就不跑 —— 多数只有浏览器侧的包属于此类", () => {
+    expect(willRunPm(itemOf())).toBe(false)
+  })
+
+  it("scripts 为空数组等同于没声明", () => {
+    expect(willRunPm(itemOf({ setup: { scripts: [], dev: true } }))).toBe(false)
+  })
+})
+
+describe("setupNotes", () => {
+  it("什么都不跑的包给空数组 —— 一句「会自动装依赖」会让人以为它也许需要", () => {
+    expect(setupNotes(itemOf())).toEqual([])
+  })
+
+  it("只声明依赖时说装依赖，不提编译", () => {
+    const notes = setupNotes(itemOf({ deps: true })).join("\n")
+    expect(notes).toContain("pnpm install")
+    expect(notes).not.toContain("依次执行")
+  })
+
+  it("**有装后步骤时逐个列出名字** —— 事先不说会让人以为界面卡住了", () => {
+    const notes = setupNotes(itemOf({ deps: true, setup: { scripts: ["build", "install:browser"], dev: true } })).join("\n")
+    expect(notes).toContain("build、install:browser")
+    expect(notes).toContain("耗时可达数分钟")
+    // 知情同意的「知情」那一半，且要点明它不是一道新的边界
+    expect(notes).toContain("import()")
   })
 })

