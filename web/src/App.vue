@@ -21,6 +21,7 @@ import { get, getToken, setToken } from "./api.js"
 import { ApiError } from "./api.js"
 import { errorText } from "./format.js"
 import { ROUTES, currentRoute, hrefOf, type RouteDef } from "./router.js"
+import { THEME_LABEL, cycleTheme, themeChoice, type ThemeChoice } from "./theme.js"
 import type { Overview } from "./types.js"
 import AppIcon from "./components/AppIcon.vue"
 import ConfirmDialog from "./components/ConfirmDialog.vue"
@@ -50,6 +51,21 @@ const MARK = "icon-square.svg"
 
 /** 清除令牌一项的图标：一支向右的箭头，读作「离开」 */
 const SIGN_OUT = "M13 6l6 6-6 6M19 12H5"
+
+/**
+ * 主题一项的三个图标，与 `ThemeChoice` 一一对应
+ *
+ * 三态各有各的图形，不共用一个「主题」图标：共用之后按钮上就只剩文案在变，
+ * 而折叠态的侧栏只有 72px、文案是隐去的，那时使用者无从知道当前是哪一态。
+ */
+const THEME_ICON: Record<ThemeChoice, string> = {
+  // 半明半暗的圆：跟随系统
+  auto: "M12 3a9 9 0 000 18zM12 3a9 9 0 010 18",
+  // 太阳
+  light: "M12 5.5v-2M12 20.5v-2M5.5 12h-2M20.5 12h-2M7.4 7.4L6 6M18 18l-1.4-1.4M16.6 7.4L18 6M6 18l1.4-1.4M15.5 12a3.5 3.5 0 11-7 0 3.5 3.5 0 017 0",
+  // 月亮
+  dark: "M20 14.5A8.5 8.5 0 019.5 4a8.5 8.5 0 1010.5 10.5z"
+}
 
 /**
  * 路由标识 → 视图组件
@@ -260,6 +276,21 @@ onUnmounted(() => {
       <div class="side-foot">
         <span class="tag" :class="online ? 'ok' : 'err'">{{ online ? "在线" : "离线" }}</span>
         <span v-if="readonly" class="tag warn">只读</span>
+        <!--
+          主题一项与清除令牌同形：两者都是「面板本身的设置」，不是导航
+
+          文案取当前态（跟随系统 / 浅色 / 深色）而非动作名（「切换主题」）：一个开关
+          该先说清此刻是哪一态，下一步做什么由 `title` 交代。
+        -->
+        <button
+          class="out"
+          :aria-label="`主题：${THEME_LABEL[themeChoice]}，点击切换`"
+          :title="`主题：${THEME_LABEL[themeChoice]}（点击切换）`"
+          @click="cycleTheme"
+        >
+          <AppIcon class="nav-icon" :path="THEME_ICON[themeChoice]" />
+          <span class="nav-label">{{ THEME_LABEL[themeChoice] }}</span>
+        </button>
         <button class="out" aria-label="清除令牌" title="清除令牌" @click="signOut">
           <AppIcon class="nav-icon" :path="SIGN_OUT" />
           <span class="nav-label">清除令牌</span>

@@ -5,8 +5,11 @@
  * 一套额外的 API，以及调整间距需先查阅其主题变量文档。而面板须能在 Termux 的
  * 手机浏览器中打开，该代价不成比例。
  *
- * 深浅色由 prefers-color-scheme 自动切换，不提供手动开关：使用者的系统偏好
- * 已表达过一次选择，再次询问是多余的。
+ * 深浅色由 `<html data-theme>` 决定，取值只有 `light` / `dark`。「跟随系统」是
+ * theme.ts 的三态之一，它在写这个属性之前就已解析成两值 —— 故本文件不出现
+ * `prefers-color-scheme`：同一件事只该有一个判据，两个判据必然在某个组合下打架
+ * （已选浅色而系统偏好深色时，媒体查询那一支仍会命中）。首帧的属性由 index.html
+ * 的内联脚本写下。
  *
  * **移动优先。** 基础规则面向窄屏，`min-width` 断点向上增强。面板的实际使用场景
  * 包含手机浏览器（Termux 部署尤为常见），以桌面布局为基准再向下压缩，会使窄屏
@@ -18,10 +21,15 @@
  *   1) **颜色一律经令牌取用**，不写字面值。例外仅两处：遮罩的 rgba、二维码的白底。
  *   2) **圆角只有三档**：卡片 `--r-card`、控件 `--r-ctl`、药丸与徽标 `--r-pill`。
  *      不出现第四种。
- *   3) **层次靠色阶不靠阴影**：底 → 面 → 面·浮起 三级，配 1px 描边。全站不用投影，
- *      唯一例外是抽屉与模态的遮罩。
- *   4) **过渡只有两档时长**（`--dur-1` / `--dur-2`），且只过渡 transform、opacity、
- *      color、background-color、border-color —— 不过渡 width/height/top/left。
+ *   3) **层次靠色阶不靠阴影**：底 → 面 → 面·浮起 三级，配 1px 描边。**在页面平面之内的
+ *      东西一律不用投影** —— 卡片、输入框、徽标、页签一概只有描边与色阶。投影只留给
+ *      那些真的离开了页面的：抓在手里的那一格（`.witem.dragging`）、悬浮的下拉菜单
+ *      （`.menu-list`）、模态与抽屉的遮罩。判据是「它是否浮在别的内容之上」，
+ *      而不是「加一点阴影是否好看」。
+ *   4) **过渡三档时长**（`--dur-1` 控件变色 / `--dur-2` 一般位移 / `--dur-3` 大面积表面），
+ *      且只过渡 transform、opacity、color、background-color、border-color 与
+ *      `stroke-dasharray`（环的进度）—— **不过渡 width / height / top / left**：
+ *      那几样逐帧触发重排，在手机浏览器上表现为动一下卡一下。
  */
 
 /*
@@ -161,7 +169,7 @@
   --content-max: 1240px;
   --gutter: var(--s3);
 
-  color-scheme: light dark;
+  color-scheme: light;
 }
 
 /*
@@ -169,27 +177,30 @@
  *
  * 层级关系在两种模式下必须一致 —— 浅色下主按钮显眼，深色下同样显眼。
  * 深色模式的主按钮是**深字压金底**：金底配白字必然不过对比度。
+ *
+ * 判据是 `<html data-theme="dark">`，不是 `prefers-color-scheme`（见文件头）。
  */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #101216;
-    --panel: #16191f;
-    --raise: #1c2027;
-    --border: #272c35;
-    --border-strong: #333a45;
-    --text: #e6e8ee;
-    --muted: #9aa3b2;
+:root[data-theme="dark"] {
+  --bg: #101216;
+  --panel: #16191f;
+  --raise: #1c2027;
+  --border: #272c35;
+  --border-strong: #333a45;
+  --text: #e6e8ee;
+  --muted: #9aa3b2;
 
-    --accent: #f0d8a8;
-    --accent-solid: #d3bc8e;
-    --on-accent: #2a2110;
+  --accent: #f0d8a8;
+  --accent-solid: #d3bc8e;
+  --on-accent: #2a2110;
 
-    --info: #7aa2f7;
-    --ok: #4fbf7f;
-    --warn: #e0a94a;
-    --err: #e0665f;
-    --code-bg: #0d0f13;
-  }
+  --info: #7aa2f7;
+  --ok: #4fbf7f;
+  --warn: #e0a94a;
+  --err: #e0665f;
+  --code-bg: #0d0f13;
+
+  /* 原生控件（滚动条、日期选择器、表单元件）跟着一起翻 */
+  color-scheme: dark;
 }
 
 /* ─────────────── 基础 ─────────────── */
@@ -607,61 +618,121 @@ h3 {
 }
 
 /*
- * 宽屏增强：侧栏由贴边改为内嵌圆角面板
+ * 宽屏增强：侧栏贴左边占满整屏高，内容区自己滚
  *
- * 侧栏与内容区同为浮起于页面底色之上的两块，四周留出间距。贴边栏在宽屏下会与
- * 浏览器边缘连成一片，读不出「这是一块可折叠的导航」。
+ * **只有内容区滚，侧栏与它的品牌区都不动。** 三条互相牵连的规则，缺一条就退化：
+ *   1) `.shell` 定高一屏且 `overflow: hidden` —— 否则页面（window）仍会滚，
+ *      两个滚动条同时存在，滚轮落在哪个上取决于指针位置。
+ *   2) `.main` 自己是滚动容器。它一旦成立，**`window.scrollBy` 就不再有效** ——
+ *      拖动卡片到边缘的自动滚动因此要找真正在滚的那个祖先（见 GridBoard.vue 的
+ *      `scrollHostOf`）。
+ *   3) 侧栏内部三段：品牌区与底部区定高不动，**只有 `.nav` 滚**。品牌区若一起滚，
+ *      导航长一点就把「Yunzai NG + 版本」推出视野，而那是使用者确认自己连的是哪个
+ *      实例的唯一位置。
+ *
+ * 贴边而非内嵌圆角面板：满高的一条边栏与内容区之间只需一道 1px 分界，四周再留白
+ * 会让「占满」这件事看起来像没对齐。
  */
 @media (min-width: 860px) {
   .shell {
     grid-template-columns: var(--side-now) 1fr;
-    gap: var(--s4);
-    padding: var(--s6) var(--s6);
+    gap: 0;
+    padding: 0;
+    /* 一屏高、自身不滚：滚动交给 `.main` 与 `.nav` 两处，见本段开头 */
+    height: 100dvh;
+    overflow: hidden;
   }
 
   /*
    * 顶栏在宽屏整条隐去
    *
    * 品牌、版本徽标与清除令牌都已移入侧栏，顶栏因此只剩一条空白横条与一个在宽屏无意义的
-   * 抽屉开关。隐去后 shell 的第一行塌为零高，**上方内边距须由 shell 自己给出**
-   * （上一条规则的 `var(--s6)`），否则内容顶到浏览器边缘。
+   * 抽屉开关。隐去后 shell 的第一行塌为零高，上下留白改由 `.main` 自己的内边距给出。
    */
   .topbar {
     display: none;
   }
 
   /*
-   * 侧栏随页面粘住
+   * 侧栏：贴左边、满高、自身不滚
    *
-   * 顶栏隐去后，滚动时不再有任何常驻元素；侧栏高度为 `fit-content`，若不粘住则长页面
-   * 滚到一半后导航已不在视野内。`max-height` 留出上下各一个 `--s6`，内部自行滚动。
+   * `position: static` 回到栅格里（窄屏那份是 `fixed` 抽屉）。`min-height: 0` 是
+   * flex 子项能收缩的前提 —— 缺了它 `.nav` 的 `overflow-y` 不生效，长导航会把底部区
+   * 顶出屏幕。
    */
   .side {
-    position: sticky;
-    top: var(--s6);
+    position: static;
     grid-column: 1;
-    grid-row: 2;
+    grid-row: 1 / -1;
     width: auto;
-    height: fit-content;
-    max-height: calc(100dvh - var(--s8));
+    height: 100%;
+    min-height: 0;
+    max-height: none;
     z-index: auto;
     transform: none;
     transition: none;
-    padding: var(--s3) 0;
+    padding: var(--s4) 0 var(--s3);
     background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: var(--r-card);
+    border: none;
+    border-right: 1px solid var(--border);
+    border-radius: 0;
+    overflow: hidden;
   }
 
-  /* 内嵌面板的第一项与最后一项不贴圆角 */
+  /* 品牌区固定在顶：不参与收缩，也不随导航滚动 */
+  .side-brand {
+    flex: none;
+  }
+
+  /*
+   * 只有导航滚
+   *
+   * `min-height: 0` 同上；`overscroll-behavior: contain` 使导航滚到尽头时不把滚动
+   * 传给内容区 —— 否则在侧栏上继续滑会让右边的正文跟着动。
+   */
+  .nav {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* 底部区固定在底：`margin-top: auto` 已由 `.nav` 的 flex-grow 接管 */
+  .side-foot {
+    flex: none;
+    margin-top: 0;
+  }
+
   .side .nav-group:first-child {
     margin-top: 0;
   }
 
+  /*
+   * 内容区自己滚，四周留白由它自己给
+   *
+   * `overscroll-behavior: contain` 挡掉滚到尽头后浏览器的整页回弹（Chrome 会把它
+   * 变成前进 / 后退手势）。`max-width` 撤到内层：`.main` 本身要占满右侧那一栏，
+   * 否则它不是滚动容器的全宽，滚动条与内容之间会空出一条。
+   */
   .main {
     grid-column: 2;
-    grid-row: 2;
-    padding: 0 0 var(--s8);
+    grid-row: 1 / -1;
+    max-width: none;
+    padding: var(--s6) var(--s6) var(--s8);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /*
+   * 正文宽度上限落在视图的根元素上
+   *
+   * 各视图的模板都只有一个根节点（`<Transition>` 自身不产生元素），故 `.main > *`
+   * 命中的正是那一个。这一手把「一行文字不许拉到两千像素」与「滚动容器占满整栏」
+   * 两件事分开 —— 合在 `.main` 上时两者必有一件落空。
+   */
+  .main > * {
+    max-width: var(--content-max);
+    margin-inline: auto;
   }
 
   /* 折叠开关只在宽屏出现：窄屏的侧栏是抽屉，折成窄条没有意义 */
@@ -732,11 +803,16 @@ h3 {
   }
 }
 
-/* 超宽屏：内容区居中，不把一行文字拉到两千像素 */
+/*
+ * 超宽屏
+ *
+ * 内容居中已由 `.main > *` 的 `margin-inline: auto` 办到，故此处**不再改栅格**：
+ * 把整个 shell 居中会让满高的侧栏离开左边缘，与「贴边占满」冲突。
+ * 留白随屏宽长一档，免得两千像素宽的屏上正文紧贴着侧栏。
+ */
 @media (min-width: 1440px) {
-  .shell {
-    grid-template-columns: var(--side-now) minmax(0, var(--content-max));
-    justify-content: center;
+  .main {
+    padding-inline: var(--s7);
   }
 }
 
@@ -3583,16 +3659,14 @@ button.danger.solid:hover:not(:disabled) {
   color: #fff;
 }
 
-@media (prefers-color-scheme: dark) {
-  button.danger.solid {
-    color: #2a1110;
-  }
+:root[data-theme="dark"] button.danger.solid {
+  color: #2a1110;
+}
 
-  button.danger.solid:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--err) 85%, #fff);
-    border-color: color-mix(in srgb, var(--err) 85%, #fff);
-    color: #2a1110;
-  }
+:root[data-theme="dark"] button.danger.solid:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--err) 85%, #fff);
+  border-color: color-mix(in srgb, var(--err) 85%, #fff);
+  color: #2a1110;
 }
 
 /*

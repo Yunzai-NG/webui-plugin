@@ -38,18 +38,59 @@ interface DocLink {
   readonly path: string
 }
 
-/** 文档入口，顺序即建议的阅读顺序 */
-const DOCS: readonly DocLink[] = [
-  { title: "快速开始", desc: "环境要求、构建、初始化目录与启动", path: "getting-started" },
-  { title: "官方插件", desc: "适配器、渲染器与游戏插件的安装与接入", path: "official-plugins" },
-  { title: "配置与面板", desc: "内核配置逐项说明，与本面板的配置页对应", path: "config" },
-  { title: "插件开发", desc: "插件上下文、命令声明、渲染与存储接口", path: "plugin-api" },
-  { title: "适配器开发", desc: "统一事件模型与适配器接口的实现要求", path: "adapter" },
-  { title: "渲染与模板", desc: "渲染器接口、模板根与资源根的约定", path: "renderer" },
-  { title: "插件市场", desc: "索引文件格式、镜像与自建索引的方式", path: "market" },
-  { title: "框架说明", desc: "分层约束、事件管线与各子系统职责", path: "architecture" },
-  { title: "从 Miao-Yunzai 迁移", desc: "自旧版 Yunzai 迁移的差异与对应关系", path: "migration" },
-  { title: "性能基线", desc: "内存与吞吐实测数据，以及低内存设备的调整项", path: "perf" }
+/** 一组文档，分组与组内顺序均照文档站的侧边栏 */
+interface DocGroup {
+  /** 组名，与文档站侧边栏的分组标题一致 */
+  readonly title: string
+  /** 该组的条目 */
+  readonly docs: readonly DocLink[]
+}
+
+/**
+ * 文档入口
+ *
+ * **分组与顺序照抄文档站的侧边栏**（`docs/.vitepress/config.mts` 的 `sidebar`）：
+ * 平铺一列时「官方插件」那六页会把另外十条挤没，而使用者是按侧边栏的结构记路的。
+ * 文档站加页时此处一并加 —— 两处不同步的表现是面板里查不到一篇已经存在的文档。
+ */
+const DOC_GROUPS: readonly DocGroup[] = [
+  {
+    title: "入门",
+    docs: [
+      { title: "快速开始", desc: "环境要求、构建、初始化目录与启动", path: "getting-started" },
+      { title: "配置与面板", desc: "内核配置逐项说明，与本面板的配置页对应", path: "config" }
+    ]
+  },
+  {
+    title: "官方插件",
+    docs: [
+      { title: "一览与两个市场", desc: "官方插件有哪些、各自装在哪个市场", path: "official-plugins" },
+      { title: "webui（面板）", desc: "本面板自身：八个页面、面板插件的宿主与商店", path: "plugins/webui" },
+      { title: "adapter-napcat（QQ）", desc: "经 NapCat 接入 QQ 的适配器", path: "plugins/adapter-napcat" },
+      { title: "renderer-puppeteer（出图）", desc: "无头浏览器渲染器，模板转图片", path: "plugins/renderer-puppeteer" },
+      { title: "hardware（硬件监控）", desc: "概览页的硬件组件与本包的 node 侧采样", path: "plugins/hardware" },
+      { title: "webui-example（示例）", desc: "面板插件示例包，照抄它比从零拼快", path: "plugins/webui-example" },
+      { title: "mhy-game（米游社）", desc: "米游社相关命令与签到", path: "plugins/mhy-game" }
+    ]
+  },
+  {
+    title: "开发",
+    docs: [
+      { title: "插件开发", desc: "插件上下文、命令声明、渲染与存储接口", path: "plugin-api" },
+      { title: "面板插件", desc: "往面板加组件与页签：形态、配置、样式与商店", path: "panel-plugin" },
+      { title: "适配器开发", desc: "统一事件模型与适配器接口的实现要求", path: "adapter" },
+      { title: "渲染与模板", desc: "渲染器接口、模板根与资源根的约定", path: "renderer" },
+      { title: "插件市场", desc: "索引文件格式、镜像与自建索引的方式", path: "market" }
+    ]
+  },
+  {
+    title: "参考",
+    docs: [
+      { title: "框架说明", desc: "分层约束、事件管线与各子系统职责", path: "architecture" },
+      { title: "从 Miao-Yunzai 迁移", desc: "自旧版 Yunzai 迁移的差异与对应关系", path: "migration" },
+      { title: "性能基线", desc: "内存与吞吐实测数据，以及低内存设备的调整项", path: "perf" }
+    ]
+  }
 ]
 
 const commands = ref<CommandItem[]>([])
@@ -143,12 +184,16 @@ onMounted(() => void load())
 
     <div class="card">
       <h2>文档</h2>
-      <ul class="plain">
-        <li v-for="doc in DOCS" :key="doc.path">
-          <a :href="`${DOCS_SITE}/${doc.path}`" target="_blank" rel="noreferrer noopener">{{ doc.title }}</a>
-          <span class="hint">{{ doc.desc }}</span>
-        </li>
-      </ul>
+      <!-- 分组照文档站的侧边栏：使用者按那个结构记路，见 DOC_GROUPS 的注释 -->
+      <template v-for="group in DOC_GROUPS" :key="group.title">
+        <h3>{{ group.title }}</h3>
+        <ul class="plain">
+          <li v-for="doc in group.docs" :key="doc.path">
+            <a :href="`${DOCS_SITE}/${doc.path}`" target="_blank" rel="noreferrer noopener">{{ doc.title }}</a>
+            <span class="hint">{{ doc.desc }}</span>
+          </li>
+        </ul>
+      </template>
       <p class="hint">文档已独立成站，不随框架分发。以上链接指向在线文档。</p>
     </div>
 

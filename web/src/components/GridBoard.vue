@@ -88,6 +88,13 @@ interface Drag {
    * 还有多远」—— 页面一滚，同一个 `dy` 对应的视口位置就变了。故另记一份。
    */
   pointerY: number
+  /**
+   * 起手时认定的滚动容器
+   *
+   * 起手时定一次而非每帧现找：拖动期间布局不变，而每帧沿 DOM 向上跑一遍
+   * `getComputedStyle` 是白花的开销。宽屏是 `.main`、窄屏是页面，见 `scrollHostOf`。
+   */
+  scrollHost: Element | Window
   /** 一列宽，起手时量一次 —— 拖动期间不会有人改窗口宽度 */
   colW: number
   /** 一行高 */
@@ -226,6 +233,7 @@ function begin(event: PointerEvent, slot: Slot, mode: "move" | "size"): void {
     dx: 0,
     dy: 0,
     pointerY: event.clientY,
+    scrollHost: scrollHostOf(box),
     gap,
     rowH: Number.parseFloat(style.getPropertyValue("--grid-row")) || ROW_FALLBACK,
     colW: (box.clientWidth - gap * (COLUMNS - 1)) / COLUMNS
@@ -245,13 +253,57 @@ function begin(event: PointerEvent, slot: Slot, mode: "move" | "size"): void {
 let edgeTimer: number | undefined
 
 /**
+ * 找到真正在滚的那个祖先
+ *
+ * **不能写死 window。** 宽屏下滚动容器是 `.main`（见 styles.css 的
+ * `min-width: 860px` 一段），此时 `window.scrollBy` 什么都不做 —— 表现为拖着卡片
+ * 顶到屏幕下沿，页面不动，够不到下面的行。窄屏下滚的仍是页面，故两种都要认。
+ *
+ * 逐级向上找第一个「能滚且溢出」的祖先，找不到就回退到页面。
+ * @param from 自哪个元素起向上找
+ * @returns 滚动容器；页面本身在滚时给 window
+ */
+function scrollHostOf(from: Element | undefined): Element | Window {
+  let at: Element | null = from ?? null
+  while (at !== null && at !== document.body) {
+    const overflow = getComputedStyle(at).overflowY
+    if ((overflow === "auto" || overflow === "scroll") && at.scrollHeight > at.clientHeight) return at
+    at = at.parentElement
+  }
+  return window
+}
+
+/**
+ * 滚动容器当前的纵向滚动量
+ * @param host 滚动容器
+ * @returns 滚动量（px）
+ */
+function scrollTopOf(host: Element | Window): number {
+  return host instanceof Window ? host.scrollY : host.scrollTop
+}
+
+/**
+ * 滚动容器在视口里的上下边界
+ *
+ * 边缘带要按**容器**的边界算，不按视口：宽屏下 `.main` 有上内边距，按视口算会让
+ * 边缘带落在侧栏与顶部留白上，指针还没挨到内容的边就开始滚。
+ * @param host 滚动容器
+ * @returns 上下边界的视口坐标
+ */
+function boundsOf(host: Element | Window): { top: number; bottom: number } {
+  if (host instanceof Window) return { top: 0, bottom: window.innerHeight }
+  const box = host.getBoundingClientRect()
+  return { top: box.top, bottom: box.bottom }
+}
+
+/**
  * 一帧的边缘滚动
  *
- * **滚动量要回填到 `fromY` 上。** 位移是 `clientY - fromY`，而页面滚过之后，同一个
+ * **滚动量要回填到 `fromY` 上。** 位移是 `clientY - fromY`，而容器滚过之后，同一个
  * `clientY` 对应的栅格位置已经往上移了 —— 不回填则被拖的那一格会脱离指针往上飘，
  * 且落点算的是滚动前的行。把 `fromY` 减去实际滚动量，位移便自然含进这一段。
  *
- * 取**实际**滚动量而非请求量：滚到文档尽头时 `scrollBy` 什么都不做，此时若按请求量回填，
+ * 取**实际**滚动量而非请求量：滚到尽头时 `scrollBy` 什么都不做，此时若按请求量回填，
  * 那一格会随每一帧持续下移，而页面一动不动。
  */
 function edgeStep(): void {
@@ -261,16 +313,18 @@ function edgeStep(): void {
     return
   }
 
-  const top = now.pointerY - EDGE
-  const bottom = now.pointerY - (window.innerHeight - EDGE)
+  const host = now.scrollHost
+  const edges = boundsOf(host)
+  const top = now.pointerY - (edges.top + EDGE)
+  const bottom = now.pointerY - (edges.bottom - EDGE)
   // 两侧都没进入边缘带：这一帧不滚，但循环留着 —— 指针随时会再挨过去
   const push = top < 0 ? top : bottom > 0 ? bottom : 0
   if (push !== 0) {
     // 越靠边越快，至多 EDGE_SPEED：恒速会让刚碰到边缘就窜出一大段
     const ratio = Math.min(1, Math.abs(push) / EDGE)
-    const before = window.scrollY
-    window.scrollBy({ top: Math.sign(push) * EDGE_SPEED * ratio })
-    now.fromY -= window.scrollY - before
+    const before = scrollTopOf(host)
+    host.scrollBy({ top: Math.sign(push) * EDGE_SPEED * ratio })
+    now.fromY -= scrollTopOf(host) - before
     now.dy = now.pointerY - now.fromY
   }
   edgeTimer = requestAnimationFrame(edgeStep)

@@ -13,6 +13,7 @@ import { createApp } from "vue"
 import App from "./App.vue"
 import { loadPanelPlugins } from "./panelload.js"
 import { installTabScroll } from "./tabscroll.js"
+import { initTheme } from "./theme.js"
 import "./widgets/overview.js"
 import "./styles.css"
 
@@ -52,6 +53,13 @@ async function atMost(task: Promise<void>): Promise<void> {
  * @returns 无
  */
 async function boot(): Promise<void> {
+  /*
+   * 主题先接上：只是读一次 localStorage 与挂一个 matchMedia 监听，不发请求
+   *
+   * 放在等插件之前 —— 那一步最多要等 3 秒，而首帧的深浅由 index.html 的内联脚本
+   * 定下，此处接手后续的「跟随系统」变化。
+   */
+  initTheme()
   await atMost(loadPanelPlugins())
   /*
    * 页签条的滚轮转横滚，装在挂载之前

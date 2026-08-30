@@ -8,6 +8,27 @@
          图标与字体均为本包内的文件，随 dist/web 一并分发，零外部请求。 -->
     <link rel="icon" type="image/svg+xml" href="/icon-square.svg" />
     <title>Yunzai NG 面板</title>
+    <!--
+      首帧的深浅由这一小段定下，不能等到 main.ts
+
+      令牌只认 `<html data-theme>`（见 styles.css），而模块脚本要等下载与解析 ——
+      在此之前那个属性还没写上，深色偏好的使用者会先看到一帧浅色再跳成深色。
+      故此处同步写一次，随后由 theme.ts 接手「跟随系统」的后续变化。
+
+      键名与取值必须与 theme.ts 的 THEME_KEY / ThemeChoice 一致；读坏了就当跟随系统，
+      不让这一项拦住面板打开。
+    -->
+    <script>
+      try {
+        var saved = localStorage.getItem("yunzai-ng.theme")
+        var dark =
+          saved === "dark" ||
+          (saved !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches)
+        document.documentElement.dataset.theme = dark ? "dark" : "light"
+      } catch (err) {
+        document.documentElement.dataset.theme = "light"
+      }
+    </script>
   </head>
   <body>
     <div id="app"></div>
