@@ -16,7 +16,7 @@
  */
 import { existsSync } from "node:fs"
 import { join } from "node:path"
-import type { HttpClient } from "@yunzai-ng/types"
+import type { HttpClient, PluginDefinition } from "@yunzai-ng/types"
 import { CORE_CONFIG_NAME, definePlugin, parseDuration, parseYaml } from "@yunzai-ng/core"
 import { readCoreSettings } from "./coreconfig.js"
 import { PanelConfigStore, configKeyOf } from "./panelconfig.js"
@@ -473,7 +473,15 @@ export async function mountPanelPlugins(ctx: PanelHost, webuiRoot: string): Prom
   return mounted
 }
 
-export default definePlugin({
+/**
+ * 插件定义
+ *
+ * 显式标注类型而非直接 `export default definePlugin(...)`：返回类型 `PluginDefinition` 声明在
+ * `@yunzai-ng/types` 内，而插件在使用者主目录里就地构建时，该包的真实路径落在宿主的
+ * `node_modules/.pnpm/` 之下 —— tsc 生成 .d.ts 时无从以可移植的方式指称它，报 TS2742。
+ * 标注后 .d.ts 直接写下这个名字，与宿主的安装布局无关。
+ */
+const plugin: PluginDefinition<WebuiConfig> = definePlugin({
   name: "webui",
 
   /** webui 自己的配置项：只有商店那三项。镜像前缀与只读开关读内核的，见 `storeconfig.ts` */
@@ -501,3 +509,5 @@ export default definePlugin({
     }
   }
 })
+
+export default plugin
