@@ -89,6 +89,13 @@ export const ROUTES: readonly RouteDef[] = [
     label: "帮助",
     group: "设置",
     icon: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M9.4 9.3a2.7 2.7 0 0 1 5.2 1c0 1.7-2.6 2.1-2.6 3.9M12 17.2h.01"
+  },
+  // 外观：调色板 + 滑块，读作「自定义界面」
+  {
+    id: "appearance",
+    label: "外观",
+    group: "设置",
+    icon: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M12 7v5l3 3"
   }
 ]
 

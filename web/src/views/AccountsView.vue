@@ -41,6 +41,10 @@ const draftLabel = ref("")
 const draftIssues = ref<readonly SchemaIssue[]>([])
 /** 用户为当前提问填写的答案 */
 const answers = ref<Record<string, string>>({})
+/** 适配器下拉是否展开 */
+const adapterDropdownOpen = ref(false)
+/** 适配器下拉悬停索引 */
+const adapterDropdownHover = ref(-1)
 
 let timer: number | undefined
 
@@ -410,12 +414,15 @@ onUnmounted(() => {
               <p v-if="item.error" class="err">{{ item.error }}</p>
             </td>
             <td data-label="启用">
-              <input
-                type="checkbox"
-                :checked="item.record.enabled"
-                :disabled="busy === item.record.id"
-                @change="void toggleEnabled(item)"
-              />
+              <label class="check">
+                <input
+                  type="checkbox"
+                  :checked="item.record.enabled"
+                  :disabled="busy === item.record.id"
+                  @change="void toggleEnabled(item)"
+                />
+                <span class="checkmark"></span>
+              </label>
             </td>
             <td data-label="操作">
               <div class="row">
@@ -451,11 +458,37 @@ onUnmounted(() => {
     <h2>添加账号</h2>
     <div class="card">
       <div class="field">
-        <label for="adapter">适配器</label>
-        <select id="adapter" v-model="draftAdapter">
-          <option value="">请选择</option>
-          <option v-for="a in adapters" :key="a.id" :value="a.id">{{ a.name }}（{{ a.platform }}）</option>
-        </select>
+        <label>适配器</label>
+        <div class="cdd" :class="{ open: adapterDropdownOpen }">
+          <button
+            type="button"
+            class="cdd-trigger"
+            :aria-expanded="String(adapterDropdownOpen)"
+            @click="adapterDropdownOpen = !adapterDropdownOpen"
+          >
+            <span class="cdd-value">{{ draftAdapter ? adapters.find(a => a.id === draftAdapter)?.name ?? draftAdapter : '请选择' }}</span>
+            <svg class="cdd-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
+          <Transition name="cdd-fx">
+            <div v-if="adapterDropdownOpen" class="cdd-menu" role="listbox">
+              <button
+                v-for="(a, idx) in adapters"
+                :key="a.id"
+                type="button"
+                role="option"
+                :aria-selected="String(a.id) === String(draftAdapter) ? 'true' : 'false'"
+                :class="{ active: a.id === draftAdapter, hover: idx === adapterDropdownHover }"
+                @click="draftAdapter = a.id; adapterDropdownOpen = false"
+                @mouseenter="adapterDropdownHover = idx"
+                @mouseleave="adapterDropdownHover = -1"
+              >
+                {{ a.name }}（{{ a.platform }}）
+              </button>
+            </div>
+          </Transition>
+        </div>
         <p v-if="draft?.description" class="hint">{{ draft.description }}</p>
       </div>
 

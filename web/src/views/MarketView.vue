@@ -276,10 +276,13 @@ onMounted(() => void load())
       </button>
     </div>
 
+    <Transition name="tab" mode="out-in">
+    <div :key="tab">
     <div class="toolbar">
       <input v-model="keyword" type="search" placeholder="按名称、说明或标签筛选" aria-label="筛选插件" />
       <label class="check">
         <input v-model="onlyOfficial" type="checkbox" />
+        <span class="checkmark"></span>
         仅官方维护
       </label>
     </div>
@@ -357,5 +360,7 @@ onMounted(() => void load())
     <p v-if="snapshot && visible.length === 0" class="hint">
       没有符合条件的条目。索引本身共 {{ items.length }} 个插件。
     </p>
+    </div>
+    </Transition>
   </div>
 </template>

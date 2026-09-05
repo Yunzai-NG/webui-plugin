@@ -262,6 +262,8 @@ onMounted(() => void load())
       </button>
     </div>
 
+    <Transition name="tab" mode="out-in">
+    <div :key="tab">
     <div class="toolbar">
       <input v-model="keyword" type="search" placeholder="按名称、说明或分类筛选" aria-label="筛选面板插件" />
       <!--
@@ -341,5 +343,7 @@ onMounted(() => void load())
       商店只装「包」形态（一个目录 + <code>index.js</code> + <code>package.json</code>）——
       单文件的 <code>.js</code> 手放仍可用，但它的版本号 node 侧读不到，无从判断该不该更新。
     </p>
+    </div>
+    </Transition>
   </div>
 </template>

@@ -21,7 +21,7 @@
  *          **下拉与分段回传枚举项的原值。** 原生 `<select>` 的 value 恒为字符串，直接回传会把数值项
  *          写成 `"3001"`、写入时校验失败，故按字符串形态反查候选项、回传其声明时的原值。
  */
-import { computed, nextTick, ref, watch } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import AppIcon from "./AppIcon.vue"
 import { CRON_FIELDS, explodeCron, joinCron, previewCron } from "../cron.js"
 import { describePattern, lengthLimitOf, rangeTextOf } from "../field.js"
@@ -180,8 +180,8 @@ const options = computed<readonly SchemaEnumItem[]>(() => props.schema.enum ?? [
 /**
  * 枚举是否改用分段单选
  *
- * 候选不超过四项、且每项文案不超过六字时才分段：候选一多分段就窄到读不出文案，
- * 「内嵌 LevelDB」一类的长文案在 260px 里并排四项每项只剩十几像素。其余情形用下拉。
+ * 候选不超过四項、且每項文案不超過六字時才分段：候選一多分段就窄到讀不出文案，
+ * 「內嵌 LevelDB」一類的長文案在 260px 裡並排四項每項只剩十幾像素。其餘情形用下拉。
  */
 const segmented = computed(
   () =>
@@ -191,8 +191,130 @@ const segmented = computed(
     options.value.every(item => (item.label ?? String(item.value)).length <= 6)
 )
 
-/** 分段单选由 role=radiogroup 承载标签，故标签不能是 label 元素 */
+/** 分段單選由 role=radiogroup 承載標籤，故標籤不能是 label 元素 */
 const labelId = computed(() => `${props.path}__label`)
+
+/* ─────────────── 自定義下拉組件 ─────────────── */
+
+/** 下拉菜單是否展開 */
+const dropdownOpen = ref(false)
+
+/** 當前懸停的選項索引，用於鍵盤導航高亮 */
+const dropdownHoverIndex = ref(-1)
+
+/** 下拉觸發器元素，供定位與焦點管理使用 */
+const dropdownTriggerRef = ref<HTMLButtonElement | undefined>(undefined)
+
+/** 下拉菜單元素，供判斷點擊是否在菜單內 */
+const dropdownMenuRef = ref<HTMLDivElement | undefined>(undefined)
+
+/** 下拉菜單是否向上翻轉（底部空間不足時） */
+const dropdownFlipUp = ref(false)
+
+/**
+ * 切換下拉菜單的展開狀態
+ *
+ * 展開時將當前選中項置為懸停索引，失焦時重置。
+ * 展開時檢測底部空間，不足且頂部有足夠空間時向上翻轉。
+ */
+function toggleDropdown(): void {
+  if (locked.value) return
+  dropdownOpen.value = !dropdownOpen.value
+  if (dropdownOpen.value) {
+    // 展開時定位到當前選中項
+    const currentIndex = options.value.findIndex(item => String(item.value) === String(props.value))
+    dropdownHoverIndex.value = currentIndex >= 0 ? currentIndex : 0
+    void nextTick(() => {
+      if (dropdownTriggerRef.value && dropdownMenuRef.value) {
+        const triggerRect = dropdownTriggerRef.value.getBoundingClientRect()
+        const spaceBelow = window.innerHeight - triggerRect.bottom
+        const menuHeight = dropdownMenuRef.value.offsetHeight
+        dropdownFlipUp.value = spaceBelow < menuHeight && triggerRect.top > menuHeight
+      }
+      dropdownMenuRef.value?.focus()
+    })
+  } else {
+    dropdownHoverIndex.value = -1
+    dropdownFlipUp.value = false
+  }
+}
+
+/** 關閉下拉菜單 */
+function closeDropdown(): void {
+  dropdownOpen.value = false
+  dropdownHoverIndex.value = -1
+}
+
+/** 選中某個選項 */
+function selectDropdownItem(item: SchemaEnumItem): void {
+  setEnum(String(item.value))
+  closeDropdown()
+  // 將焦點返回給觸發器，保持鍵盤可操作性
+  void nextTick(() => dropdownTriggerRef.value?.focus())
+}
+
+/** 下拉菜單的鍵盤導航 */
+function handleDropdownKeydown(event: KeyboardEvent): void {
+  if (!dropdownOpen.value) {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Enter" || event.key === " ") {
+      event.preventDefault()
+      toggleDropdown()
+    }
+    return
+  }
+
+  switch (event.key) {
+    case "ArrowDown":
+      event.preventDefault()
+      dropdownHoverIndex.value = (dropdownHoverIndex.value + 1) % options.value.length
+      break
+    case "ArrowUp":
+      event.preventDefault()
+      dropdownHoverIndex.value = (dropdownHoverIndex.value - 1 + options.value.length) % options.value.length
+      break
+    case "Enter":
+    case " ":
+      event.preventDefault()
+      if (dropdownHoverIndex.value >= 0 && dropdownHoverIndex.value < options.value.length) {
+        selectDropdownItem(options.value[dropdownHoverIndex.value])
+      }
+      break
+    case "Escape":
+      event.preventDefault()
+      closeDropdown()
+      void nextTick(() => dropdownTriggerRef.value?.focus())
+      break
+    case "Home":
+      event.preventDefault()
+      dropdownHoverIndex.value = 0
+      break
+    case "End":
+      event.preventDefault()
+      dropdownHoverIndex.value = options.value.length - 1
+      break
+  }
+}
+
+/** 點擊外部關閉下拉菜單 */
+function handleOutsideClick(event: MouseEvent): void {
+  if (!dropdownOpen.value) return
+  const target = event.target as Node
+  if (
+    dropdownTriggerRef.value?.contains(target) ||
+    dropdownMenuRef.value?.contains(target)
+  ) {
+    return
+  }
+  closeDropdown()
+}
+
+onMounted(() => {
+  document.addEventListener("click", handleOutsideClick, true)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener("click", handleOutsideClick, true)
+})
 
 /** 数组类控件的各项，一项一枚药丸 */
 const listItems = computed(() => (Array.isArray(props.value) ? props.value.map(v => String(v)) : []))
@@ -675,21 +797,62 @@ function setDuration(text: string, unit: string): void {
         </label>
       </div>
 
-      <select
+      <!--
+        自定义下拉：替代原生 <select>
+
+        原生 <select> 的选项背景色由操作系统渲染，无法通过 CSS 控制——悬停/选中一律是深灰色，
+        与玻璃拟态 UI 冲突。此处用 button + div 模拟下拉列表，完全控制样式。
+        键盘导航（上下箭头、Enter、Escape）与无障碍属性（role/aria）均保留。
+      -->
+      <div
         v-else-if="widget === 'select'"
-        :id="path"
-        :disabled="locked"
-        @change="setEnum(($event.target as HTMLSelectElement).value)"
+        class="cdd"
+        :class="{ open: dropdownOpen, locked: locked, 'flip-up': dropdownFlipUp }"
       >
-        <option
-          v-for="item in options"
-          :key="String(item.value)"
-          :value="String(item.value)"
-          :selected="String(item.value) === String(value)"
+        <button
+          ref="dropdownTriggerRef"
+          type="button"
+          :id="path"
+          :disabled="locked"
+          :aria-expanded="String(dropdownOpen)"
+          :aria-controls="`${path}__menu`"
+          :aria-labelledby="labelId"
+          class="cdd-trigger"
+          @click="toggleDropdown()"
+          @keydown="handleDropdownKeydown"
         >
-          {{ item.label ?? String(item.value) }}
-        </option>
-      </select>
+          <span class="cdd-value">{{ options.find(item => String(item.value) === String(value))?.label ?? String(value ?? '') }}</span>
+          <svg class="cdd-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+        <Transition name="cdd-fx">
+          <div
+            v-if="dropdownOpen"
+            ref="dropdownMenuRef"
+            :id="`${path}__menu`"
+            class="cdd-menu"
+            role="listbox"
+            tabindex="-1"
+            @keydown="handleDropdownKeydown"
+          >
+            <button
+              v-for="(item, idx) in options"
+              :key="String(item.value)"
+              type="button"
+              role="option"
+              :aria-selected="String(item.value) === String(value) ? 'true' : 'false'"
+              :class="{ active: String(item.value) === String(value), hover: idx === dropdownHoverIndex }"
+              :title="item.description"
+              @click="selectDropdownItem(item)"
+              @mouseenter="dropdownHoverIndex = idx"
+              @mouseleave="dropdownHoverIndex = -1"
+            >
+              {{ item.label ?? String(item.value) }}
+            </button>
+          </div>
+        </Transition>
+      </div>
 
       <!-- 时长：数值与单位分开，使用者不必记住 "30s" 这种写法 -->
       <div v-else-if="widget === 'duration' && dur !== undefined" class="dur">

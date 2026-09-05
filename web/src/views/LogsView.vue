@@ -349,7 +349,7 @@ onUnmounted(() => {
 
     <p v-if="error" class="banner">{{ error }}</p>
 
-    <div class="card">
+    <div class="card log-filter">
       <!--
         级别筛选：可勾选药丸，按级别着色
 
@@ -367,11 +367,12 @@ onUnmounted(() => {
       </div>
 
       <div class="row">
-        <input v-model="scope" placeholder="作用域，如 kernel / plugin" style="width: 220px" />
-        <input v-model="keyword" placeholder="关键字" style="width: 200px" @keyup.enter="void apply()" />
+        <input v-model="scope" placeholder="作用域，如 kernel / plugin" style="width: 200px" />
+        <input v-model="keyword" placeholder="关键字" style="width: 160px" @keyup.enter="void apply()" />
         <button class="primary" @click="void apply()">应用</button>
         <label class="check">
           <input v-model="live" type="checkbox" />
+          <span class="checkmark"></span>
           实时推送
         </label>
       </div>

@@ -38,10 +38,29 @@ import {
 } from "../grid.js"
 import { specsOf, widgetsOf } from "../registry.js"
 
-const props = defineProps<{
-  /** 页面标识，取 `ROUTES` 中的 id；组件由注册表按它筛出 */
-  page: string
+const props = withDefaults(
+  defineProps<{
+    /** 页面标识，取 `ROUTES` 中的 id；组件由注册表按它筛出 */
+    page: string
+    /** 是否处于编辑态；未传时由本组件自行管理 */
+    edit?: boolean
+  }>(),
+  { edit: undefined }
+)
+
+const emit = defineEmits<{
+  (e: "update:edit", value: boolean): void
 }>()
+
+/** 内部编辑态；当父组件通过 prop 传入时以此为准 */
+const localEdit = ref(false)
+const editModel = computed({
+  get: () => (props.edit !== undefined ? props.edit : localEdit.value),
+  set: (v: boolean) => {
+    if (props.edit !== undefined) emit("update:edit", v)
+    else localEdit.value = v
+  }
+})
 
 /** 窄屏阈值，与 styles.css 里那一处 `max-width` 同一个数 */
 const NARROW = 700
@@ -110,8 +129,6 @@ const host = ref<HTMLElement | undefined>(undefined)
 const media = window.matchMedia(`(max-width: ${NARROW}px)`)
 /** 是否窄屏单列 */
 const stacked = ref(media.matches)
-/** 是否处于编辑态 */
-const edit = ref(false)
 const drag = ref<Drag | undefined>(undefined)
 
 /**
@@ -221,7 +238,7 @@ const ghostStyle = computed<CSSProperties>(() => {
  */
 function begin(event: PointerEvent, slot: Slot, mode: "move" | "size"): void {
   const box = host.value
-  if (box === undefined || stacked.value || !edit.value) return
+  if (box === undefined || stacked.value || !editModel.value) return
   const style = getComputedStyle(box)
   const gap = Number.parseFloat(style.columnGap) || 0
   drag.value = {
@@ -442,7 +459,7 @@ async function reset(): Promise<void> {
 /** 记下窄屏与否；转入窄屏时退出编辑态 —— 窄屏下呈现的坐标不是落盘的那一套 */
 function onMedia(): void {
   stacked.value = media.matches
-  if (stacked.value) edit.value = false
+  if (stacked.value) editModel.value = false
 }
 
 onMounted(() => {
@@ -459,21 +476,18 @@ onUnmounted(() => {
 <template>
   <!-- 工具条整条只在宽屏出现：窄屏没有编辑态，一枚点不出结果的按钮比没有按钮更糟 -->
   <div v-if="!stacked && defs.size > 0" class="board-bar">
-    <p v-if="edit" class="hint">
+    <p v-if="editModel" class="hint">
       拖动组件调整位置，拖右下角调整大小。把手上按方向键可逐格微调，按住 Shift 则改大小。
     </p>
-    <button v-if="edit" type="button" @click="void reset()">恢复默认布局</button>
-    <button type="button" :class="{ primary: edit }" @click="edit = !edit">
-      {{ edit ? "完成" : "编辑组件" }}
-    </button>
+    <button v-if="editModel" type="button" @click="void reset()">恢复默认布局</button>
   </div>
 
-  <div v-if="edit && removed.length > 0" class="board-add">
+  <div v-if="editModel && removed.length > 0" class="board-add">
     <span class="hint">已移除：</span>
     <button v-for="def in removed" :key="def.id" type="button" @click="add(def.id)">＋ {{ def.title }}</button>
   </div>
 
-  <div ref="host" class="board" :class="{ stacked, editing: edit }">
+  <div ref="host" class="board" :class="{ stacked, editing: editModel, dragging: drag !== undefined }">
     <!--
       编辑态的背景网格：一批空格子，靠同一套栅格规则自然对齐列边界（理由见 gridCells）
 
@@ -481,7 +495,7 @@ onUnmounted(() => {
       两者同为栅格项、都不设 z-index 时由 DOM 顺序定叠放，写在后面会盖住卡片。
       窄屏不画：那时忽略 x/y/w 单列顺排，一张 12 列的网格与屏上所见毫无关系。
     -->
-    <template v-if="edit && !stacked">
+    <template v-if="editModel && !stacked">
       <div
         v-for="(at, i) in gridCells"
         :key="`g${i}`"
@@ -516,7 +530,7 @@ onUnmounted(() => {
           把手上不写可见的标题：一枚组件名药丸会压住计数块的数值，而那个词在格子里
           本就写着。组件名对读屏器由 `aria-label` 供给。
         -->
-        <template v-if="edit">
+        <template v-if="editModel">
           <button
             class="whandle"
             type="button"

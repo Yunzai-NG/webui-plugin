@@ -275,11 +275,12 @@ onMounted(() => void load())
       之下（见 `panelstyle.ts`），没有这个属性，作者写的样式在自己的页签里一条都不生效。
       栅格里的那一份由 `WidgetCell` 的外层带上。
     -->
-    <div v-if="activePluginTab" :data-panel="activePluginTab.pkg">
+    <Transition name="tab" mode="out-in">
+    <div v-if="activePluginTab" :key="activePluginTab.id" :data-panel="activePluginTab.pkg">
       <component :is="activePluginTab.component" :key="activePluginTab.id" />
     </div>
 
-    <template v-else>
+    <div v-else :key="pageTab">
       <!-- 「全部」下两类并列，故各带一个小标题；单看一类时标题与页签重复，故只在 all 出 -->
       <h2 v-if="pageTab === 'all'">核心插件（{{ plugins.length }}）</h2>
       <div v-if="pageTab !== 'panel'" class="grid plugins">
@@ -415,7 +416,8 @@ onMounted(() => void load())
         入口固定是包根的 <code>index.js</code>，自报信息写在它的 <code>package.json</code> 里。
         该目录会被「更新 webui」清空，请留一份备份。
       </p>
-    </template>
+    </div>
+    </Transition>
 
     <h2>定时任务（{{ tasks.length }}）</h2>
     <div class="card">

@@ -14,6 +14,7 @@ import App from "./App.vue"
 import { loadPanelPlugins } from "./panelload.js"
 import { installTabScroll } from "./tabscroll.js"
 import { initTheme } from "./theme.js"
+import { initAppearance } from "./appearance.js"
 import "./widgets/overview.js"
 import "./styles.css"
 
@@ -60,6 +61,7 @@ async function boot(): Promise<void> {
    * 定下，此处接手后续的「跟随系统」变化。
    */
   initTheme()
+  initAppearance()
   await atMost(loadPanelPlugins())
   /*
    * 页签条的滚轮转横滚，装在挂载之前
