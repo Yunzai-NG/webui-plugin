@@ -48,8 +48,8 @@ const bad = computed(() => {
 </script>
 
 <template>
-  <div class="stat">
+  <div class="card stat">
+    <h2 style="margin-top: 0; margin-bottom: var(--s2)">{{ label }}</h2>
     <b :class="bad ? 'tag err' : ''">{{ text }}</b>
-    <span>{{ label }}</span>
   </div>
 </template>

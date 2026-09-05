@@ -34,6 +34,7 @@ import StoreView from "./views/StoreView.vue"
 import ConfigView from "./views/ConfigView.vue"
 import LogsView from "./views/LogsView.vue"
 import HelpView from "./views/HelpView.vue"
+import AppearanceView from "./views/AppearanceView.vue"
 
 /**
  * 心跳间隔
@@ -81,7 +82,8 @@ const VIEWS: Record<string, Component> = {
   market: MarketView,
   store: StoreView,
   config: ConfigView,
-  help: HelpView
+  help: HelpView,
+  appearance: AppearanceView
 }
 
 /** 闸门状态 */

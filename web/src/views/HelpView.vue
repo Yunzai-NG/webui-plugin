@@ -212,6 +212,8 @@ onMounted(() => void load())
       </button>
     </div>
 
+    <Transition name="tab" mode="out-in">
+    <div :key="plugin">
     <div class="toolbar">
       <input
         v-model="keyword"
@@ -221,6 +223,7 @@ onMounted(() => void load())
       />
       <label class="check">
         <input v-model="showHidden" type="checkbox" />
+        <span class="checkmark"></span>
         显示隐藏命令
       </label>
     </div>
@@ -248,5 +251,7 @@ onMounted(() => void load())
     <p v-if="groups.length === 0" class="hint">
       没有符合条件的命令。命令由插件注册，内核自身不提供任何命令。
     </p>
+    </div>
+    </Transition>
   </div>
 </template>

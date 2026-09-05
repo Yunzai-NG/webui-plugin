@@ -21,6 +21,9 @@ import { errorText } from "../format.js"
 import { OVERVIEW, SYSTEM } from "../widgets/context.js"
 import type { Overview, SystemInfo } from "../types.js"
 
+/** 编辑态 */
+const edit = ref(false)
+
 /** 刷新间隔 */
 const REFRESH_MS = 5000
 
@@ -73,11 +76,17 @@ onUnmounted(() => {
 
 <template>
   <div>
-    <PageHeader route="overview" sub="内核状态、资源占用与各子系统计数" />
+    <PageHeader route="overview" sub="内核状态、资源占用与各子系统计数">
+      <template #actions>
+        <button type="button" :class="{ primary: edit }" @click="edit = !edit">
+          {{ edit ? "完成" : "编辑组件" }}
+        </button>
+      </template>
+    </PageHeader>
 
     <p v-if="error" class="banner">{{ error }}</p>
 
-    <GridBoard page="overview" />
+    <GridBoard :page="'overview'" :edit="edit" @update:edit="edit = $event" />
 
     <p v-if="data && data.counts.accounts === 0" class="banner warn">
       还没有任何账号。去「账号」页添加一个 —— 登录本身也是插件提供的，所以先确认已装好适配器插件。

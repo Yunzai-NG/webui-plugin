@@ -90,26 +90,28 @@
  * 与状态无关的提示，不与主色争夺注意力。
  */
 :root {
-  /* 中性：底 → 面 → 面·浮起 三级层次 */
-  --bg: #f7f7f5;
+  /* 中性：底 → 面 → 面·浮起 三级层次 - 干净明亮 */
+  --bg: #f0f2f5;
   --panel: #ffffff;
-  --raise: #f1f1ee;
-  --border: #e2e2dd;
-  --border-strong: #cfcfc8;
-  --text: #1b1d21;
-  --muted: #5d646e;
+  --raise: #f6f8fa;
+  --border: #e4e8ed;
+  --border-strong: #cdd3dc;
+  --text: #1e2128;
+  --muted: #6b7280;
 
-  /* 主色：浅色模式为青铜 */
-  --accent: #7a5c1f;
-  --accent-solid: #8a6a26;
-  --on-accent: #fffdf7;
+  /* 主色：基于色相的优雅蓝紫，可通过 --accent-hue 自定义 */
+  --accent-hue: 239;
+  --accent: hsl(var(--accent-hue), 84%, 67%);
+  --accent-solid: hsl(var(--accent-hue), 78%, 56%);
+  --on-accent: #ffffff;
+  --accent-glow: hsla(var(--accent-hue), 84%, 67%, 0.15);
 
-  /* 语义 */
-  --info: #2f6feb;
-  --ok: #1a7f37;
-  --warn: #8a5a00;
-  --err: #c0392f;
-  --code-bg: #f1f1ee;
+  /* 语义 - 柔和饱和度 */
+  --info: #3b82f6;
+  --ok: #10b981;
+  --warn: #f59e0b;
+  --err: #ef4444;
+  --code-bg: #f8f9fc;
 
   /* 字族：机器产出的值一律等宽，给人读的句子一律无衬线 */
   --font-ui: "Manrope", system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
@@ -133,41 +135,62 @@
   --s7: 32px;
   --s8: 48px;
 
-  /* 圆角三档 */
-  --r-card: 10px;
-  --r-ctl: 8px;
+  /* 圆角三档 - 更大更柔和 */
+  --r-card: 14px;
+  --r-ctl: 10px;
   --r-pill: 999px;
 
   /*
-   * 动效三档时长、两支缓动
+   * 动效系统 - 大厂级丝滑过渡
    *
-   * `--dur-3` 供「大面积的表面」用：模态占去半屏，220ms 走完显得仓促，而按钮变色若用
-   * 320ms 则黏手 —— 时长该跟着移动的距离与面积走。
-   *
-   * `--ease-spring` 末段有一点过冲（1.56），只用于**状态翻转**（开关滑块到位）：
-   * 那一下过冲即是「切过去了」的回执。进出场一律不用它 —— 一张淡入的模态回弹一下
-   * 会读成「没放稳」。
+   * 四档时长：微交互 / 一般过渡 / 大面积表面 / 弹性动画
+   * 三支缓动：标准 / 弹性 / 沉降
    */
-  --dur-1: 120ms;
-  --dur-2: 220ms;
-  --dur-3: 320ms;
-  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+  --dur-1: 150ms;
+  --dur-2: 250ms;
+  --dur-3: 350ms;
+  --dur-4: 500ms;
+  
+  /* 标准缓动 - 丝滑流畅 */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  /* 弹性缓动 - 状态翻转 */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-
-  /*
-   * 第三支缓动：起步快、末段长时间收尾，供「一批元素同时让位」用
-   *
-   * `--ease` 的收尾偏硬，用在栅格让开上时几枚格子几乎同时停住，读作「啪一下换了位置」。
-   * 这一支把大半时间花在最后那一小段距离上，于是让位看着是滑到位而非跳到位。
-   * 只用于位移，不用于变色：颜色没有「滑到位」这件事。
-   */
+  /* 沉降缓动 - 元素让位 */
   --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+  /* 减速缓动 - 进入动画 */
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  /* 加速缓动 - 退出动画 */
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
 
   /* 布局 */
   --side-width: 220px;
   --side-collapsed: 72px;
   --content-max: 1240px;
   --gutter: var(--s3);
+
+  /* ── 玻璃拟态 ── */
+  --glass-bg: rgb(255 255 255 / 80%);
+  --glass-border: rgb(255 255 255 / 60%);
+  --glass-blur: 20px;
+  
+  /* ── 大厂级阴影系统 - 多层次柔和阴影 ── */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.04);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.06), 0 2px 4px -2px rgb(0 0 0 / 0.04);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.06), 0 4px 6px -4px rgb(0 0 0 / 0.04);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.06), 0 8px 10px -6px rgb(0 0 0 / 0.04);
+  --shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.12);
+  --shadow-inner: inset 0 2px 4px 0 rgb(0 0 0 / 0.04);
+
+  /* 玻璃阴影 */
+  --glass-shadow: 0 2px 12px -2px rgb(0 0 0 / 0.06), 0 1px 4px -1px rgb(0 0 0 / 0.04);
+  --glass-shadow-hover: 0 8px 24px -4px rgb(0 0 0 / 0.1), 0 4px 8px -2px rgb(0 0 0 / 0.06);
+  --glass-highlight: inset 0 1px 0 rgb(255 255 255 / 90%);
+
+  /* 背景渐变 - 干净明亮 */
+  --bg-gradient-1: #eef1f8;
+  --bg-gradient-2: #f0edf8;
+  --bg-gradient-3: #eaf0f8;
 
   color-scheme: light;
 }
@@ -181,23 +204,39 @@
  * 判据是 `<html data-theme="dark">`，不是 `prefers-color-scheme`（见文件头）。
  */
 :root[data-theme="dark"] {
-  --bg: #101216;
-  --panel: #16191f;
-  --raise: #1c2027;
-  --border: #272c35;
-  --border-strong: #333a45;
-  --text: #e6e8ee;
-  --muted: #9aa3b2;
+  /* 深色模式 - 深邃高级感 */
+  --bg: #0f1117;
+  --panel: #1a1d27;
+  --raise: #232733;
+  --border: #2d3348;
+  --border-strong: #3d4460;
+  --text: #e8eaf0;
+  --muted: #8b92a5;
 
-  --accent: #f0d8a8;
-  --accent-solid: #d3bc8e;
-  --on-accent: #2a2110;
+  /* 深色模式主色 - 基于色相的更亮蓝紫 */
+  --accent: hsl(var(--accent-hue), 84%, 74%);
+  --accent-solid: hsl(var(--accent-hue), 84%, 67%);
+  --on-accent: #ffffff;
+  --accent-glow: hsla(var(--accent-hue), 84%, 74%, 0.25);
 
-  --info: #7aa2f7;
-  --ok: #4fbf7f;
-  --warn: #e0a94a;
-  --err: #e0665f;
-  --code-bg: #0d0f13;
+  /* 深色模式语义色 */
+  --info: #60a5fa;
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --err: #f87171;
+  --code-bg: #151820;
+
+  /* ── 玻璃拟态（深色） ── */
+  --glass-bg: rgb(26 29 39 / 75%);
+  --glass-border: rgb(255 255 255 / 12%);
+  --glass-shadow: 0 4px 24px -4px rgb(0 0 0 / 40%), 0 2px 8px -2px rgb(0 0 0 / 30%);
+  --glass-shadow-hover: 0 10px 32px -4px rgb(0 0 0 / 50%), 0 4px 12px -2px rgb(0 0 0 / 40%);
+  --glass-highlight: inset 0 1px 0 rgb(255 255 255 / 10%);
+  
+  /* 深色背景渐变 */
+  --bg-gradient-1: #1e1b4b;
+  --bg-gradient-2: #172554;
+  --bg-gradient-3: #2e1065;
 
   /* 原生控件（滚动条、日期选择器、表单元件）跟着一起翻 */
   color-scheme: dark;
@@ -217,6 +256,13 @@ body {
   background: var(--bg);
   color: var(--text);
   font: var(--fs-body) / 1.65 var(--font-ui);
+  /* 玻璃拟态背景：柔和渐变装饰 */
+  background-image:
+    radial-gradient(ellipse 80% 60% at 10% 20%, var(--bg-gradient-1) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 80% at 90% 80%, var(--bg-gradient-2) 0%, transparent 50%),
+    radial-gradient(ellipse 50% 50% at 50% 50%, var(--bg-gradient-3) 0%, transparent 60%);
+  background-attachment: fixed;
+  background-blend-mode: soft-light;
 }
 
 /*
@@ -342,8 +388,9 @@ h3 {
   height: 38px;
   border: 1px solid var(--border);
   border-radius: var(--r-ctl);
-  background: var(--raise);
+  background: var(--panel);
   color: var(--accent);
+  box-shadow: var(--shadow-sm);
 }
 
 .page-icon svg {
@@ -392,6 +439,20 @@ h3 {
   }
 }
 
+/*
+ * 注册 --side-now 为可插值的长度类型
+ *
+ * grid-template-columns 不能被 transition 动画（浏览器直接忽略），
+ * 导致折叠时栅格列宽瞬间从 220px 跳到 72px，而 .side 的 width 还在慢慢动画，
+ * 动画期间侧边栏溢出栅格列，视觉上偏宽。
+ * 用 @property 注册后，浏览器可逐帧插值该变量，栅格列宽就能平滑过渡。
+ */
+@property --side-now {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 220px;
+}
+
 /* ─────────────── 布局：窄屏为基准 ─────────────── */
 .shell {
   display: grid;
@@ -399,16 +460,11 @@ h3 {
   grid-template-rows: auto 1fr;
   min-height: 100vh;
   min-height: 100dvh;
-
-  /*
-   * 侧栏当前宽度。折叠态改这一个变量，栅格轨道与侧栏自身同时跟着走 ——
-   * 两处各写一遍必然有一处忘记改，于是内容区与侧栏之间留下一条空带。
-   */
-  --side-now: var(--side-width);
+  --side-now: 220px;
 }
 
 .shell.collapsed {
-  --side-now: var(--side-collapsed);
+  --side-now: 72px;
 }
 
 .topbar {
@@ -416,8 +472,10 @@ h3 {
   align-items: center;
   gap: var(--s2);
   padding: var(--s2) var(--s3);
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
+  background: var(--glass-bg);
+  border-bottom: 1px solid var(--glass-border);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
   position: sticky;
   top: 0;
   z-index: 20;
@@ -459,8 +517,11 @@ h3 {
   width: var(--side-width);
   padding: var(--s3) 0;
   overflow-y: auto;
-  background: var(--panel);
-  border-right: 1px solid var(--border);
+  background: var(--glass-bg);
+  border-right: 1px solid var(--glass-border);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--glass-shadow);
   transform: translateX(-100%);
   transition: transform var(--dur-2) var(--ease);
 }
@@ -479,20 +540,24 @@ h3 {
   display: flex;
   align-items: center;
   gap: var(--s2);
-  padding: 0 var(--s3) var(--s3) calc(var(--s4) + 3px);
-  border-bottom: 1px solid var(--border);
+  /* 左右内边距统一为 var(--s3)：展开时导航项的文字左缘在 3+16=19px 处，
+     品牌图标左缘也应在同一位置。但品牌区是 flex 容器，图标本身有 flex:none，
+     故左侧只需与导航项图标对齐即可（16px = var(--s4)），右侧对称。 */
+  padding: var(--s2) var(--s3) var(--s3) var(--s3);
+  border-bottom: 1px solid var(--glass-border);
 }
 
 /*
- * 品牌图标带一道描边
+ * 品牌图标：圆角方形 + 柔和阴影 + 渐变底
  *
  * `icon-square.svg` 自带深色底，压在深色模式的面色上两者相近，只剩中间的金色字形浮着、
  * 方块边界看不出来。浅色模式下这道描边被深色底盖住，不产生额外观感。
  */
 .brand-mark {
   flex: none;
-  border: 1px solid var(--border);
-  border-radius: var(--r-ctl);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 6%);
 }
 
 /* 侧栏内品牌名与版本徽标改为上下两行：220px 一行放不下「名称 + 徽标 + 折叠按钮」 */
@@ -506,6 +571,12 @@ h3 {
 
 .side-brand .brand small {
   margin-left: 0;
+  /* 版本徽标：更精致的药丸样式 */
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 40%);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 /*
@@ -532,39 +603,48 @@ h3 {
 }
 
 .nav-group {
-  margin: var(--s3) 0 var(--s1);
+  margin: var(--s4) 0 var(--s1);
   padding: 0 var(--s4);
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: var(--fs-label);
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
+  opacity: 0.7;
 }
 
 .nav a {
   display: flex;
   align-items: center;
   gap: var(--s3);
-  padding: var(--s2) var(--s4);
+  padding: 10px var(--s3);
+  margin: 2px var(--s2);
   color: var(--text);
   text-decoration: none;
+  border-radius: var(--r-ctl);
   border-left: 3px solid transparent;
   transition:
     background-color var(--dur-1) var(--ease),
-    color var(--dur-1) var(--ease);
+    color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease);
 }
 
 .nav a:hover {
   background: var(--raise);
+  color: var(--accent);
 }
 
 /* 当前项：色相 + 字重 + 左侧标记三重表达，不让颜色作唯一信息载体 */
 .nav a.on {
-  background: var(--raise);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
   border-left-color: var(--accent);
   color: var(--accent);
   font-weight: 600;
+}
+
+.nav a.on:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 /* 图标定宽，使各项的文字左缘对齐；未选中时降为次要色，不与文字争 */
@@ -573,6 +653,11 @@ h3 {
   width: 18px;
   height: 18px;
   color: var(--muted);
+  transition: color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+
+.nav a:hover .nav-icon {
+  color: var(--text);
 }
 
 .nav a.on .nav-icon {
@@ -592,7 +677,7 @@ h3 {
   align-items: center;
   gap: var(--s2);
   padding: var(--s3) var(--s3) 0 calc(var(--s4) + 3px);
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--glass-border);
 }
 
 .side-foot .out {
@@ -603,11 +688,20 @@ h3 {
   border-color: transparent;
   background: transparent;
   font-weight: 400;
+  border-radius: var(--r-ctl);
+  transition:
+    background-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
 }
 
 .side-foot .out:hover:not(:disabled) {
   border-color: transparent;
   background: var(--raise);
+  color: var(--accent);
+}
+
+.side-foot .out:hover:not(:disabled) .nav-icon {
+  color: var(--accent);
 }
 
 .main {
@@ -635,12 +729,15 @@ h3 {
  */
 @media (min-width: 860px) {
   .shell {
+    /* 第一列用 --side-now：grid-template-columns 不能被 transition 动画，
+       但 @property 注册的 <length> 变量可以。栅格列宽与 .side 宽度同步平滑过渡。 */
     grid-template-columns: var(--side-now) 1fr;
     gap: 0;
     padding: 0;
     /* 一屏高、自身不滚：滚动交给 `.main` 与 `.nav` 两处，见本段开头 */
     height: 100dvh;
     overflow: hidden;
+    transition: --side-now var(--dur-3) var(--ease-settle);
   }
 
   /*
@@ -664,24 +761,36 @@ h3 {
     position: static;
     grid-column: 1;
     grid-row: 1 / -1;
-    width: auto;
+    /* 宽度由 --side-now 驱动，与栅格列宽同步动画。
+       min-width: 0 是必须的：flex 子项默认 min-width: auto，会阻止收缩到比内容更窄。 */
+    width: var(--side-now);
+    min-width: 0;
     height: 100%;
     min-height: 0;
     max-height: none;
     z-index: auto;
     transform: none;
-    transition: none;
     padding: var(--s4) 0 var(--s3);
-    background: var(--panel);
+    background: var(--glass-bg);
     border: none;
-    border-right: 1px solid var(--border);
+    border-right: 1px solid var(--glass-border);
     border-radius: 0;
     overflow: hidden;
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+  }
+
+  /* 折叠态：去掉阴影避免视觉溢出 */
+  .shell.collapsed .side {
+    box-shadow: none;
   }
 
   /* 品牌区固定在顶：不参与收缩，也不随导航滚动 */
   .side-brand {
     flex: none;
+    /* min-width: 0 是必须的：flex 子项默认 min-width: auto，会阻止收缩到比内容更窄。
+       折叠后侧边栏只有 72px，品牌区内容（图标 + 文字 + 按钮）更宽，不加这条就撑开侧边栏。 */
+    min-width: 0;
   }
 
   /*
@@ -693,6 +802,7 @@ h3 {
   .nav {
     flex: 1 1 auto;
     min-height: 0;
+    min-width: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
   }
@@ -701,6 +811,7 @@ h3 {
   .side-foot {
     flex: none;
     margin-top: 0;
+    min-width: 0;
   }
 
   .side .nav-group:first-child {
@@ -748,8 +859,11 @@ h3 {
    * 折叠态：只显示图标
    *
    * 整段写在本媒体查询之内，窄屏因此不可能受折叠态影响 —— 抽屉与折叠是两件事，
-   * 见 App.vue 的文件头。**不给宽度加过渡**：全站的过渡只走 transform 与颜色，
-   * 逐帧改宽度会连带触发内容区的重排，在手机浏览器上尤其明显。
+   * 见 App.vue 的文件头。
+   *
+   * **文本元素用 opacity + visibility 而非 display: none**：display 无法过渡，
+   * 会导致文字瞬间消失、布局跳动。opacity 配合 visibility 既平滑又能在结束后
+   * 真正移除可访问性（visibility:hidden 使读屏忽略）。
    */
   .shell.collapsed .side {
     align-items: center;
@@ -758,14 +872,64 @@ h3 {
   .shell.collapsed .side-brand {
     flex-direction: column;
     gap: var(--s2);
-    padding: 0 var(--s2) var(--s3);
+    /* 水平内边距与展开态一致（var(--s3) = 12px），否则折叠后品牌区内容比栅格列多出 8px，
+       导致侧边栏视觉上比栅格轨道更宽。 */
+    padding: 0 var(--s3) var(--s3);
     width: 100%;
+    min-width: 0;
   }
 
-  .shell.collapsed .brand,
-  .shell.collapsed .nav-label,
+  /*
+   * 折叠按钮在折叠态下缩小为图标按钮
+   *
+   * 默认按钮有 9px 18px 的内边距，加上文字宽度会撑到 ~58px，
+   * 而折叠后侧栏只有 72px，品牌图标 24px + 间距 8px + 按钮 58px = 90px，溢出 18px。
+   * 缩为 32px 方形按钮后：24 + 8 + 32 = 64px，余 8px 给两侧内边距各 4px，刚好装下。
+   */
+  .shell.collapsed .collapse {
+    padding: 8px;
+    width: 32px;
+    height: 32px;
+    flex: none;
+  }
+
+  /* 品牌名淡出：保留占位避免布局跳动，但不再被读屏读取 */
+  .shell.collapsed .brand {
+    opacity: 0;
+    visibility: hidden;
+    max-height: 0;
+    overflow: hidden;
+    transition:
+      opacity var(--dur-2) var(--ease-in),
+      max-height var(--dur-2) var(--ease-settle),
+      visibility var(--dur-2) var(--ease-in);
+    margin: 0;
+    padding: 0;
+  }
+
+  /* 导航标签淡出 */
+  .shell.collapsed .nav-label {
+    opacity: 0;
+    visibility: hidden;
+    max-width: 0;
+    transition:
+      opacity var(--dur-2) var(--ease-in),
+      max-width var(--dur-2) var(--ease-settle),
+      visibility var(--dur-2) var(--ease-in);
+  }
+
+  /* 组标题淡出并收起高度 */
   .shell.collapsed .nav-group {
-    display: none;
+    opacity: 0;
+    visibility: hidden;
+    max-height: 0;
+    overflow: hidden;
+    padding: 0;
+    margin: 0;
+    transition:
+      opacity var(--dur-2) var(--ease-in),
+      max-height var(--dur-2) var(--ease-settle),
+      visibility var(--dur-2) var(--ease-in);
   }
 
   .shell.collapsed .nav {
@@ -775,7 +939,7 @@ h3 {
   /* 组标题隐去后，分组关系由一道分隔线接管；`+ a` 命中的正是每组的首项 */
   .shell.collapsed .nav-group + a {
     margin-top: var(--s2);
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--glass-border);
     padding-top: calc(var(--s2) + 1px);
   }
 
@@ -785,10 +949,13 @@ h3 {
     padding-top: var(--s2);
   }
 
+  /* 导航项居中：文字宽度归零后，图标自然居中 */
   .shell.collapsed .nav a {
     justify-content: center;
     gap: 0;
     padding: var(--s2) 0;
+    margin: 1px var(--s1);
+    min-width: 0;
   }
 
   .shell.collapsed .side-foot {
@@ -796,10 +963,23 @@ h3 {
     align-items: center;
     padding: var(--s3) var(--s1) 0;
     width: 100%;
+    min-width: 0;
   }
 
   .shell.collapsed .side-foot .out {
     gap: 0;
+    min-width: 0;
+  }
+
+  /* 底部按钮的标签同样淡出 */
+  .shell.collapsed .side-foot .nav-label {
+    opacity: 0;
+    visibility: hidden;
+    max-width: 0;
+    transition:
+      opacity var(--dur-2) var(--ease-in),
+      max-width var(--dur-2) var(--ease-settle),
+      visibility var(--dur-2) var(--ease-in);
   }
 }
 
@@ -832,8 +1012,36 @@ h3 {
 .page-enter-active,
 .page-leave-active {
   transition:
-    opacity var(--dur-1) var(--ease),
-    transform var(--dur-1) var(--ease);
+    opacity var(--dur-2) var(--ease),
+    transform var(--dur-2) var(--ease);
+}
+
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+/* ─────────────── 页签切换过渡 ─────────────── */
+.tab-enter-active,
+.tab-leave-active {
+  transition:
+    opacity var(--dur-3) var(--ease-out),
+    transform var(--dur-3) var(--ease-out);
+}
+
+.tab-enter-from {
+  opacity: 0;
+  transform: translateX(16px) scale(0.98);
+}
+
+.tab-leave-to {
+  opacity: 0;
+  transform: translateX(-16px) scale(0.98);
 }
 
 /* ─────────────── 卡片与网格 ─────────────── */
@@ -841,8 +1049,20 @@ h3 {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--r-card);
-  padding: var(--s5);
-  margin-bottom: var(--s4);
+  padding: calc(var(--s6) * 1.1);
+  margin-bottom: var(--s5);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transition:
+    box-shadow var(--dur-2) var(--ease),
+    border-color var(--dur-2) var(--ease),
+    transform var(--dur-2) var(--ease);
+}
+
+.card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-strong);
+  transform: translateY(-2px);
 }
 
 /*
@@ -953,26 +1173,33 @@ h3 {
  *
  * 数值是机器产出的值，且多块并列时首位需纵向对齐 —— 比例字体下「12」与「7」的
  * 起笔位置不同，一排数字会显得参差。
+ *
+ * 现已改用 `.card` 包裹（与磁盘/显卡等组件一致），故此处只保留数字样式与悬停效果。
+ * 卡片样式（背景、边框、圆角、阴影、内边距）由 `.card` 统一提供。
  */
 .stat {
-  background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: var(--r-card);
-  padding: var(--s3) var(--s4);
+  box-shadow: 2px 2px 6px rgb(0 0 0 / 6%);
+  transition:
+    box-shadow var(--dur-2) var(--ease),
+    border-color var(--dur-2) var(--ease),
+    transform var(--dur-2) var(--ease);
+}
+
+.stat:hover {
+  box-shadow: 3px 3px 10px rgb(0 0 0 / 10%);
+  border-color: var(--border-strong);
+  transform: translateY(-2px);
 }
 
 .stat b {
   display: block;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: var(--fs-h1);
-  line-height: 30px;
-  font-weight: 600;
-}
-
-.stat span {
-  color: var(--muted);
-  font-size: var(--fs-hint);
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
 }
 
 /*
@@ -1198,25 +1425,27 @@ h3 {
 
 .bar-slot {
   overflow: hidden;
-  height: 8px;
+  height: 10px;
   border-radius: var(--r-pill);
   background: var(--raise);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 .bar-fill {
   height: 100%;
   border-radius: var(--r-pill);
-  background: var(--border-strong);
+  background: linear-gradient(90deg, var(--border-strong) 0%, var(--accent) 100%);
   /* 只过渡 width：这条槽的宽度由百分比给出，不涉及布局重排 */
   transition: width var(--dur-2) var(--ease);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .bar-fill.warn {
-  background: var(--warn);
+  background: linear-gradient(90deg, var(--warn) 0%, #fbbf24 100%);
 }
 
 .bar-fill.err {
-  background: var(--err);
+  background: linear-gradient(90deg, var(--err) 0%, #fca5a5 100%);
 }
 
 /* ─────────────── 组件板 ─────────────── */
@@ -1261,6 +1490,19 @@ h3 {
   min-width: 0;
   min-height: 0;
   container-type: inline-size;
+}
+
+/*
+ * 松手后的归位过渡
+ *
+ * 拖动期间每帧都在改栅格属性，加过渡会让动画堆积卡顿。
+ * 只在非拖动态（.board:not(.dragging)）下才启用过渡，
+ * 让其他格子在松手后平滑归位。
+ */
+.board:not(.dragging) .witem {
+  transition:
+    width var(--dur-2) var(--ease-settle),
+    height var(--dur-2) var(--ease-settle);
 }
 
 /*
@@ -1357,7 +1599,7 @@ h3 {
  */
 .wgrid-cell {
   border: 1px dashed var(--border);
-  border-radius: var(--r-input);
+  border-radius: var(--r-card);
   opacity: 0.5;
   pointer-events: none;
 }
@@ -1631,21 +1873,29 @@ input,
 select,
 textarea {
   width: 100%;
-  padding: var(--s2) var(--s3);
-  border: 1px solid var(--border-strong);
+  padding: 10px 14px;
+  border: 1px solid var(--border);
   border-radius: var(--r-ctl);
   background: var(--panel);
   color: var(--text);
   font: inherit;
   transition:
     border-color var(--dur-1) var(--ease),
-    background-color var(--dur-1) var(--ease);
+    box-shadow var(--dur-1) var(--ease);
 }
 
-input:hover:not(:disabled),
-select:hover:not(:disabled),
-textarea:hover:not(:disabled) {
-  border-color: var(--muted);
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+  outline: none;
+}
+
+input:hover:not(:disabled):not(:focus),
+select:hover:not(:disabled):not(:focus),
+textarea:hover:not(:disabled):not(:focus) {
+  border-color: var(--border-strong);
 }
 
 input:disabled,
@@ -1735,7 +1985,7 @@ textarea {
   height: 28px;
   border: 1px solid var(--border);
   border-radius: var(--r-ctl);
-  background: var(--raise);
+  background: var(--panel);
   color: var(--muted);
 }
 
@@ -1947,6 +2197,164 @@ textarea {
 .seg input:focus-visible + span {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/*
+ * ────────────── 自定义下拉 ───────────────
+ *
+ * 替代原生 <select>：原生选项的悬停/选中背景由操作系统渲染，一律是深灰色，
+ * 与玻璃拟态 UI 冲突。此处用 button + div 模拟，完全控制样式。
+ *
+ * 结构：触发器按钮（显示当前值 + 箭头）+ 弹出菜单（选项列表）。
+ * 弹出层使用绝对定位 + 投影，与模态/菜单的浮起层级一致。
+ */
+.cdd {
+  position: relative;
+  width: 100%;
+}
+
+.cdd-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-ctl);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  gap: var(--s2);
+  transition:
+    border-color var(--dur-1) var(--ease),
+    box-shadow var(--dur-1) var(--ease);
+}
+
+.cdd-trigger:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.cdd.open .cdd-trigger {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.cdd-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cdd-trigger:disabled {
+  background: var(--raise);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.cdd-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  text-align: left;
+}
+
+.cdd-arrow {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  transition: transform var(--dur-1) var(--ease);
+}
+
+.cdd.open .cdd-arrow {
+  transform: rotate(180deg);
+}
+
+.cdd-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 100;
+  padding: var(--s1);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-ctl);
+  box-shadow: var(--shadow-lg);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+/*
+ * 下拉菜单向上翻转
+ *
+ * 当触发器靠近视口底部、下方空间不足以容纳菜单时，改为从触发器上方弹出。
+ * 由 SchemaField.vue 的 toggleDropdown 在展开时检测并添加 .flip-up 类。
+ */
+.cdd.flip-up .cdd-menu {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+
+.cdd-menu button {
+  display: block;
+  width: 100%;
+  padding: var(--s2) var(--s3);
+  border: none;
+  border-radius: var(--s2);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-body);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+
+.cdd-menu button:hover,
+.cdd-menu button.hover {
+  background: var(--raise);
+}
+
+.cdd-menu button.active {
+  background: var(--accent-glow);
+  color: var(--accent-solid);
+  font-weight: 600;
+}
+
+.cdd-menu button.active:hover,
+.cdd-menu button.active.hover {
+  background: color-mix(in srgb, var(--accent) 18%, var(--panel));
+}
+
+.cdd-menu button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* 下拉展开/收起动画 */
+.cdd-fx-enter-active {
+  transition:
+    opacity var(--dur-2) var(--ease-out),
+    transform var(--dur-2) var(--ease-out);
+}
+
+.cdd-fx-leave-active {
+  transition:
+    opacity var(--dur-1) var(--ease-in),
+    transform var(--dur-1) var(--ease-in);
+}
+
+.cdd-fx-enter-from {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.cdd-fx-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 
 /* 时长：数值占剩余宽度，单位按内容定宽 */
@@ -2666,6 +3074,8 @@ textarea {
   border-color: transparent;
   background: transparent;
   border-radius: var(--r-pill);
+  padding: 8px 16px;
+  font-size: var(--fs-body);
 }
 
 .toolbar.tabs button:hover:not(:disabled) {
@@ -2693,6 +3103,7 @@ textarea {
 }
 
 .check {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -2700,40 +3111,126 @@ textarea {
   font-weight: 400;
   font-size: var(--fs-body);
   white-space: nowrap;
+  cursor: pointer;
 }
 
-/* ─────────────── 按钮 ─────────────── */
+.check input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.check .checkmark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--panel);
+  flex-shrink: 0;
+  transition:
+    background-color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease),
+    box-shadow var(--dur-1) var(--ease);
+}
+
+.check .checkmark::after {
+  content: "";
+  display: block;
+  width: 5px;
+  height: 10px;
+  border: solid var(--panel);
+  border-width: 0 2.5px 2.5px 0;
+  transform: rotate(45deg) scale(0);
+  transition: transform var(--dur-1) var(--ease);
+}
+
+.check:hover .checkmark {
+  border-color: var(--accent);
+}
+
+.check input:checked + .checkmark {
+  background: var(--accent-solid);
+  border-color: var(--accent-solid);
+  box-shadow: 0 2px 6px var(--accent-glow);
+}
+
+.check input:checked + .checkmark::after {
+  transform: rotate(45deg) scale(1);
+}
+
+.check input:focus-visible + .checkmark {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/*
+ * 日志筛选区
+ *
+ * 间距取与卡片正文一致的刻度（s4/s5），不再单独收紧：六枚级别药丸、两个输入框、
+ * 一枚按钮与一个复选框挤在一行时，s1 的间距会让控件之间的呼吸感消失，
+ * 视觉上读作「一整坨」而不是「一组筛选条件」。
+ */
+.log-filter {
+  padding: var(--s4) var(--s5);
+}
+
+.log-filter .lvpick {
+  gap: var(--s2);
+  margin-bottom: var(--s3);
+}
+
+.log-filter .row {
+  gap: var(--s3);
+}
+
+.log-filter .hint {
+  margin-top: var(--s3);
+  margin-bottom: 0;
+}
+
+/* ─────────────── 按钮 ────────────── */
 button,
 a.button {
-  display: inline-block;
-  padding: var(--s2) var(--s3);
-  border: 1px solid var(--border-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  padding: 9px 18px;
+  border: 1px solid var(--border);
   border-radius: var(--r-ctl);
   background: var(--panel);
   color: var(--text);
   font: inherit;
   font-weight: 600;
+  font-size: var(--fs-body);
   line-height: 1.5;
   text-decoration: none;
   cursor: pointer;
+  box-shadow: var(--shadow-sm);
   transition:
-    border-color var(--dur-1) var(--ease),
-    background-color var(--dur-1) var(--ease),
-    color var(--dur-1) var(--ease),
-    transform var(--dur-1) var(--ease);
+    all var(--dur-2) var(--ease);
 }
 
+/* 按钮悬停效果 - 大厂级微交互 */
 button:hover:not(:disabled),
 a.button:hover {
   border-color: var(--accent);
   color: var(--accent);
   background: var(--raise);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
-/* 按下位移一个像素：给出「确实按下去了」的物理反馈 */
+/* 按下效果 - 物理反馈 */
 button:active:not(:disabled),
 a.button:active {
-  transform: translateY(1px);
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+  transition-duration: var(--dur-1);
 }
 
 button:disabled {
@@ -2742,27 +3239,34 @@ button:disabled {
 }
 
 /*
- * 主按钮：实底
- *
- * 深色模式下是**深字压金底**（--on-accent 为 #2a2110）。金底配白字仅 1.5:1，
- * 必然不过；这一条是配色方案里唯一必须成对取值的地方。
+ * 主按钮：实底 + 渐变
  */
 button.primary {
-  background: var(--accent-solid);
-  border-color: var(--accent-solid);
+  background: linear-gradient(135deg, var(--accent-solid) 0%, var(--accent) 100%);
+  border-color: transparent;
   color: var(--on-accent);
+  box-shadow: var(--shadow-sm);
 }
 
 button.primary:hover:not(:disabled) {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-solid) 100%);
+  border-color: transparent;
   color: var(--on-accent);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
+button.primary:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
+
+/* 危险按钮 */
 button.danger:hover:not(:disabled) {
   border-color: var(--err);
   color: var(--err);
-  background: var(--raise);
+  background: color-mix(in srgb, var(--err) 8%, var(--glass-bg));
+  box-shadow: var(--shadow-md);
 }
 
 /* 抽屉开关：只有一个字符，按方形处理 */
@@ -2775,15 +3279,17 @@ button.icon {
 /* ─────────────── 表格 ─────────────── */
 table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
 th,
 td {
   text-align: left;
-  padding: var(--s2) var(--s3);
+  padding: 14px var(--s3);
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
+  transition: background-color var(--dur-1) var(--ease);
 }
 
 /* 表头是标签而非句子：等宽、小号、加字距 */
@@ -2797,12 +3303,12 @@ th {
   background: var(--raise);
 }
 
-th:first-child {
-  border-top-left-radius: var(--r-ctl);
+tbody tr {
+  transition: background-color var(--dur-1) var(--ease);
 }
 
-th:last-child {
-  border-top-right-radius: var(--r-ctl);
+tbody tr:hover {
+  background-color: color-mix(in srgb, var(--accent) 4%, transparent);
 }
 
 tbody tr:last-child td {
@@ -2890,7 +3396,8 @@ table.pairs td {
   }
 
   /* 未标注 data-label 的表格无法摊平，退化为横向滚动 */
-  .card table:not(.rows) {
+  /* 但 .table 类的表格（如进程监控）需要保持表格布局 */
+  .card table:not(.rows):not(.table) {
     display: block;
     overflow-x: auto;
   }
@@ -2899,30 +3406,35 @@ table.pairs td {
 /* ─────────────── 徽标与提示条 ─────────────── */
 .tag {
   display: inline-block;
-  padding: 1px var(--s2);
+  padding: 3px 10px;
   border-radius: var(--r-pill);
   font-family: var(--font-mono);
   font-size: var(--fs-label);
   font-weight: 600;
   letter-spacing: 0.02em;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border);
+  background: var(--panel);
   color: var(--muted);
   white-space: nowrap;
+  transition: all var(--dur-1) var(--ease);
 }
 
 .tag.ok {
   color: var(--ok);
-  border-color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 30%, transparent);
+  background: color-mix(in srgb, var(--ok) 8%, transparent);
 }
 
 .tag.warn {
   color: var(--warn);
-  border-color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 30%, transparent);
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
 }
 
 .tag.err {
   color: var(--err);
-  border-color: var(--err);
+  border-color: color-mix(in srgb, var(--err) 30%, transparent);
+  background: color-mix(in srgb, var(--err) 8%, transparent);
 }
 
 /*
@@ -2966,19 +3478,19 @@ table.pairs td {
   padding: var(--s3) var(--s4);
   margin-bottom: var(--s4);
   color: var(--err);
-  background: color-mix(in srgb, var(--err) 8%, var(--panel));
+  background: color-mix(in srgb, var(--err) 6%, var(--panel));
 }
 
 .banner.warn {
   border-color: var(--warn);
   color: var(--warn);
-  background: color-mix(in srgb, var(--warn) 8%, var(--panel));
+  background: color-mix(in srgb, var(--warn) 6%, var(--panel));
 }
 
 .banner.ok {
   border-color: var(--ok);
   color: var(--ok);
-  background: color-mix(in srgb, var(--ok) 8%, var(--panel));
+  background: color-mix(in srgb, var(--ok) 6%, var(--panel));
 }
 
 /*
@@ -3088,8 +3600,8 @@ table.pairs td {
 /* ─────────────── 日志 ─────────────── */
 .logs {
   position: relative;
-  background: var(--code-bg);
-  border: 1px solid var(--border);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
   border-radius: var(--r-card);
   padding: var(--s3);
   height: 60vh;
@@ -3097,6 +3609,9 @@ table.pairs td {
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.55;
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
 }
 
 /*
@@ -3336,9 +3851,12 @@ html:has(dialog[open]) {
   max-height: calc(100dvh - 2 * var(--s6));
   overflow-y: auto;
   padding: var(--s5);
-  border: 1px solid var(--border);
+  border: 1px solid var(--glass-border);
   border-radius: var(--r-card);
-  background: var(--panel);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--glass-shadow-hover), var(--glass-highlight);
   color: var(--text);
 }
 
@@ -3572,10 +4090,12 @@ button.danger.solid {
   margin-top: var(--s1);
   padding: var(--s1);
   gap: var(--s1);
-  background: var(--panel);
-  border: 1px solid var(--border-strong);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
   border-radius: var(--r-ctl);
-  box-shadow: 0 6px 20px rgb(0 0 0 / 12%);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--glass-shadow-hover), var(--glass-highlight);
 }
 
 /* 菜单项：左对齐的整行按钮，去掉描边免得看起来像一叠独立按钮 */

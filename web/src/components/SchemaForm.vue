@@ -268,6 +268,7 @@ function fieldsOf(section: Section): ReturnType<typeof flatten> {
       </button>
     </div>
 
+    <Transition name="tab" mode="out-in">
     <section v-if="active" :key="active.title" class="card">
       <!-- 标题在页签上已经写着，故这里不再重复一遍 -->
       <SchemaField
@@ -283,5 +284,6 @@ function fieldsOf(section: Section): ReturnType<typeof flatten> {
         @update="(path, value) => emit('change', path, value)"
       />
     </section>
+    </Transition>
   </div>
 </template>
