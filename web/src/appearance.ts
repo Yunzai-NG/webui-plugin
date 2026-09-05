@@ -18,9 +18,13 @@ export type PresetId = "default" | "compact" | "comfortable"
 
 /** 外观预设方案 */
 export interface AppearancePreset {
+  /** 预设标识 */
   id: PresetId
+  /** 预设显示名 */
   name: string
+  /** 预设描述 */
   description: string
+  /** 预设对应的外观参数 */
   values: AppearanceValues
 }
 
@@ -168,7 +172,7 @@ function applyCSSVariables(vars: Record<string, string>): void {
 /**
  * 清除所有外观相关的 CSS 变量（恢复为 styles.css 中的默认值）
  */
-function clearAppearanceCSSVariables(): void {
+function _clearAppearanceCSSVariables(): void {
   const root = document.documentElement
   const keys = [
     "--r-card", "--r-ctl", "--density-factor", "--accent-hue",
@@ -178,6 +182,7 @@ function clearAppearanceCSSVariables(): void {
     root.style.removeProperty(key)
   }
 }
+void _clearAppearanceCSSVariables
 
 /** 当前选中的预设方案 */
 export const currentPreset = ref<PresetId>("default")
