@@ -463,7 +463,7 @@ onUnmounted(() => {
           <button
             type="button"
             class="cdd-trigger"
-            :aria-expanded="String(adapterDropdownOpen)"
+            :aria-expanded="adapterDropdownOpen"
             @click="adapterDropdownOpen = !adapterDropdownOpen"
           >
             <span class="cdd-value">{{ draftAdapter ? adapters.find(a => a.id === draftAdapter)?.name ?? draftAdapter : '请选择' }}</span>

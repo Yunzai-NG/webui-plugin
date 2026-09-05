@@ -276,7 +276,8 @@ function handleDropdownKeydown(event: KeyboardEvent): void {
     case " ":
       event.preventDefault()
       if (dropdownHoverIndex.value >= 0 && dropdownHoverIndex.value < options.value.length) {
-        selectDropdownItem(options.value[dropdownHoverIndex.value])
+        const item = options.value[dropdownHoverIndex.value]
+        if (item) selectDropdownItem(item)
       }
       break
     case "Escape":
@@ -814,7 +815,7 @@ function setDuration(text: string, unit: string): void {
           type="button"
           :id="path"
           :disabled="locked"
-          :aria-expanded="String(dropdownOpen)"
+          :aria-expanded="dropdownOpen"
           :aria-controls="`${path}__menu`"
           :aria-labelledby="labelId"
           class="cdd-trigger"
