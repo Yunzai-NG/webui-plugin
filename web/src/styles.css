@@ -664,6 +664,30 @@ h3 {
   color: var(--accent);
 }
 
+/* 扩展页面主入口下的二级挂载项 */
+.nav-expand {
+  margin-left: auto;
+  padding: 0 var(--s1);
+  color: var(--muted);
+  border: 0;
+  background: transparent;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.nav-child {
+  padding-left: 44px !important;
+  border-left-color: transparent !important;
+  font-size: var(--fs-body);
+}
+
+.nav-child-icon {
+  width: 18px;
+  flex: none;
+  color: var(--muted);
+  text-align: center;
+}
+
 /*
  * 底部区
  *
