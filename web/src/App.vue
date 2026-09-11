@@ -17,10 +17,10 @@
  *          **不退回闸门** —— 那会连带丢掉使用者正在读的内容；唯一的例外是 401/403，那时留在外壳里做什么都不会成功。
  */
 import { computed, onMounted, onUnmounted, ref, watch, type Component } from "vue"
-import { get, getToken, setToken } from "./api.js"
+import { get, getAt, getToken, setToken } from "./api.js"
 import { ApiError } from "./api.js"
 import { errorText } from "./format.js"
-import { ROUTES, currentRoute, hrefOf, type RouteDef } from "./router.js"
+import { ROUTES, currentQuery, currentRoute, hrefOf, type RouteDef } from "./router.js"
 import { THEME_LABEL, cycleTheme, themeChoice, type ThemeChoice } from "./theme.js"
 import type { Overview } from "./types.js"
 import AppIcon from "./components/AppIcon.vue"
@@ -35,6 +35,9 @@ import ConfigView from "./views/ConfigView.vue"
 import LogsView from "./views/LogsView.vue"
 import HelpView from "./views/HelpView.vue"
 import AppearanceView from "./views/AppearanceView.vue"
+import CustomPageView from "./views/CustomPageView.vue"
+
+interface MountedPage { id: string; title: string; icon?: string; plugin: string }
 
 /**
  * 心跳间隔
@@ -84,6 +87,7 @@ const VIEWS: Record<string, Component> = {
   config: ConfigView,
   help: HelpView,
   appearance: AppearanceView
+  ,custom: CustomPageView
 }
 
 /** 闸门状态 */
@@ -99,6 +103,8 @@ const collapsed = ref(localStorage.getItem(COLLAPSE_KEY) === "1")
 const online = ref(true)
 /** 内核是否处于只读模式 */
 const readonly = ref(false)
+const mountedPages = ref<MountedPage[]>([])
+const customExpanded = ref(true)
 
 let beat: number | undefined
 
@@ -133,6 +139,7 @@ async function probe(): Promise<void> {
     online.value = true
     state.value = "open"
     message.value = ""
+    await loadMountedPages()
   } catch (err) {
     if (err instanceof ApiError && err.isAuth) {
       state.value = "locked"
@@ -143,6 +150,14 @@ async function probe(): Promise<void> {
     // 后者需查看日志。合并为一句「加载失败」将使两个方向都无从排查
     state.value = "down"
     message.value = errorText(err)
+  }
+}
+
+async function loadMountedPages(): Promise<void> {
+  try {
+    mountedPages.value = (await getAt<{ pages?: MountedPage[] }>("/plugin/webui/custom-pages")).pages ?? []
+  } catch {
+    mountedPages.value = []
   }
 }
 
@@ -255,18 +270,35 @@ onUnmounted(() => {
              中键新开标签页与右键复制链接因此均可正常工作 -->
         <template v-for="group in groups" :key="group.title">
           <p class="nav-group">{{ group.title }}</p>
-          <a
-            v-for="route in group.routes"
-            :key="route.id"
-            :href="hrefOf(route.id)"
-            :class="{ on: route.id === currentRoute }"
-            :aria-current="route.id === currentRoute ? 'page' : undefined"
-            :aria-label="route.label"
-            :title="route.label"
-          >
-            <AppIcon class="nav-icon" :path="route.icon" />
-            <span class="nav-label">{{ route.label }}</span>
-          </a>
+          <template v-for="route in group.routes" :key="route.id">
+            <a
+              :href="hrefOf(route.id)"
+              :class="{ on: route.id === currentRoute }"
+              :aria-current="route.id === currentRoute ? 'page' : undefined"
+              :aria-label="route.label"
+              :title="route.label"
+            >
+              <AppIcon class="nav-icon" :path="route.icon" />
+              <span class="nav-label">{{ route.label }}</span>
+              <button
+                v-if="route.id === 'custom'"
+                class="nav-expand"
+                type="button"
+                @click.prevent.stop="customExpanded = !customExpanded"
+              >{{ customExpanded ? "⌃" : "⌄" }}</button>
+            </a>
+            <template v-if="route.id === 'custom' && customExpanded">
+              <a
+                v-for="page in mountedPages"
+                :key="`${page.plugin}:${page.id}`"
+                class="nav-child"
+                :href="hrefOf('custom', { name: page.id })"
+                :class="{ on: route.id === currentRoute && currentQuery.name === page.id }"
+              >
+                <span class="nav-child-icon">{{ page.icon || "🦊" }}</span><span class="nav-label">{{ page.title }}</span>
+              </a>
+            </template>
+          </template>
         </template>
       </nav>
 

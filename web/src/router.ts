@@ -55,6 +55,7 @@ export const ROUTES: readonly RouteDef[] = [
   },
   // 模块：一块方板加两条左出的引脚，读作「插上去的东西」
   { id: "plugins", label: "插件", group: "扩展", icon: "M9 5.5h9.5v13H9zM9 9.5H4.5M9 14.5H4.5" },
+  { id: "custom", label: "扩展页面", group: "扩展", icon: "M4.5 5.5h15v13h-15zM8 9h8M8 13h5" },
   // 下载入托盘：市场页做的事是「取来装上」，比店铺或提袋在 18px 下更易辨
   {
     id: "market",

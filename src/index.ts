@@ -24,6 +24,7 @@ import { panelsDir, scanPanels, type PanelEntry, type PanelPackage } from "./pan
 import { loadPanelServers } from "./panelserver.js"
 import { PanelStore, STORE_CACHE_FILE, type PanelStoreSettings } from "./panelstore.js"
 import { DEFAULT_STORE_INDEX, webuiConfigSchema, type WebuiConfig } from "./storeconfig.js"
+import { mountCustomPages } from "./custompage.js"
 
 /** 前端产物目录名，与 `web/vite.config.ts` 的 outDir 末段一致 */
 const WEB_DIR = "web"
@@ -489,6 +490,20 @@ const plugin: PluginDefinition<WebuiConfig> = definePlugin({
 
   async setup(ctx) {
     mountPanel(ctx, webDirOf(import.meta.dirname))
+    // 自定义页面属于各业务插件，不放进 webui/plugins 面板组件目录。
+    try {
+      await mountCustomPages(
+        {
+          route: ctx.route.bind(ctx),
+          static: ctx.static.bind(ctx),
+          logger: ctx.logger,
+          app: ctx.app
+        },
+        ctx.app.paths.plugins
+      )
+    } catch (err) {
+      ctx.logger.error(`自定义页面加载失败：${err instanceof Error ? err.message : String(err)}`)
+    }
 
     // 面板插件挂不上只是少几个组件，向上抛则整个 webui 加载失败 —— 使用者会因一个自选组件
     // 失去整个面板
