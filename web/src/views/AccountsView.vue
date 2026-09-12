@@ -15,16 +15,22 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue"
 import { del, get, patch, post } from "../api.js"
 import { defaultsOf } from "../configedit.js"
+import { DUR_UNITS } from "../duration.js"
 import { errorText, statusClass, statusText } from "../format.js"
+import { globalNote, globalRetryOf, isRetryCustom, retryFormOf, retryOverrideOf, retrySummary } from "../retry.js"
 import { askConfirm } from "../confirm.js"
 import Modal from "../components/Modal.vue"
 import PageHeader from "../components/PageHeader.vue"
 import SchemaForm from "../components/SchemaForm.vue"
 import { ApiError } from "../api.js"
-import type { AccountItem, AdapterSummary, LoginSnapshot, LoginStep, SchemaIssue } from "../types.js"
+import type { GlobalRetry, RetryForm } from "../retry.js"
+import type { AccountItem, AdapterSummary, ConfigDetail, LoginSnapshot, LoginStep, SchemaIssue } from "../types.js"
 
 /** 存在进行中的会话时的轮询间隔 */
 const POLL_MS = 1000
+
+/** 内核配置名，与内核 `CORE_CONFIG_NAME` 一致（对应 `config/yunzai.yaml`） */
+const CORE_CONFIG = "yunzai"
 
 const adapters = ref<AdapterSummary[]>([])
 const accounts = ref<AccountItem[]>([])
@@ -59,10 +65,20 @@ const editing = ref<AccountItem | undefined>(undefined)
 const editConfig = ref<Record<string, unknown>>({})
 /** 编辑中的备注 */
 const editLabel = ref("")
+/**
+ * 编辑中的重连覆盖，四项皆以字符串存 —— 空串即「跟随全局」
+ *
+ * 与 `editConfig` 分开的理由和内核把 `retry` 放在 `config` 之外一样：这四项归内核所有，
+ * 适配器不参与，故适配器插件被卸载、画不出配置表单时，它们照旧可改。
+ */
+const editRetry = ref<RetryForm>(retryFormOf(undefined))
 /** 编辑保存时的逐字段错误 */
 const editIssues = ref<readonly SchemaIssue[]>([])
 /** 编辑保存失败的原因，只显示在模态内 —— 页顶那条使用者此刻看不到 */
 const editError = ref("")
+
+/** 全局重连四项，只为把「跟随全局」说成一个具体的数；读不到时为空对象 */
+const globalRetry = ref<GlobalRetry>({})
 
 let timer: number | undefined
 
@@ -82,6 +98,28 @@ const editAdapter = computed(() =>
 
 /** 编辑表单要用的 schema；适配器不在（插件已卸载）时 undefined */
 const editSchema = computed(() => editAdapter.value?.accountSchema)
+
+/**
+ * 这次编辑动过适配器配置吗
+ *
+ * 判它是为了**不为一次只改重连策略的保存踢掉一个在线的号**。内核的 `update()` 只要收到
+ * `config` 就断开重连，那是对的 —— 地址或 token 变了而 socket 还是旧的，使用者会以为
+ * 「改了没生效」；而 `label` 与 `retry` 都不参与建连，内核那侧专门为此留了「只动这两项
+ * 就不动连接」的路。面板若每次都捎上 `config`，那条路永远走不到，一次把上限从 5 改成 10
+ * 的保存会让这个号断线重连，那期间的消息全丢。
+ *
+ * 比 JSON 文本而非深比对：此处只需判「有没有动过」，而任何一处取值改变都会让序列化结果
+ * 不同（`editConfig` 是同一对象的 `structuredClone`，键序本就一致）。**宁可多判成变了**
+ * —— 代价只是多一次重连；漏判的代价是「改了地址却没重连」，那正是要防的那件事。
+ */
+const configChanged = computed(() => {
+  const before = editing.value?.record.config
+  if (before === undefined) return false
+  return JSON.stringify(before) !== JSON.stringify(editConfig.value)
+})
+
+/** 编辑框里此刻填了至少一项重连覆盖 */
+const retryCustomized = computed(() => retryOverrideOf(editRetry.value) !== null)
 
 /*
  * 换适配器即按它的 schema 铺一遍默认值
@@ -109,7 +147,27 @@ async function load(): Promise<void> {
   } catch (err) {
     error.value = errorText(err)
   }
+  await loadGlobalRetry()
   await syncLogins()
+}
+
+/**
+ * 取全局重连四项
+ *
+ * **只留这四个数，整份内核配置不在这一页落地。** `GET config/:name` 刻意不脱敏（面板要能
+ * 显示与轮换面板令牌、要能显示适配器的连接密钥），响应体里带着 `server.token`；账号页要的
+ * 只是四个数字，没有理由让其余部分在这一页的状态里多待一秒。挑取在 `globalRetryOf` 里。
+ *
+ * 失败即静默：读不到只是让「跟随全局」少一个括号里的数，表单照旧可用 —— 不该盖掉页面上
+ * 更要紧的那条错误（账号列表拉取失败）。
+ */
+async function loadGlobalRetry(): Promise<void> {
+  try {
+    const detail = await get<ConfigDetail>(`config/${encodeURIComponent(CORE_CONFIG)}`)
+    globalRetry.value = globalRetryOf(detail.value)
+  } catch {
+    globalRetry.value = {}
+  }
 }
 
 /**
@@ -264,6 +322,7 @@ function openEdit(item: AccountItem): void {
   // structuredClone 而非 JSON 往返：配置里可能有 undefined 与嵌套对象，后者会被 JSON 悄悄丢掉
   editConfig.value = structuredClone(item.record.config)
   editLabel.value = item.record.label ?? ""
+  editRetry.value = retryFormOf(item.record.retry)
   editIssues.value = []
   editError.value = ""
 }
@@ -272,8 +331,14 @@ function openEdit(item: AccountItem): void {
 function closeEdit(): void {
   editing.value = undefined
   editConfig.value = {}
+  editRetry.value = retryFormOf(undefined)
   editIssues.value = []
   editError.value = ""
+}
+
+/** 把四项一并改回跟随全局 */
+function clearRetry(): void {
+  editRetry.value = retryFormOf(undefined)
 }
 
 /**
@@ -297,9 +362,13 @@ function onEditChange(path: string, value: unknown): void {
 /**
  * 保存改动
  *
- * 内核收到 `config` 之后会**断开并重连**这个账号（见 adapter/accounts.ts 的 `update`）：
- * 地址或凭据变了而 socket 还是旧的，使用者会以为「改了没生效」。故此处保存完要重取列表，
- * 那时状态多半是 `connecting`。
+ * **`config` 只在真的改过时才送**（见 `configChanged`）：内核收到它就会断开并重连这个账号，
+ * 而只改了备注或重连策略的保存不该让一个在线的号掉一次线。故这次保存会不会重连，由内容
+ * 决定而非由按钮决定 —— 按钮的文案跟着 `configChanged` 变。
+ *
+ * `retry` 一律送，且用三态里的两态：填了至少一项即送对象，四项全空即送 `null`
+ * （清掉覆盖、回到跟随全局）。不送的那一态（「这次不动它」）在这里没有用武之地 ——
+ * 表单已把当前值完整铺开，使用者看到什么就是要保存什么。
  */
 async function saveEdit(): Promise<void> {
   const item = editing.value
@@ -307,11 +376,12 @@ async function saveEdit(): Promise<void> {
   busy.value = item.record.id
   editIssues.value = []
   try {
-    const label = editLabel.value.trim()
-    await patch<AccountItem>(`accounts/${encodeURIComponent(item.record.id)}`, {
-      config: editConfig.value,
-      label
-    })
+    const body: Record<string, unknown> = {
+      label: editLabel.value.trim(),
+      retry: retryOverrideOf(editRetry.value)
+    }
+    if (configChanged.value) body.config = editConfig.value
+    await patch<AccountItem>(`accounts/${encodeURIComponent(item.record.id)}`, body)
     closeEdit()
     error.value = ""
     await refreshAccounts()
@@ -519,6 +589,16 @@ onUnmounted(() => {
               <span class="tag" :class="statusClass(item.status)">{{ statusText(item.status) }}</span>
               <span v-if="item.retries > 0" class="tag warn">重试 {{ item.retries }} 次</span>
               <p v-if="item.error" class="err">{{ item.error }}</p>
+              <!--
+                自定义重连策略要在列表上留下痕迹
+
+                它是一条看不见的状态，而「这个号为什么不再重试了」的答案往往就在里面 ——
+                只在编辑框里才看得到的话，排查要先点开五个账号。摘要只列填了的那几项，
+                跟随全局的项不算这个号自己的事。
+              -->
+              <p v-if="isRetryCustom(item.record.retry)" class="hint">
+                重连策略：{{ retrySummary(item.record.retry) }}
+              </p>
             </td>
             <td data-label="启用">
               <label class="check">
@@ -650,7 +730,7 @@ onUnmounted(() => {
     <Modal
       :open="editing !== undefined"
       :title="`配置 ${editing?.record.label ?? editing?.record.id ?? ''}`"
-      :sub="editSchema === undefined ? '' : `${editAdapter?.name ?? editing?.record.adapterId} · 保存后会自动重连该账号`"
+      :sub="`${editAdapter?.name ?? editing?.record.adapterId ?? ''}${configChanged ? ' · 适配器配置已改动，保存后会自动重连该账号' : ''}`"
       wide
       @close="closeEdit()"
     >
@@ -675,8 +755,83 @@ onUnmounted(() => {
       />
       <p v-else class="hint">
         该账号所属的适配器 <code>{{ editing?.record.adapterId }}</code> 当前未注册（插件未装或已卸载），
-        故无从知道它的配置项长什么样。装回该适配器插件后即可在此编辑，现在仍可改备注。
+        故无从知道它的配置项长什么样。装回该适配器插件后即可在此编辑；备注与下方的重连策略不经适配器，
+        内核 0.5.2 起可以直接改。
       </p>
+
+      <!--
+        ───── 重连策略 ─────
+
+        与上面那张表单**不是一类东西**，故单独成节而不混进 SchemaForm：那张表由适配器的
+        `accountSchema` 驱动（「这个号的 WS 地址与 token 是什么」），而这四项归内核所有 ——
+        重连是内核替所有适配器统一做的事，适配器根本不参与。混进去就得要求每个适配器作者
+        各自声明一遍这四项，于是同一件事有 N 份声明，且哪个适配器忘了写，它的账号就没有
+        这个能力。
+
+        每一项都可以留空，留空即跟随全局 —— 故**一律不给默认值**：预先填上此刻的全局值
+        等于把「跟随全局」偷换成「此刻的全局值」，而后者从此不跟着全局改动走，症状是
+        「我改了全局间隔，这个号却不听」。
+      -->
+      <div class="subsect">
+        <h3>重连策略</h3>
+        <p class="hint">
+          四项各自可留空，留空的那项跟随全局设置（配置页 → 适配器）。这四项由内核统一执行，与适配器无关。
+        </p>
+
+        <div class="field">
+          <label for="retryLimit">重连次数上限</label>
+          <input
+            id="retryLimit"
+            v-model="editRetry.limit"
+            type="number"
+            min="0"
+            max="1000"
+            step="1"
+            placeholder="跟随全局"
+          />
+          <p class="hint">{{ globalNote("limit", globalRetry) }}。填 0 表示一直重连；连上一次即归零。</p>
+        </div>
+
+        <div class="field">
+          <label for="retryInterval">首次重连间隔</label>
+          <div class="dur">
+            <input id="retryInterval" v-model="editRetry.interval" type="number" min="0" placeholder="跟随全局" />
+            <select v-model="editRetry.intervalUnit" aria-label="首次重连间隔的单位">
+              <option v-for="unit in DUR_UNITS" :key="unit.value" :value="unit.value">{{ unit.label }}</option>
+            </select>
+          </div>
+          <p class="hint">{{ globalNote("interval", globalRetry) }}。第一次失败之后等多久再试。</p>
+        </div>
+
+        <div class="field">
+          <label for="retryMaxInterval">重连间隔上限</label>
+          <div class="dur">
+            <input id="retryMaxInterval" v-model="editRetry.maxInterval" type="number" min="0" placeholder="跟随全局" />
+            <select v-model="editRetry.maxIntervalUnit" aria-label="重连间隔上限的单位">
+              <option v-for="unit in DUR_UNITS" :key="unit.value" :value="unit.value">{{ unit.label }}</option>
+            </select>
+          </div>
+          <p class="hint">{{ globalNote("maxInterval", globalRetry) }}。退避增长到此为止，不再变长。</p>
+        </div>
+
+        <div class="field">
+          <label for="retryFactor">退避倍率</label>
+          <input
+            id="retryFactor"
+            v-model="editRetry.factor"
+            type="number"
+            min="1"
+            max="10"
+            step="0.1"
+            placeholder="跟随全局"
+          />
+          <p class="hint">
+            {{ globalNote("factor", globalRetry) }}。每失败一次把等待乘上这个数；填 1 即不退避、始终按首次间隔重试。
+          </p>
+        </div>
+
+        <button :disabled="!retryCustomized" @click="clearRetry()">四项一并改回跟随全局</button>
+      </div>
 
       <template #actions>
         <button @click="closeEdit()">取消</button>
@@ -685,7 +840,7 @@ onUnmounted(() => {
           :disabled="editing !== undefined && busy === editing.record.id"
           @click="void saveEdit()"
         >
-          保存并重连
+          {{ configChanged ? "保存并重连" : "保存" }}
         </button>
       </template>
     </Modal>

@@ -24,6 +24,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import AppIcon from "./AppIcon.vue"
 import { CRON_FIELDS, explodeCron, joinCron, previewCron } from "../cron.js"
+import { DUR_UNITS, joinDuration, splitDuration } from "../duration.js"
 import { describePattern, lengthLimitOf, rangeTextOf } from "../field.js"
 import { datetime } from "../format.js"
 import { askPath } from "../pathpick.js"
@@ -120,17 +121,6 @@ const BLOCK_WIDGETS = new Set(["textarea", "code", "tags", "multiselect", "uid",
  * 复选药丸（`mspick`），此处这一支是它的退路。
  */
 const TAG_WIDGETS = new Set(["tags", "multiselect", "uid"])
-
-/** 时长单位；顺序即下拉中的顺序 */
-const DUR_UNITS: readonly { value: string; label: string }[] = [
-  { value: "ms", label: "毫秒" },
-  { value: "s", label: "秒" },
-  { value: "m", label: "分" },
-  { value: "h", label: "时" },
-  { value: "d", label: "天" }
-]
-
-const DUR_RE = /^(-?\d+(?:\.\d+)?)(ms|s|m|h|d)$/
 
 /** 标签文案：没写 title 就退回字段名，绝不显示空标签 */
 const label = computed(() => props.schema.title ?? props.path.split(".").pop() ?? props.path)
@@ -506,17 +496,9 @@ const sliderValue = computed(() => {
  *
  * 读不懂的写法一律返回 undefined，由模板退回纯文本框 —— 复合控件无法表达
  * `"1h30m"` 一类内核也不接受但确实可能出现在文件里的值，若强行按 0 呈现，
- * 使用者一保存就把原值抹掉了。
+ * 使用者一保存就把原值抹掉了。判据在 `duration.ts`，与账号页的重连覆盖共用。
  */
-const dur = computed<{ n: number; unit: string } | undefined>(() => {
-  const value = props.value
-  if (typeof value === "number" && Number.isFinite(value)) return { n: value, unit: "ms" }
-  if (typeof value !== "string") return undefined
-  const text = value.trim()
-  if (/^-?\d+$/.test(text)) return { n: Number(text), unit: "ms" }
-  const matched = DUR_RE.exec(text)
-  return matched === null ? undefined : { n: Number(matched[1]), unit: matched[2] as string }
-})
+const dur = computed(() => splitDuration(props.value))
 
 /* ─────────────── cron ─────────────── */
 
@@ -725,8 +707,9 @@ function setNumber(text: string): void {
 /**
  * 提交时长
  *
- * 单位为毫秒时回传数值而非 `"5ms"`：内核的 `duration()` 两种写法都收，而原本写作
- * `cooldown: 0` 的项若被改写成 `"0ms"`，看起来像框架在乱改文件。
+ * **空串与非数字一概不提交**（`joinDuration` 返回 undefined）：这里的字段本来就有值，
+ * 「清空」不是一个可表达的意图，按 0 提交则是替使用者改了配置。账号页的重连覆盖那侧
+ * 相反 —— 留空即「跟随全局」，故那个判断归调用方，不在 `joinDuration` 里。
  *
  * 改单位时数值原样保留，不做等值换算：`5000` 毫秒换成秒该得 `5` 还是 `5000` 取决于
  * 使用者的意图，替其决定必有一半场合是错的，且错得静默。
@@ -734,10 +717,8 @@ function setNumber(text: string): void {
  * @param unit 单位
  */
 function setDuration(text: string, unit: string): void {
-  if (text.trim() === "") return
-  const n = Number(text)
-  if (!Number.isFinite(n)) return
-  set(unit === "ms" ? n : `${n}${unit}`)
+  const next = joinDuration(text, unit)
+  if (next !== undefined) set(next)
 }
 </script>
 

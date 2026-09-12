@@ -28,8 +28,10 @@ import type {
 
 export type {
   AccountRecord,
+  AccountRetryOverride,
   AccountState,
   CommandInfo,
+  DurationLike,
   LogLevel,
   LoginPrompt,
   LoginStep,
