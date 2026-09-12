@@ -11,7 +11,7 @@
  *          的判据错开，而错开的表现是界面说「已加载」而插件其实没跑。
  */
 import { describe, expect, it } from "vitest"
-import { resultText, setupResultText } from "./market.js"
+import { installDirOf, resultText, setupResultText } from "./market.js"
 import type { MarketInstallResult, MarketSetupResult } from "./types.js"
 
 /**
@@ -48,6 +48,41 @@ function setupOf(over: Partial<MarketSetupResult> = {}): MarketSetupResult {
     ...over
   }
 }
+
+describe("寻址单位", () => {
+  /*
+   * 目录名与声明名分道扬镳时，市场只认目录
+   *
+   * 这一条守的是一次真实的缺陷：中转站签到插件装在 relay-checkin-plugin 里、自己声明
+   * relay-checkin，面板拿声明名去请求，于是「插件市场中没有名为 relay-checkin 的插件」，
+   * 而内核在查索引之前已按那个名字把插件卸掉 —— 它从插件列表里消失，目录却完好。
+   */
+  it("取安装目录的最后一段，而不是插件的声明名", () => {
+    expect(installDirOf("/opt/yunzai/plugins/relay-checkin-plugin", "relay-checkin")).toBe("relay-checkin-plugin")
+  })
+
+  // root 由服务端给出，而服务端可能是 Windows
+  it("认 Windows 的反斜杠", () => {
+    expect(installDirOf("C:\\yz\\yunzai-ng\\plugins\\relay-checkin-plugin", "relay-checkin")).toBe(
+      "relay-checkin-plugin"
+    )
+  })
+
+  // 末尾多一个分隔符时若不滤空段，取到的是空串 —— 那会请求 market//update
+  it("末尾带分隔符时仍取到目录名", () => {
+    expect(installDirOf("/opt/yunzai/plugins/demo/", "demo")).toBe("demo")
+  })
+
+  /*
+   * 加载失败到连目录都没认出来时 `root` 为空串
+   *
+   * 退回声明名不是因为它对，而是因为那时没有更好的东西可拿；空串会请求到 `market//update`，
+   * 报出来的错与插件毫无关系。
+   */
+  it("root 为空时退回声明名", () => {
+    expect(installDirOf("", "demo")).toBe("demo")
+  })
+})
 
 describe("就地拉取", () => {
   it("拉到新提交时给出版本迁移，并说明依赖未动", () => {

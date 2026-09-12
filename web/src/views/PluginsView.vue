@@ -25,7 +25,7 @@ import { computed, nextTick, onMounted, ref } from "vue"
 import { del, get, post } from "../api.js"
 import { errorText, statusClass, statusText } from "../format.js"
 import { askConfirm } from "../confirm.js"
-import { resultText, setupResultText } from "../market.js"
+import { installDirOf, resultText, setupResultText } from "../market.js"
 import { hrefOf } from "../router.js"
 import ConfigEditor from "../components/ConfigEditor.vue"
 import Modal from "../components/Modal.vue"
@@ -117,7 +117,7 @@ const menuOpen = ref("")
 const menuUp = ref(false)
 
 /**
- * 市场索引，按插件名索引
+ * 市场索引，按**安装目录名**索引
  *
  * **只为两件事而拉：判「可更新」与预告装后步骤。** 管理动作本身不需要它 —— 手工放进插件目录的
  * 插件压根不在索引里，而那恰是最需要「装依赖并编译」的一类。故取不到索引时按钮照旧可用，
@@ -129,11 +129,22 @@ const marketItems = ref<Map<string, MarketItem>>(new Map())
 
 /**
  * 一个插件在索引里的条目
- * @param name 插件名
+ * @param dir 安装目录名，取自 {@link dirOf}
  * @returns 条目；索引里没有或索引没拉到时 undefined
  */
-function marketOf(name: string): MarketItem | undefined {
-  return marketItems.value.get(name)
+function marketOf(dir: string): MarketItem | undefined {
+  return marketItems.value.get(dir)
+}
+
+/**
+ * 一个插件的**安装目录名** —— 市场一切动作的寻址单位
+ *
+ * 判据与理由都在 {@link installDirOf}；此处只是把插件项摊成它的两个参数。
+ * @param p 插件
+ * @returns 安装目录名
+ */
+function dirOf(p: PluginItem): string {
+  return installDirOf(p.root, p.name)
 }
 
 /**
@@ -294,14 +305,14 @@ async function act(name: string, action: "reload" | "unload"): Promise<void> {
  * 逐条写出来而不是一句「会自动装依赖」：`install:browser` 那类装后步骤要下载上百兆的运行时，
  * 事先不说会让人以为界面卡住了。索引里没有这个插件时只说得出装依赖那一半 —— 装后步骤是
  * **索引**声明的，手放进来的插件没有那份声明。
- * @param name 插件名
+ * @param dir 安装目录名，取自 {@link dirOf}
  * @returns 说明行
  */
-function setupNotes(name: string): string[] {
+function setupNotes(dir: string): string[] {
   const notes = [
     "会在插件目录内执行 pnpm install（找不到 pnpm 时退回 npm），那一步会执行该插件依赖的 install 脚本"
   ]
-  const scripts = marketOf(name)?.setup?.scripts ?? []
+  const scripts = marketOf(dir)?.setup?.scripts ?? []
   if (scripts.length > 0) {
     notes.push(`随后按索引声明依次执行 ${scripts.join("、")} —— 其中可能包含编译与运行时下载，耗时可达数分钟`)
   }
@@ -405,7 +416,8 @@ async function manage(name: string, task: () => Promise<string>): Promise<void> 
 async function update(p: PluginItem): Promise<void> {
   menuOpen.value = ""
   await flowOf(p.name, async () => {
-    const entry = marketOf(p.name)
+    const dir = dirOf(p)
+    const entry = marketOf(dir)
     const ok = await askConfirm({
       title: `更新插件「${p.name}」？`,
       body: "更新方式由内核判定：插件目录是 git 仓库时就地拉取，否则先卸载再重新下载整个目录。",
@@ -415,12 +427,12 @@ async function update(p: PluginItem): Promise<void> {
         "就地拉取：目录重置到远端最新提交，已装的依赖保留",
         "退回重装：先卸载当前版本，目录整份替换（含 node_modules）；下载失败时该插件将处于未加载状态",
         "两条路都不影响插件的配置与数据库 —— 它们不在安装目录内",
-        ...setupNotes(p.name)
+        ...setupNotes(dir)
       ]
     })
     if (!ok) return
 
-    const probe = await probeUpdate(p.name)
+    const probe = await probeUpdate(dir)
     let stash = false
     if (probe?.dirty === true) {
       /*
@@ -449,7 +461,7 @@ async function update(p: PluginItem): Promise<void> {
     }
 
     await manage(p.name, async () =>
-      resultText(await post<MarketInstallResult>(`market/${encodeURIComponent(p.name)}/update`, { stash }))
+      resultText(await post<MarketInstallResult>(`market/${encodeURIComponent(dir)}/update`, { stash }))
     )
   })
 }
@@ -465,6 +477,7 @@ async function update(p: PluginItem): Promise<void> {
 async function reinstall(p: PluginItem): Promise<void> {
   menuOpen.value = ""
   await flowOf(p.name, async () => {
+    const dir = dirOf(p)
     const ok = await askConfirm({
       title: `重装插件「${p.name}」？`,
       body: "不走就地拉取，从索引重新下载整个目录并替换。",
@@ -475,13 +488,13 @@ async function reinstall(p: PluginItem): Promise<void> {
         "目录内不属于仓库的东西一并消失：插件写在安装目录下的缓存、你自己放进去的资源",
         "配置与数据库不在安装目录内，不受影响",
         "下载失败时该插件将处于未加载状态 —— 旧目录已被删除",
-        ...setupNotes(p.name),
+        ...setupNotes(dir),
         "多数情形该点的是「更新」：那一条在目录是 git 仓库时只拉取变化，保住已装的依赖"
       ]
     })
     if (!ok) return
     await manage(p.name, async () =>
-      resultText(await post<MarketInstallResult>(`market/${encodeURIComponent(p.name)}/update`, { fresh: true }))
+      resultText(await post<MarketInstallResult>(`market/${encodeURIComponent(dir)}/update`, { fresh: true }))
     )
   })
 }
@@ -497,19 +510,20 @@ async function reinstall(p: PluginItem): Promise<void> {
 async function setup(p: PluginItem): Promise<void> {
   menuOpen.value = ""
   await flowOf(p.name, async () => {
+    const dir = dirOf(p)
     const ok = await askConfirm({
       title: `为「${p.name}」装依赖并编译？`,
       body: "不重新下载插件内容，只在现有目录内装依赖、并按索引声明跑装后步骤。",
       okText: "执行",
       details: [
         "依赖已装好时包管理器会自行跳过，故重复执行是安全的",
-        ...setupNotes(p.name),
+        ...setupNotes(dir),
         "跑完会重载该插件 —— 编译产物换掉之后，内存里那份旧模块仍在响应命令"
       ]
     })
     if (!ok) return
     await manage(p.name, async () =>
-      setupResultText(await post<MarketSetupResult>(`market/${encodeURIComponent(p.name)}/setup`))
+      setupResultText(await post<MarketSetupResult>(`market/${encodeURIComponent(dir)}/setup`))
     )
   })
 }
@@ -523,6 +537,7 @@ async function setup(p: PluginItem): Promise<void> {
 async function remove(p: PluginItem): Promise<void> {
   await flowOf(p.name, async () => {
     menuOpen.value = ""
+    const dir = dirOf(p)
     const ok = await askConfirm({
       title: `删除插件「${p.name}」？`,
       body: "整个安装目录会被移除，无法撤销。",
@@ -531,6 +546,7 @@ async function remove(p: PluginItem): Promise<void> {
       // 配置与数据库不在插件目录内（见内核 market.ts 的 remove()：「配置文件与数据库另行存放，
       // 保留它们使得重新安装后原有配置仍然有效」），故此处不能写「需重新配置」
       details: [
+        `要删的目录是 plugins/${dir}`,
         "与「卸载」不同：卸载只摘掉内存里那份，重载即回来；这一条动的是磁盘",
         "配置文件与数据库另行存放，不会被删除",
         "重新安装同名插件后，原有配置仍然有效"
@@ -538,7 +554,7 @@ async function remove(p: PluginItem): Promise<void> {
     })
     if (!ok) return
     await manage(p.name, async () => {
-      await del(`market/${encodeURIComponent(p.name)}`)
+      await del(`market/${encodeURIComponent(dir)}`)
       return `${p.name} 的安装目录已删除。`
     })
   })
@@ -651,13 +667,13 @@ onMounted(() => void load())
           <header>
             <h3>{{ p.name }}</h3>
             <span class="tag" :class="statusClass(p.status)">{{ statusText(p.status) }}</span>
-            <span v-if="marketOf(p.name)?.updatable" class="tag warn">可更新</span>
+            <span v-if="marketOf(dirOf(p))?.updatable" class="tag warn">可更新</span>
           </header>
 
           <!-- 可更新时给「旧 → 新」：只给一个数看不出该不该更新 -->
           <p class="mono hint">
             {{ p.version
-            }}<span v-if="marketOf(p.name)?.updatable"> → {{ marketOf(p.name)?.version }}</span
+            }}<span v-if="marketOf(dirOf(p))?.updatable"> → {{ marketOf(dirOf(p))?.version }}</span
             ><span v-if="p.builtin"> · 随发行版预置</span>
           </p>
           <p v-if="p.description" class="plugin-desc">{{ p.description }}</p>
@@ -684,7 +700,7 @@ onMounted(() => void load())
           <footer class="row">
             <button v-if="p.configured" class="primary" @click="configuring = p.name">配置</button>
             <button
-              v-if="marketOf(p.name)?.updatable"
+              v-if="marketOf(dirOf(p))?.updatable"
               :class="{ primary: !p.configured }"
               :disabled="locked"
               @click="void update(p)"
@@ -705,7 +721,7 @@ onMounted(() => void load())
                     该不该更新，而按钮点下去内核会照旧试一次。
                   -->
                   <button
-                    v-if="!marketOf(p.name)?.updatable"
+                    v-if="!marketOf(dirOf(p))?.updatable"
                     :disabled="locked"
                     @click="void update(p)"
                   >

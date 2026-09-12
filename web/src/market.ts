@@ -1,5 +1,5 @@
 /**
- * 模块职责：把一次安装、更新或收尾的结果说成一句话
+ * 模块职责：市场动作的寻址（该拿哪个名字去请求）与结果文案（把结果说成一句话）
  * 依赖方向：只依赖 types 的类型声明，纯函数
  * 生命周期：无状态
  * 注意事项：抽出组件之外是为了能立断言。内核有三种取源结果（就地拉到新提交、已是最新、
@@ -16,6 +16,30 @@
  *          缺产物的插件加载时报的是「找不到模块」，与真实原因隔着一层。
  */
 import type { MarketInstallResult, MarketSetupResult, SetupOutcome } from "./types.js"
+
+/**
+ * 一个插件的**安装目录名** —— 市场一切动作的寻址单位
+ *
+ * 不能拿插件的声明名顶替。声明名来自 `definePlugin({ name })`，与目录常常不同 ——
+ * 中转站签到插件的目录（也是索引条目名）叫 `relay-checkin-plugin`，而它自己声明
+ * `relay-checkin`。照声明名请求 `market/:name/*` 的结果是「插件市场中没有名为
+ * relay-checkin 的插件」，而那个插件明明就装在那儿；内核 0.5.1 之前更会在查索引**之前**
+ * 就按这个名字卸载插件，于是它从插件列表里凭空消失，而目录一个字节都没动。
+ *
+ * 两种分隔符都切：`root` 由服务端给出，而服务端可能是 Windows。末尾的分隔符一并滤掉，
+ * 否则取到的是空串。
+ *
+ * **单文件插件（`plugins/我的小功能.js`）的 `root` 就是 `plugins/` 本身**，没有属于自己的
+ * 安装目录，这里会给出 `plugins` —— 那几个市场动作对它本就无从生效（安装单位是目录），
+ * 照旧失败，只是话说得不同。
+ * @param root 安装目录的绝对路径，取自插件列表的 `root`
+ * @param fallback `root` 为空（加载失败且连目录都没认出来）时的退路，通常是插件声明名
+ * @returns 安装目录名
+ */
+export function installDirOf(root: string, fallback: string): string {
+  const parts = root.split(/[\\/]/).filter(s => s !== "")
+  return parts[parts.length - 1] ?? fallback
+}
 
 /**
  * 把收尾那几项说成一句话
