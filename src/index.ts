@@ -25,6 +25,8 @@ import { loadPanelServers } from "./panelserver.js"
 import { PanelStore, STORE_CACHE_FILE, type PanelStoreSettings } from "./panelstore.js"
 import { DEFAULT_STORE_INDEX, webuiConfigSchema, type WebuiConfig } from "./storeconfig.js"
 import { mountCustomPages } from "./custompage.js"
+import { startCollector } from "./msgcollect.js"
+import { clearStatsReader, setStatsReader } from "./msghub.js"
 
 /** 前端产物目录名，与 `web/vite.config.ts` 的 outDir 末段一致 */
 const WEB_DIR = "web"
@@ -490,6 +492,33 @@ const plugin: PluginDefinition<WebuiConfig> = definePlugin({
 
   async setup(ctx) {
     mountPanel(ctx, webDirOf(import.meta.dirname))
+
+    /*
+     * 采集器须在自定义页面之前起来：webui 自己那一页的接口在 `mountCustomPages` 扫描时注册，
+     * 注册的处理函数向 msghub 取数。反过来的话页面注册那一刻 hub 还是空的 —— 那不会报错，
+     * 只会让统计页面一直显示「统计尚未开始」，而使用者无从知道是顺序问题。
+     *
+     * 采集失败只是没有统计，故与面板本身隔开一次 try。
+     */
+    try {
+      const collector = await startCollector({
+        dataDir: ctx.dataDir,
+        logger: ctx.logger,
+        // 事件名在 CollectHost 里已窄化为三条，此处的转型只为绕开 handler 返回类型
+        // （内核要 Awaitable<void>，采集器给 unknown）的不变性，不放宽任何事件范围
+        on: (event, handler) => ctx.on(event, handler as never),
+        // 发侧事件只带账号的记录 id，而收侧带的是平台 id；不换算的话同一个号会裂成两个
+        selfIdOf: id => ctx.app.accounts.get(id)?.record.selfId
+      })
+      setStatsReader(() => collector.read())
+      ctx.signal.addEventListener("abort", () => {
+        clearStatsReader()
+        void collector.stop()
+      })
+    } catch (err) {
+      ctx.logger.error(`消息统计启动失败，面板本身不受影响：${err instanceof Error ? err.message : String(err)}`)
+    }
+
     // 自定义页面属于各业务插件，不放进 webui/plugins 面板组件目录。
     try {
       await mountCustomPages(

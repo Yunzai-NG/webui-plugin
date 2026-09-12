@@ -67,9 +67,10 @@ describe("正则说明", () => {
     expect(describePattern("^\\d+$")).toBe("只能是数字")
     expect(describePattern("^\\d{6}$")).toBe("只能是数字，须为 6 位")
     expect(describePattern("^\\d{5,}$")).toBe("只能是数字，至少 5 位")
-    // 内核 s.uid() 用的就是这一条
     expect(describePattern("^\\d{1,20}$")).toBe("只能是数字，1 至 20 位")
     expect(describePattern("^[a-zA-Z0-9_-]+$")).toBe("只能是字母、数字、下划线与连字符")
+    // 内核 s.ids() 用的就是这一条（主人账号那栏的提示由它生成）
+    expect(describePattern("^[A-Za-z0-9_-]{1,64}$")).toBe("只能是字母、数字、下划线与连字符，1 至 64 位")
     expect(describePattern("^https?:\\/\\/")).toBe("须以 http:// 或 https:// 开头")
     expect(describePattern("^ws s?://")).toBeUndefined()
   })

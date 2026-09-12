@@ -16,6 +16,13 @@
  *
  *          副标题另有一个 `meta` 插槽，同行紧随其后。日志页的连接状态徽标属于这一处：它是对副标题
  *          那句话的即时限定，且并不可点，放进动作组会与可点击项混在一起。
+ *
+ *          `title` 是**唯一**可覆盖那份表的一项，只为一种页：内容由插件提供、标题在运行时才知道
+ *          （扩展页面）。这一项不该推广到别处 —— 其余页面的标题与导航文案必须是同一个词，
+ *          各页自己传一遍就会出现「侧栏叫 A、页头叫 B」而无人察觉。
+ *
+ *          标题右侧另有 `titleMeta` 插槽，放「这一页由谁提供」一类的出处说明：它限定的是标题
+ *          本身而非副标题那句话，故与 `h1` 同行、以淡色区分主次。
  */
 import { computed } from "vue"
 import AppIcon from "./AppIcon.vue"
@@ -29,7 +36,16 @@ const props = defineProps<{
   route: string
   /** 副标题，一句话说明本页呈现什么 */
   sub?: string
+  /** 覆盖标题；缺省取 ROUTES 里的导航文案。只给运行时才知道标题的页用 */
+  title?: string
 }>()
+
+/** 实际显示的标题 */
+const heading = computed(() => {
+  const given = props.title
+  if (given !== undefined && given !== "") return given
+  return def.value?.label ?? props.route
+})
 
 /** 当前页面的定义 */
 const def = computed(() => routeOf(props.route))
@@ -41,7 +57,12 @@ const def = computed(() => routeOf(props.route))
       <AppIcon :path="def?.icon ?? UNKNOWN" />
     </span>
     <div class="page-titles">
-      <h1>{{ def?.label ?? route }}</h1>
+      <!-- 标题右侧那行淡色小字与标题同行：它是对「这是谁的页」的限定，
+           另起一行会读成一条独立的说明 -->
+      <h1>
+        {{ heading }}
+        <small v-if="$slots.titleNote" class="page-note"><slot name="titleNote" /></small>
+      </h1>
       <p v-if="sub !== undefined || $slots.meta" class="sub">
         {{ sub }}
         <slot name="meta" />

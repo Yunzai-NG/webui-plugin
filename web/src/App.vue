@@ -17,7 +17,7 @@
  *          **不退回闸门** —— 那会连带丢掉使用者正在读的内容；唯一的例外是 401/403，那时留在外壳里做什么都不会成功。
  */
 import { computed, onMounted, onUnmounted, ref, watch, type Component } from "vue"
-import { get, getAt, getToken, setToken } from "./api.js"
+import { get, getAt, getToken, post, setToken } from "./api.js"
 import { ApiError } from "./api.js"
 import { errorText } from "./format.js"
 import { ROUTES, currentQuery, currentRoute, hrefOf, type RouteDef } from "./router.js"
@@ -37,7 +37,17 @@ import HelpView from "./views/HelpView.vue"
 import AppearanceView from "./views/AppearanceView.vue"
 import CustomPageView from "./views/CustomPageView.vue"
 
-interface MountedPage { id: string; title: string; icon?: string; plugin: string }
+/**
+ * 一个插件挂上来的页面，字段与服务端 `custompage.ts` 的 `CustomPage` 对齐
+ *
+ * `id` 即插件目录名，由服务端担保全局唯一 —— 故此处按 `id` 作 `:key` 与选中判据都是安全的。
+ */
+interface MountedPage {
+  id: string
+  title: string
+  /** 提供者显示名，二级项的 `title` 提示据它说明出处 */
+  provider: string
+}
 
 /**
  * 心跳间隔
@@ -55,6 +65,20 @@ const MARK = "icon-square.svg"
 
 /** 清除令牌一项的图标：一支向右的箭头，读作「离开」 */
 const SIGN_OUT = "M13 6l6 6-6 6M19 12H5"
+
+/*
+ * 扩展页面一组的三个图标
+ *
+ * 一律走 svg path 而非 `⌃` `⌄` `🦊` 一类字符：前两个是 Unicode 几何字符，Windows 上被系统
+ * 彩色字体接管后 `color` 失效，折叠态下与描边图标并列会明显不同色；后一个是彩色字形，
+ * 在深色主题里无从跟着变。理由与 `router.ts` 的 `RouteDef.icon` 同一条。
+ */
+/** 展开态的折角：一枚朝上的角标 */
+const CARET_UP = "M7 14l5-5 5 5"
+/** 收起态的折角：一枚朝下的角标 */
+const CARET_DOWN = "M7 10l5 5 5-5"
+/** 二级项的项目符号：一个小圆，读作「这一组下的一项」 */
+const PAGE_DOT = "M12 13.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3"
 
 /**
  * 主题一项的三个图标，与 `ThemeChoice` 一一对应
@@ -86,8 +110,8 @@ const VIEWS: Record<string, Component> = {
   store: StoreView,
   config: ConfigView,
   help: HelpView,
-  appearance: AppearanceView
-  ,custom: CustomPageView
+  appearance: AppearanceView,
+  custom: CustomPageView
 }
 
 /** 闸门状态 */
@@ -105,6 +129,14 @@ const online = ref(true)
 const readonly = ref(false)
 const mountedPages = ref<MountedPage[]>([])
 const customExpanded = ref(true)
+/**
+ * 「发送到日志」这一枚的即时反馈
+ *
+ * 那个动作的结果落在**别处**（终端或日志文件），页面上什么都不会变 —— 不给一句回执的话，
+ * 使用者只能反复点它，而每次点都往日志里多写一行。
+ */
+const revealNote = ref("")
+const revealing = ref(false)
 
 let beat: number | undefined
 
@@ -153,6 +185,12 @@ async function probe(): Promise<void> {
   }
 }
 
+/**
+ * 取一次已挂载的插件页面清单
+ *
+ * 失败一律退回空数组而不报错：没有任何插件装页面时，导航里就该干净地少一截二级项，
+ * 而不是在侧栏上挂一条使用者无从处置的错误。
+ */
 async function loadMountedPages(): Promise<void> {
   try {
     mountedPages.value = (await getAt<{ pages?: MountedPage[] }>("/plugin/webui/custom-pages")).pages ?? []
@@ -184,6 +222,28 @@ async function submitToken(): Promise<void> {
   await probe()
 }
 
+/**
+ * 请内核把当前令牌打进日志
+ *
+ * **不显示到界面上，只写日志。** 这个端点是 `auth: false` 的（需要它的人恰恰是没有令牌的
+ * 那个人，带令牌才能调等于没有这个功能），故它的响应一个字节都不带令牌 —— 否则使用者
+ * 浏览器里的任何页面都能取到面板的全部写权限。看令牌请去终端或日志文件。
+ */
+async function revealToken(): Promise<void> {
+  revealing.value = true
+  try {
+    const done = await post<{ hasToken?: boolean }>("token/reveal")
+    revealNote.value =
+      done.hasToken === false
+        ? "当前未设置访问令牌 —— 此时留空即可进入"
+        : "已打进日志，请到运行内核的终端（或日志文件）查看"
+  } catch (err) {
+    revealNote.value = errorText(err)
+  } finally {
+    revealing.value = false
+  }
+}
+
 /** 清除令牌并返回闸门 */
 function signOut(): void {
   setToken("")
@@ -192,8 +252,15 @@ function signOut(): void {
   message.value = "已清除本机保存的令牌"
 }
 
-watch(currentRoute, () => {
+watch(currentRoute, id => {
   drawer.value = false
+  if (id !== "custom") return
+  // 进扩展页面时重取一次清单：装插件、重载 webui 都会改变它，而使用者刚做完这些事
+  // 第一件想确认的就是「我那一页出来了没有」，此时要求他刷新整页是多余的一步
+  void loadMountedPages()
+  // 一并展开：此前收起过的话，直接开一个带 `?name=` 的链接会看不到自己正停在哪一页 ——
+  // 右侧显示着某个插件的页面，左侧那一组却是收着的
+  customExpanded.value = true
 })
 
 onMounted(() => {
@@ -207,30 +274,81 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div v-if="state === 'checking'" class="gate card">正在连接内核…</div>
+  <!--
+    闸门三态：连接中 / 连不上 / 要令牌
 
-  <div v-else-if="state === 'down'" class="gate card">
-    <h1>无法连接内核</h1>
-    <p class="sub">{{ message }}</p>
-    <button class="primary" @click="void probe()">重试</button>
+    三者共用 `.gate`（居中、限宽）与 `.card`，各自的内容量差得很远 —— 连接中只有一行字，
+    要令牌那一态有标题、输入框、两枚钮与两行提示。故品牌那一行放在共用的位置上：
+    没有它时，「正在连接内核…」是一张浮在空白页正中的、没有出处的卡片。
+  -->
+  <div v-if="state === 'checking'" class="gate">
+    <div class="card gate-body">
+      <p class="gate-brand">
+        <img class="brand-mark" :src="MARK" alt="" width="22" height="22" />
+        <span class="brand">Yunzai NG</span>
+      </p>
+      <!-- 转圈而非只一行字：连不上时这一态会停在这里数秒，静止的文字读不出「还在试」 -->
+      <p class="gate-wait"><span class="spinner" aria-hidden="true" />正在连接内核…</p>
+    </div>
   </div>
 
-  <div v-else-if="state === 'locked'" class="gate card">
-    <h1>需要访问令牌</h1>
-    <p class="sub">{{ message }}</p>
-    <div class="field">
-      <label for="token">访问令牌</label>
-      <input
-        id="token"
-        v-model="draftToken"
-        type="password"
-        autocomplete="off"
-        placeholder="启动时终端输出的令牌"
-        @keyup.enter="void submitToken()"
-      />
-      <p class="hint">该令牌亦可在 config/yunzai.yaml 的 server.token 中查看或修改。</p>
+  <div v-else-if="state === 'down'" class="gate">
+    <div class="card gate-body">
+      <p class="gate-brand">
+        <img class="brand-mark" :src="MARK" alt="" width="22" height="22" />
+        <span class="brand">Yunzai NG</span>
+      </p>
+      <h1>无法连接内核</h1>
+      <p class="sub">{{ message }}</p>
+      <!--
+        这一态与「令牌不对」是两件事，故给出的是排查方向而不是一句「加载失败」：
+        前者要去看进程还在不在，后者要去改令牌。
+      -->
+      <p class="hint">内核可能已停止运行，或监听地址与端口和面板不一致。请查看运行内核的终端。</p>
+      <div class="gate-actions">
+        <button class="primary" @click="void probe()">重试</button>
+      </div>
     </div>
-    <button class="primary" @click="void submitToken()">进入</button>
+  </div>
+
+  <div v-else-if="state === 'locked'" class="gate">
+    <div class="card gate-body">
+      <p class="gate-brand">
+        <img class="brand-mark" :src="MARK" alt="" width="22" height="22" />
+        <span class="brand">Yunzai NG</span>
+      </p>
+      <h1>需要访问令牌</h1>
+      <p v-if="message !== ''" class="sub">{{ message }}</p>
+      <div class="field">
+        <label for="token">访问令牌</label>
+        <input
+          id="token"
+          v-model="draftToken"
+          type="password"
+          autocomplete="off"
+          placeholder="启动时终端输出的令牌"
+          @keyup.enter="void submitToken()"
+        />
+        <!--
+          「发送到日志」贴在输入框右下角，与提示同一行
+
+          为「令牌抄丢了」这一种处境而设：此刻使用者被挡在面板之外，面板里的任何功能都用不上。
+          它**不把令牌显示到界面上**，只请内核往日志里打一行 —— 那个端点是 `auth: false` 的
+          （需要它的人恰恰没有令牌），若响应里带着令牌，浏览器里任何一个页面都能取到面板的
+          全部写权限。
+        -->
+        <p class="hint gate-hint">
+          <span>该令牌亦可在 config/yunzai.yaml 的 server.token 中查看或修改。</span>
+          <button class="link" type="button" :disabled="revealing" @click="void revealToken()">
+            {{ revealing ? "正在发送…" : "发送到日志" }}
+          </button>
+        </p>
+        <p v-if="revealNote !== ''" class="hint gate-said">{{ revealNote }}</p>
+      </div>
+      <div class="gate-actions">
+        <button class="primary" @click="void submitToken()">进入</button>
+      </div>
+    </div>
   </div>
 
   <div v-else class="shell" :class="{ open: drawer, collapsed }">
@@ -271,32 +389,61 @@ onUnmounted(() => {
         <template v-for="group in groups" :key="group.title">
           <p class="nav-group">{{ group.title }}</p>
           <template v-for="route in group.routes" :key="route.id">
-            <a
-              :href="hrefOf(route.id)"
-              :class="{ on: route.id === currentRoute }"
-              :aria-current="route.id === currentRoute ? 'page' : undefined"
-              :aria-label="route.label"
-              :title="route.label"
-            >
-              <AppIcon class="nav-icon" :path="route.icon" />
-              <span class="nav-label">{{ route.label }}</span>
+            <!--
+              展开钮与导航项**并列**，不嵌在 `<a>` 内：`<button>` 放进 `<a>` 是非法 HTML，
+              浏览器会把它移出锚点重排 DOM，Vue 之后的更新便对不上自己的节点。两者由
+              `.nav-row` 并成一行；不带钮的行同样过一层 `.nav-row`，免得两类行的间距不一致。
+            -->
+            <div class="nav-row">
+              <!--
+                有挂载页时「扩展页面」整行是一枚展开钮，不是链接：它自己没有内容可看，
+                点它只能是「展开看下面有哪些页」。此前那个只有 28px 的箭头是个过窄的靶子，
+                而点在文字上却跳到某个插件的页面 —— 使用者并没有选那一页。
+
+                没有挂载页时仍是链接，进去看到的是「怎么注册一个页面」的说明。
+              -->
               <button
-                v-if="route.id === 'custom'"
-                class="nav-expand"
+                v-if="route.id === 'custom' && mountedPages.length > 0"
+                class="nav-toggle"
                 type="button"
-                @click.prevent.stop="customExpanded = !customExpanded"
-              >{{ customExpanded ? "⌃" : "⌄" }}</button>
-            </a>
-            <template v-if="route.id === 'custom' && customExpanded">
-              <a
-                v-for="page in mountedPages"
-                :key="`${page.plugin}:${page.id}`"
-                class="nav-child"
-                :href="hrefOf('custom', { name: page.id })"
-                :class="{ on: route.id === currentRoute && currentQuery.name === page.id }"
+                :aria-expanded="customExpanded"
+                :title="customExpanded ? '收起' : '展开'"
+                @click="customExpanded = !customExpanded"
               >
-                <span class="nav-child-icon">{{ page.icon || "🦊" }}</span><span class="nav-label">{{ page.title }}</span>
+                <AppIcon class="nav-icon" :path="route.icon" />
+                <span class="nav-label">{{ route.label }}</span>
+                <AppIcon class="nav-caret" :path="customExpanded ? CARET_UP : CARET_DOWN" />
+              </button>
+              <a
+                v-else
+                :href="hrefOf(route.id)"
+                :class="{ on: route.id === currentRoute }"
+                :aria-current="route.id === currentRoute ? 'page' : undefined"
+                :aria-label="route.label"
+                :title="route.label"
+              >
+                <AppIcon class="nav-icon" :path="route.icon" />
+                <span class="nav-label">{{ route.label }}</span>
               </a>
+            </div>
+            <template v-if="route.id === 'custom' && customExpanded">
+              <!--
+                二级项同样过一层 `.nav-row`：两类行不在同一层容器里时，行高与外边距的
+                折叠方式都不一样，于是「消息统计」那一行会比它上面几行矮一两像素 ——
+                样式表里早写着这条，模板此前漏了。
+              -->
+              <div v-for="page in mountedPages" :key="page.id" class="nav-row">
+                <a
+                  class="nav-child"
+                  :href="hrefOf('custom', { name: page.id })"
+                  :class="{ on: route.id === currentRoute && currentQuery.name === page.id }"
+                  :aria-current="route.id === currentRoute && currentQuery.name === page.id ? 'page' : undefined"
+                  :title="`${page.title} —— 由 ${page.provider} 提供`"
+                >
+                  <AppIcon class="nav-icon" :path="PAGE_DOT" />
+                  <span class="nav-label">{{ page.title }}</span>
+                </a>
+              </div>
             </template>
           </template>
         </template>
@@ -334,7 +481,15 @@ onUnmounted(() => {
 
     <div class="scrim" @click="drawer = false" />
 
-    <main class="main">
+    <!--
+      `page-<标识>` 是给使用者留的调样式入口，不供本仓的样式表使用
+
+      全站的盒子共用 `.card` / `.grid` / `.row` 这些类（无 scoped 样式），改一处必然全站生效。
+      这一行让每页多一个祖先选择器，于是「只改这一页的间距」有了落点，且**无须动任何视图文件**：
+      各页的间距全部读 `--s1..--s8` 与 `--gutter`，在这个类下重声明令牌即可，见 styles.css 末尾
+      「按页覆盖」一节。本仓自己的规则一律不写 `.page-*`，否则又回到「改一页牵连另一页」。
+    -->
+    <main class="main" :class="`page-${currentRoute}`">
       <!-- `mode="out-in"` 而非默认的同时进出：两个视图重叠期间页面高度会先叠加再收回，
            在长页面之间切换时表现为内容跳一下 -->
       <Transition name="page" mode="out-in">

@@ -15,7 +15,9 @@ import jsdoc from "eslint-plugin-jsdoc"
  */
 export default [
   {
-    ignores: ["**/dist/**", "**/node_modules/**", "**/*.d.ts"]
+    // webadapter/msgstats.js 是构建时从 dist 拷来的产物（见 scripts/sync-webadapter.mjs），
+    // 与 dist 同理不进 lint
+    ignores: ["**/dist/**", "**/node_modules/**", "**/*.d.ts", "webadapter/msgstats.js"]
   },
   js.configs.recommended,
   {
@@ -131,6 +133,34 @@ export default [
         clearInterval: "readonly",
         fetch: "readonly",
         structuredClone: "readonly"
+      }
+    }
+  },
+  {
+    /**
+     * 自定义页面的浏览器侧脚本跑在 iframe 里，用得到 DOM 与 postMessage。
+     *
+     * 显式声明这些全局而不是把 `no-undef` 关掉：这份脚本不经 TypeScript 也不经打包器
+     * （见 scripts/sync-webadapter.mjs 的说明），`no-undef` 是它唯一的拼写错误门禁 ——
+     * 关掉之后一个写错的 `docuemnt` 要等到页面白屏才发现。
+     */
+    files: ["webadapter/*.page.js"],
+    languageOptions: {
+      ecmaVersion: 2023,
+      // `script` 而非 `module`：这份脚本经 `<script src>` 加载（不带 `type="module"`），
+      // 理由见 scripts/sync-webadapter.mjs 文件头的 CORS 一节。标成 module 会让 eslint
+      // 按模块语义解析（默认严格模式、顶层 this 为 undefined），与实际执行环境不符。
+      sourceType: "script",
+      globals: {
+        window: "readonly",
+        document: "readonly",
+        console: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        setInterval: "readonly",
+        clearInterval: "readonly",
+        ResizeObserver: "readonly",
+        Intl: "readonly"
       }
     }
   },

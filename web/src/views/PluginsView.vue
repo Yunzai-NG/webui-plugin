@@ -21,10 +21,11 @@
  *
  *          **面板插件包的「配置」按钮只对声明了配置项的包出现**，位置与核心插件一致（卡片首位、primary）。
  */
-import { computed, onMounted, ref } from "vue"
-import { get, post } from "../api.js"
+import { computed, nextTick, onMounted, ref } from "vue"
+import { del, get, post } from "../api.js"
 import { errorText, statusClass, statusText } from "../format.js"
 import { askConfirm } from "../confirm.js"
+import { resultText, setupResultText } from "../market.js"
 import { hrefOf } from "../router.js"
 import ConfigEditor from "../components/ConfigEditor.vue"
 import Modal from "../components/Modal.vue"
@@ -32,7 +33,25 @@ import PageHeader from "../components/PageHeader.vue"
 import PanelConfigEditor from "../components/PanelConfigEditor.vue"
 import { panelConfigOf } from "../panelconfig.js"
 import { panelPackages, panelTabs } from "../registry.js"
-import type { CommandItem, MiddlewareItem, PluginItem, TaskItem } from "../types.js"
+import type {
+  CommandItem,
+  MarketInstallResult,
+  MarketItem,
+  MarketSetupResult,
+  MarketSnapshot,
+  MiddlewareItem,
+  PluginItem,
+  TaskItem,
+  UpdateProbe
+} from "../types.js"
+
+/**
+ * 菜单与触发按钮之间的间隙，px
+ *
+ * 与样式表里 `.menu-list` 的 `margin-top: var(--s1)` 同一个值。两处各写一份的代价只是
+ * 判翻转时差 4px，不值得为它读一次 computed style。
+ */
+const MENU_GAP = 4
 
 /** 「查看」模态里的四个标签 */
 const DETAIL_TABS = [
@@ -77,6 +96,8 @@ const commands = ref<CommandItem[]>([])
 const middlewares = ref<MiddlewareItem[]>([])
 const error = ref("")
 const busy = ref("")
+/** 一次管理动作之后要说的那句话；空串意为无话可说 */
+const notice = ref("")
 /** 三份清单是否已拉过；「查看」首次打开时拉一次 */
 const registriesLoaded = ref(false)
 
@@ -88,6 +109,32 @@ const viewing = ref("")
 const tab = ref<(typeof DETAIL_TABS)[number]["id"]>("basic")
 /** 哪张卡片的「更多」菜单是展开的 */
 const menuOpen = ref("")
+/**
+ * 展开的那个菜单是否朝上弹
+ *
+ * 单个 ref 足够：`menuOpen` 一次只容一个菜单展开。
+ */
+const menuUp = ref(false)
+
+/**
+ * 市场索引，按插件名索引
+ *
+ * **只为两件事而拉：判「可更新」与预告装后步骤。** 管理动作本身不需要它 —— 手工放进插件目录的
+ * 插件压根不在索引里，而那恰是最需要「装依赖并编译」的一类。故取不到索引时按钮照旧可用，
+ * 只是少了版本对比那一行。
+ *
+ * 失败不写页面顶部的错误条：那条是给「插件列表都没读到」用的，而索引缺失只影响一行提示。
+ */
+const marketItems = ref<Map<string, MarketItem>>(new Map())
+
+/**
+ * 一个插件在索引里的条目
+ * @param name 插件名
+ * @returns 条目；索引里没有或索引没拉到时 undefined
+ */
+function marketOf(name: string): MarketItem | undefined {
+  return marketItems.value.get(name)
+}
 
 /**
  * 当前页签标识：内置三个取 `PAGE_TABS` 的 id，插件贡献的取其 `TabDef.id`
@@ -166,6 +213,27 @@ async function load(): Promise<void> {
 }
 
 /**
+ * 读取市场索引，供「可更新」判据与装后步骤声明
+ *
+ * **单独一路，且失败不写顶部错误条。** 这一页的主体是「我装了什么」，那份事实来自
+ * `GET /api/plugins`；索引只是拿来多说两句（有没有新版本、装后要跑哪几个 script）。
+ * 索引取不到的常见原因是没网 —— 那时插件页仍须能重载、能卸载，故把它降级成「少一枚
+ * 徽标」而非「整页报错」。
+ *
+ * 走缓存（不加 `refresh`）：这一页不是市场页，没有「我要看最新索引」的诉求，而回源
+ * 会让打开速度取决于网络。
+ */
+async function loadMarket(): Promise<void> {
+  try {
+    const snapshot = await get<MarketSnapshot>("market")
+    marketItems.value = new Map(snapshot.plugins.map(item => [item.name, item]))
+  } catch {
+    // 索引取不到就当没有：卡片少一枚「可更新」徽标，管理动作照旧可用
+    marketItems.value = new Map()
+  }
+}
+
+/**
  * 读取命令与中间件清单
  *
  * 单独一次，且只在首次打开「查看」时 —— 只想点「重载」的人不必为此付两个往返。
@@ -186,26 +254,133 @@ async function loadRegistries(): Promise<void> {
 
 /**
  * 重载或卸载一个插件
+ *
+ * 与那四个管理动作同走 `flowOf`：卸载也要问一次，而**问句是单例的** —— 一边等着卸载的确认、
+ * 一边点另一个插件的更新，先来的那一问会被按「取消」结算掉。
  * @param name 插件名
  * @param action 动作
  */
 async function act(name: string, action: "reload" | "unload"): Promise<void> {
   menuOpen.value = ""
-  if (action === "unload") {
-    const ok = await askConfirm({
-      title: `卸载插件「${name}」？`,
-      body: "该插件登记的全部资源会被回收，其功能立即不可用。安装目录仍保留，重载或重启进程即可恢复。",
-      okText: "卸载",
-      danger: true,
-      details: ["注册的命令与定时任务一并撤销", "若该插件提供适配器或渲染器，依赖它的功能同时失效"]
-    })
-    if (!ok) return
+  await flowOf(name, async () => {
+    if (action === "unload") {
+      const ok = await askConfirm({
+        title: `卸载插件「${name}」？`,
+        body: "该插件登记的全部资源会被回收，其功能立即不可用。安装目录仍保留，重载或重启进程即可恢复。",
+        okText: "卸载",
+        danger: true,
+        details: ["注册的命令与定时任务一并撤销", "若该插件提供适配器或渲染器，依赖它的功能同时失效"]
+      })
+      if (!ok) return
+    }
+    busy.value = name
+    try {
+      await post(`plugins/${encodeURIComponent(name)}/${action}`)
+      error.value = ""
+      // 重载会改变命令与中间件的登记，故一并作废重取
+      registriesLoaded.value = false
+      await load()
+    } catch (err) {
+      error.value = errorText(err)
+    } finally {
+      busy.value = ""
+    }
+  })
+}
+
+/**
+ * 「装完之后还会做什么」那几句，更新、重装与「装依赖并编译」三个确认框共用
+ *
+ * 逐条写出来而不是一句「会自动装依赖」：`install:browser` 那类装后步骤要下载上百兆的运行时，
+ * 事先不说会让人以为界面卡住了。索引里没有这个插件时只说得出装依赖那一半 —— 装后步骤是
+ * **索引**声明的，手放进来的插件没有那份声明。
+ * @param name 插件名
+ * @returns 说明行
+ */
+function setupNotes(name: string): string[] {
+  const notes = [
+    "会在插件目录内执行 pnpm install（找不到 pnpm 时退回 npm），那一步会执行该插件依赖的 install 脚本"
+  ]
+  const scripts = marketOf(name)?.setup?.scripts ?? []
+  if (scripts.length > 0) {
+    notes.push(`随后按索引声明依次执行 ${scripts.join("、")} —— 其中可能包含编译与运行时下载，耗时可达数分钟`)
   }
-  busy.value = name
+  notes.push("这不是一道新的信任边界：插件入口下一秒就会被内核 import() 执行，与 install 脚本同属一道门")
+  return notes
+}
+
+/**
+ * 探测一次更新会怎么走：会不会就地拉取、目录里有没有改动
+ *
+ * **探测失败不挡住更新。** 那时返回 undefined，调用方按「没有改动」发请求 —— 内核撞上改动
+ * 会以 400 中止且目录停在原样，比因为一次探测失败就点不动更新要好。
+ * @param name 插件名
+ * @returns 探测结果；探测失败时 undefined
+ */
+async function probeUpdate(name: string): Promise<UpdateProbe | undefined> {
   try {
-    await post(`plugins/${encodeURIComponent(name)}/${action}`)
+    return await get<UpdateProbe>(`market/${encodeURIComponent(name)}/update-probe`)
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * 有一条管理流程正在进行（含确认、探测与请求三段）；空串意为空闲
+ *
+ * 与 `busy` 分开两个状态，因为**它们盖住的区间不同**：`busy` 只在请求飞着的那一段为真，
+ * 而这一个从点下按钮起、到结果落地为止全程为真。
+ * @see locked 用它禁用按钮的理由
+ */
+const flow = ref("")
+
+/**
+ * 此刻是否有管理流程在进行；为真时全部管理按钮禁用
+ *
+ * **不允许两个插件同时更新。** 那个「要不要暂存」的问句是串行的 —— 全站只有一个确认框实例
+ * （见 `confirm.ts`），第二问到来时第一问会被按「取消」结算，于是使用者看到的是「我明明点了
+ * 暂存，它却说更新取消了」。
+ *
+ * 光靠 `busy` 不够：确认与探测那两段它还是空的。问句那一段有原生 `<dialog>` 的遮罩兜着
+ * （背后点不动），但探测那一次 GET 没有遮罩 —— 那个窗口虽短，正是并发进来的缝。
+ */
+const locked = computed(() => flow.value !== "" || busy.value !== "")
+
+/**
+ * 把一条管理流程整个圈起来，确保退出时解锁
+ *
+ * 每条流程都有多个提前 return（取消确认、取消暂存），逐处补 `flow.value = ""` 必然漏一处，
+ * 而漏掉的症状是**整页的管理按钮从此全灰**，且刷新之后就好了 —— 那种缺陷极难复现。
+ * @param name 插件名
+ * @param steps 这条流程要做的事
+ */
+async function flowOf(name: string, steps: () => Promise<void>): Promise<void> {
+  if (locked.value) return
+  flow.value = name
+  try {
+    await steps()
+  } finally {
+    flow.value = ""
+  }
+}
+
+/**
+ * 跑一次会改动磁盘的管理动作，并把结果说成一句话
+ *
+ * 四个动作（更新、重装、装依赖并编译、删除）的收尾完全一样：写提示、清错误、重取清单、
+ * 作废命令与中间件那两份缓存。抽出来是因为**漏掉最后那一项不会立刻出错** —— 页面上
+ * 的命令数照旧是对的，直到某次重载之后它悄悄停在旧值上。
+ * @param name 插件名
+ * @param task 真正发请求的那一步，返回要显示的提示
+ */
+async function manage(name: string, task: () => Promise<string>): Promise<void> {
+  menuOpen.value = ""
+  busy.value = name
+  notice.value = ""
+  try {
+    notice.value = await task()
     error.value = ""
-    // 重载会改变命令与中间件的登记，故一并作废重取
+    // 这些动作都会换掉磁盘上的代码并重载，命令与中间件的登记随之改变
     registriesLoaded.value = false
     await load()
   } catch (err) {
@@ -213,6 +388,160 @@ async function act(name: string, action: "reload" | "unload"): Promise<void> {
   } finally {
     busy.value = ""
   }
+}
+
+/**
+ * 更新一个插件
+ *
+ * 走哪条路由内核判定，前端在点确认时并不知道，故确认文案须把两种后果都写出来 ——
+ * 只说「安装前会先卸载当前版本」在就地拉取那一路是假的，会让人以为更新比实际更危险。
+ *
+ * **撞上本地改动时再问一次，而那一问不可关闭。** 内核不再默认暂存（那等于替使用者做了
+ * 一个他没看清的决定），改为把决定权交回来。故这里的流程是：先探测 → 有改动就问 →
+ * 带着答案发请求。探测失败不挡住更新 —— 那时按「没有改动」发出去，内核撞上改动会以
+ * 400 中止，目录停在原样，比因为一次探测失败就点不动更新要好。
+ * @param p 插件
+ */
+async function update(p: PluginItem): Promise<void> {
+  menuOpen.value = ""
+  await flowOf(p.name, async () => {
+    const entry = marketOf(p.name)
+    const ok = await askConfirm({
+      title: `更新插件「${p.name}」？`,
+      body: "更新方式由内核判定：插件目录是 git 仓库时就地拉取，否则先卸载再重新下载整个目录。",
+      okText: "更新",
+      details: [
+        `当前 ${p.version}${entry?.version === undefined ? "" : `，索引声明 ${entry.version}`}`,
+        "就地拉取：目录重置到远端最新提交，已装的依赖保留",
+        "退回重装：先卸载当前版本，目录整份替换（含 node_modules）；下载失败时该插件将处于未加载状态",
+        "两条路都不影响插件的配置与数据库 —— 它们不在安装目录内",
+        ...setupNotes(p.name)
+      ]
+    })
+    if (!ok) return
+
+    const probe = await probeUpdate(p.name)
+    let stash = false
+    if (probe?.dirty === true) {
+      /*
+       * 这一问不可关闭，且带 10 秒倒计时
+       *
+       * 它卡在一个**已经开始**的动作中途：使用者已经点过「更新」并确认过一次。此时按 Esc
+       * 不是「什么都没发生」，而是让那次更新以一条 400 收场，而他多半会以为是网络问题。
+       * 故只有两个出口 —— 选一个，或等倒计时替他选缺省的那个（暂存，与内核同一个缺省语义）。
+       */
+      stash = await askConfirm({
+        title: `「${p.name}」的目录内有未提交的改动`,
+        body: "更新会把目录重置到远端最新提交。这些改动要先暂存起来，还是取消这次更新？",
+        okText: "暂存并更新",
+        cancelText: "取消更新",
+        dismissible: false,
+        countdown: 10,
+        timeoutOk: true,
+        details: [
+          "暂存：改动收进 git 的暂存区，更新完可在该目录执行 git stash pop 取回",
+          "取消：这次更新不做，目录停在原样 —— 你可以自己处理那些改动之后再来",
+          "改动包括未跟踪的新文件：它们同样会被更新时的 checkout 撞上",
+          "倒计时结束按「暂存并更新」处理"
+        ]
+      })
+      if (!stash) return
+    }
+
+    await manage(p.name, async () =>
+      resultText(await post<MarketInstallResult>(`market/${encodeURIComponent(p.name)}/update`, { stash }))
+    )
+  })
+}
+
+/**
+ * 整份重装一个插件
+ *
+ * 与「更新」的差别是**跳过就地拉取**：目录被改花了、`reset --hard` 收不干净、或产物与源码
+ * 对不上时要的正是整份换掉。收在「更多」里 —— 它比更新慢得多（依赖跟着重装），多数时候
+ * 该点的是更新。
+ * @param p 插件
+ */
+async function reinstall(p: PluginItem): Promise<void> {
+  menuOpen.value = ""
+  await flowOf(p.name, async () => {
+    const ok = await askConfirm({
+      title: `重装插件「${p.name}」？`,
+      body: "不走就地拉取，从索引重新下载整个目录并替换。",
+      okText: "重装",
+      danger: true,
+      details: [
+        "**目录整份替换，含 node_modules** —— 那份依赖要重装一遍，在国内网络下可能等上几分钟",
+        "目录内不属于仓库的东西一并消失：插件写在安装目录下的缓存、你自己放进去的资源",
+        "配置与数据库不在安装目录内，不受影响",
+        "下载失败时该插件将处于未加载状态 —— 旧目录已被删除",
+        ...setupNotes(p.name),
+        "多数情形该点的是「更新」：那一条在目录是 git 仓库时只拉取变化，保住已装的依赖"
+      ]
+    })
+    if (!ok) return
+    await manage(p.name, async () =>
+      resultText(await post<MarketInstallResult>(`market/${encodeURIComponent(p.name)}/update`, { fresh: true }))
+    )
+  })
+}
+
+/**
+ * 单独重跑装依赖与装后步骤，不重新取源
+ *
+ * 三种情形要用到：手工放进插件目录的插件（压根没经过安装动作）、装的时候这一步失败过、
+ * 以及使用者自己 `git pull` 过而 `dist/` 已旧。**这一条对不在索引里的插件同样可用** ——
+ * 那时只装依赖，没有装后步骤可跑。
+ * @param p 插件
+ */
+async function setup(p: PluginItem): Promise<void> {
+  menuOpen.value = ""
+  await flowOf(p.name, async () => {
+    const ok = await askConfirm({
+      title: `为「${p.name}」装依赖并编译？`,
+      body: "不重新下载插件内容，只在现有目录内装依赖、并按索引声明跑装后步骤。",
+      okText: "执行",
+      details: [
+        "依赖已装好时包管理器会自行跳过，故重复执行是安全的",
+        ...setupNotes(p.name),
+        "跑完会重载该插件 —— 编译产物换掉之后，内存里那份旧模块仍在响应命令"
+      ]
+    })
+    if (!ok) return
+    await manage(p.name, async () =>
+      setupResultText(await post<MarketSetupResult>(`market/${encodeURIComponent(p.name)}/setup`))
+    )
+  })
+}
+
+/**
+ * 删除一个插件的安装目录
+ *
+ * 与「卸载」是两件事，故两个按钮：卸载只摘掉内存里那份（重载即回来），删除动的是磁盘。
+ * @param p 插件
+ */
+async function remove(p: PluginItem): Promise<void> {
+  await flowOf(p.name, async () => {
+    menuOpen.value = ""
+    const ok = await askConfirm({
+      title: `删除插件「${p.name}」？`,
+      body: "整个安装目录会被移除，无法撤销。",
+      okText: "删除",
+      danger: true,
+      // 配置与数据库不在插件目录内（见内核 market.ts 的 remove()：「配置文件与数据库另行存放，
+      // 保留它们使得重新安装后原有配置仍然有效」），故此处不能写「需重新配置」
+      details: [
+        "与「卸载」不同：卸载只摘掉内存里那份，重载即回来；这一条动的是磁盘",
+        "配置文件与数据库另行存放，不会被删除",
+        "重新安装同名插件后，原有配置仍然有效"
+      ]
+    })
+    if (!ok) return
+    await manage(p.name, async () => {
+      await del(`market/${encodeURIComponent(p.name)}`)
+      return `${p.name} 的安装目录已删除。`
+    })
+  })
 }
 
 /**
@@ -228,10 +557,37 @@ async function view(name: string): Promise<void> {
 
 /**
  * 切换某张卡片的「更多」菜单
+ *
+ * 打开时**按视口剩余空间决定往上还是往下弹**。菜单固定向下时，最后一行卡片的菜单会被视口
+ * 下沿截断 —— 桌面上如此，手机上视口更短，几乎必然如此。
+ *
+ * 高度是打开后量的，不是估的：菜单项数按插件而变（可更新时多一条、面板插件包少几条），
+ * 估错的表现是「明明放得下却往上弹」这种更难看的错。量高度要等这一帧渲染完，故 `nextTick`；
+ * 此刻进场动画的起始态只有 `opacity` 与 `transform`，两者都不影响布局盒的高度。
+ *
+ * **下方放不下、且上方比下方宽裕**才翻转：只判前一条的话，在一个上下都不够高的窗口里
+ * 会把菜单翻到更挤的一侧去。
  * @param name 插件名
+ * @param ev 点击事件，用于取触发按钮的位置
  */
-function toggleMenu(name: string): void {
-  menuOpen.value = menuOpen.value === name ? "" : name
+async function toggleMenu(name: string, ev: MouseEvent): Promise<void> {
+  if (menuOpen.value === name) {
+    menuOpen.value = ""
+    return
+  }
+  menuOpen.value = name
+  menuUp.value = false
+
+  const trigger = ev.currentTarget
+  if (!(trigger instanceof HTMLElement)) return
+  await nextTick()
+  const list = trigger.parentElement?.querySelector(".menu-list")
+  if (!(list instanceof HTMLElement)) return
+
+  const rect = trigger.getBoundingClientRect()
+  const need = list.offsetHeight + MENU_GAP
+  const below = window.innerHeight - rect.bottom
+  menuUp.value = below < need && rect.top > below
 }
 
 onMounted(() => void load())
@@ -242,6 +598,13 @@ onMounted(() => void load())
     <PageHeader route="plugins" sub="内核之外的全部能力均由插件提供：适配器、渲染器与业务功能" />
 
     <p v-if="error" class="banner">{{ error }}</p>
+    <!--
+      管理动作的结果条
+
+      四个动作（更新、重装、装依赖并编译、删除）的结果都落在这里，而不是各自弹一次 ——
+      那几句话要说的是「装依赖成了没有、下一步该做什么」，一闪而过的提示读不完。
+    -->
+    <p v-if="notice" class="banner ok">{{ notice }}</p>
 
     <!-- 页级页签：形制取 `.toolbar.tabs`（帮助页与「查看」模态已在用），角标是「这一类有几个」 -->
     <div class="toolbar tabs">
@@ -288,10 +651,14 @@ onMounted(() => void load())
           <header>
             <h3>{{ p.name }}</h3>
             <span class="tag" :class="statusClass(p.status)">{{ statusText(p.status) }}</span>
+            <span v-if="marketOf(p.name)?.updatable" class="tag warn">可更新</span>
           </header>
 
+          <!-- 可更新时给「旧 → 新」：只给一个数看不出该不该更新 -->
           <p class="mono hint">
-            {{ p.version }}<span v-if="p.builtin"> · 随发行版预置</span>
+            {{ p.version
+            }}<span v-if="marketOf(p.name)?.updatable"> → {{ marketOf(p.name)?.version }}</span
+            ><span v-if="p.builtin"> · 随发行版预置</span>
           </p>
           <p v-if="p.description" class="plugin-desc">{{ p.description }}</p>
           <p v-else class="plugin-desc hint">该插件未声明说明</p>
@@ -305,16 +672,46 @@ onMounted(() => void load())
             <div><dt>加载</dt><dd>{{ p.loadCost }}ms</dd></div>
           </dl>
 
+          <!--
+            盒子外三个，其余进「更多」
+
+            外面留的是「常点」与「此刻该点」：配置、更新、重载。更新只对索引说了更高版本的
+            插件出现 —— 对着一个已是最新的插件摆一个更新按钮，点下去只换回同一个东西。
+
+            重装、装依赖并编译、删除都收进菜单：它们要么慢（重装连依赖一起重下），要么少用
+            （装依赖并编译多半只在装坏过一次之后用得上）。一排六个按钮在窄卡上必然折行。
+          -->
           <footer class="row">
             <button v-if="p.configured" class="primary" @click="configuring = p.name">配置</button>
-            <button :disabled="busy === p.name" @click="void act(p.name, 'reload')">重载</button>
+            <button
+              v-if="marketOf(p.name)?.updatable"
+              :class="{ primary: !p.configured }"
+              :disabled="locked"
+              @click="void update(p)"
+            >
+              更新
+            </button>
+            <button :disabled="locked" @click="void act(p.name, 'reload')">重载</button>
 
-            <!-- 更多：查看 / 访问仓库 / 卸载。收进菜单是因为一排四五个按钮在窄卡上必然折行 -->
             <div class="menu" @click.stop>
-              <button :aria-expanded="menuOpen === p.name" @click="toggleMenu(p.name)">更多 ▾</button>
+              <button :aria-expanded="menuOpen === p.name" @click="void toggleMenu(p.name, $event)">更多 ▾</button>
               <Transition name="menu">
-                <div v-if="menuOpen === p.name" class="menu-list">
+                <div v-if="menuOpen === p.name" class="menu-list" :class="{ up: menuUp }">
                   <button @click="void view(p.name)">查看</button>
+                  <!--
+                    已是最新时「更新」不在盒子外，但菜单里仍留一条
+
+                    索引没拉到、或这个插件压根不在索引里时，同样只在菜单里 —— 那时判不出
+                    该不该更新，而按钮点下去内核会照旧试一次。
+                  -->
+                  <button
+                    v-if="!marketOf(p.name)?.updatable"
+                    :disabled="locked"
+                    @click="void update(p)"
+                  >
+                    更新
+                  </button>
+                  <button :disabled="locked" @click="void setup(p)">装依赖并编译</button>
                   <a
                     v-if="p.homepage"
                     class="button"
@@ -327,11 +724,13 @@ onMounted(() => void load())
                   </a>
                   <button
                     class="danger"
-                    :disabled="busy === p.name || p.status !== 'loaded'"
+                    :disabled="locked || p.status !== 'loaded'"
                     @click="void act(p.name, 'unload')"
                   >
                     卸载
                   </button>
+                  <button class="danger" :disabled="locked" @click="void reinstall(p)">重装</button>
+                  <button class="danger" :disabled="locked" @click="void remove(p)">删除目录</button>
                 </div>
               </Transition>
             </div>

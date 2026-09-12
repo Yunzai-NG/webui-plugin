@@ -1,6 +1,6 @@
 {
   "name": "@yunzai-ng/webui-plugin",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Yunzai NG 面板插件：schema 驱动的配置表单、账号登录、日志与插件管理",
   "type": "module",
   "license": "AGPL-3.0-or-later",
@@ -29,9 +29,10 @@
     "node": "^20.19.0 || >=22.12.0"
   },
   "packageManager": "pnpm@9.15.4",
-  "files": ["dist", "src", "web"],
+  "files": ["dist", "src", "web", "webadapter"],
   "scripts": {
-    "build": "tsc -b && pnpm run build:web",
+    "build": "tsc -b && pnpm run sync:webadapter && pnpm run build:web",
+    "sync:webadapter": "node scripts/sync-webadapter.mjs",
     "build:web": "vite build web",
     "build:clean": "tsc -b --clean",
     "dev:web": "vite web",
@@ -45,7 +46,7 @@
     "verify": "pnpm run build && pnpm run typecheck:test && pnpm run typecheck:web && pnpm run lint && pnpm run test"
   },
   "peerDependencies": {
-    "@yunzai-ng/core": ">=0.3.0",
+    "@yunzai-ng/core": ">=0.4.0",
     "@yunzai-ng/types": ">=0.2.0"
   },
   "devDependencies": {

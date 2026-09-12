@@ -17,6 +17,7 @@ import { del, get, patch, post } from "../api.js"
 import { defaultsOf } from "../configedit.js"
 import { errorText, statusClass, statusText } from "../format.js"
 import { askConfirm } from "../confirm.js"
+import Modal from "../components/Modal.vue"
 import PageHeader from "../components/PageHeader.vue"
 import SchemaForm from "../components/SchemaForm.vue"
 import { ApiError } from "../api.js"
@@ -46,10 +47,41 @@ const adapterDropdownOpen = ref(false)
 /** 适配器下拉悬停索引 */
 const adapterDropdownHover = ref(-1)
 
+/**
+ * 正在编辑配置的账号；未在编辑时 undefined
+ *
+ * 存整条记录而非只存 id：模态标题要显示备注与适配器名，而列表每秒轮询一次刷新
+ * （见 `POLL_MS`）—— 只存 id 的话每次轮询都要在新数组里重查一遍，那个账号在
+ * 编辑期间被删掉时还会取到 undefined。
+ */
+const editing = ref<AccountItem | undefined>(undefined)
+/** 编辑中的配置值，`editing` 打开时按该账号现有配置铺好 */
+const editConfig = ref<Record<string, unknown>>({})
+/** 编辑中的备注 */
+const editLabel = ref("")
+/** 编辑保存时的逐字段错误 */
+const editIssues = ref<readonly SchemaIssue[]>([])
+/** 编辑保存失败的原因，只显示在模态内 —— 页顶那条使用者此刻看不到 */
+const editError = ref("")
+
 let timer: number | undefined
 
 /** 当前选中的适配器描述 */
 const draft = computed(() => adapters.value.find(a => a.id === draftAdapter.value))
+
+/**
+ * 正在编辑的那个账号所属适配器
+ *
+ * 表单要靠它的 `accountSchema` 渲染。**取不到时不画表单**（见模板）：适配器插件被卸载之后
+ * 它名下的账号记录仍在（那是有意的，装回来就能自动连上），此时没有 schema 可依，
+ * 画一张空表单再保存等于把配置清空。
+ */
+const editAdapter = computed(() =>
+  editing.value === undefined ? undefined : adapters.value.find(a => a.id === editing.value?.record.adapterId)
+)
+
+/** 编辑表单要用的 schema；适配器不在（插件已卸载）时 undefined */
+const editSchema = computed(() => editAdapter.value?.accountSchema)
 
 /*
  * 换适配器即按它的 schema 铺一遍默认值
@@ -213,6 +245,81 @@ async function createAccount(): Promise<void> {
   } catch (err) {
     if (err instanceof ApiError && err.issues.length > 0) draftIssues.value = err.issues
     error.value = errorText(err)
+  } finally {
+    busy.value = ""
+  }
+}
+
+/* ─────────────── 改已有账号的配置 ─────────────── */
+
+/**
+ * 打开编辑框
+ *
+ * 深拷一份再改，**不直接改 `item.record.config`**：那个对象来自列表，直接改的话使用者点「取消」
+ * 之后表格里显示的已经是改过的值，而服务端上并没有变 —— 一次没保存的编辑就此变成了假象。
+ * @param item 账号
+ */
+function openEdit(item: AccountItem): void {
+  editing.value = item
+  // structuredClone 而非 JSON 往返：配置里可能有 undefined 与嵌套对象，后者会被 JSON 悄悄丢掉
+  editConfig.value = structuredClone(item.record.config)
+  editLabel.value = item.record.label ?? ""
+  editIssues.value = []
+  editError.value = ""
+}
+
+/** 关掉编辑框 */
+function closeEdit(): void {
+  editing.value = undefined
+  editConfig.value = {}
+  editIssues.value = []
+  editError.value = ""
+}
+
+/**
+ * 记录一项编辑表单的改动
+ * @param path 点号路径
+ * @param value 新值
+ */
+function onEditChange(path: string, value: unknown): void {
+  const parts = path.split(".")
+  const leaf = parts.pop()
+  if (leaf === undefined) return
+  let node = editConfig.value
+  for (const part of parts) {
+    const existing = node[part]
+    if (typeof existing !== "object" || existing === null) node[part] = {}
+    node = node[part] as Record<string, unknown>
+  }
+  node[leaf] = value
+}
+
+/**
+ * 保存改动
+ *
+ * 内核收到 `config` 之后会**断开并重连**这个账号（见 adapter/accounts.ts 的 `update`）：
+ * 地址或凭据变了而 socket 还是旧的，使用者会以为「改了没生效」。故此处保存完要重取列表，
+ * 那时状态多半是 `connecting`。
+ */
+async function saveEdit(): Promise<void> {
+  const item = editing.value
+  if (item === undefined) return
+  busy.value = item.record.id
+  editIssues.value = []
+  try {
+    const label = editLabel.value.trim()
+    await patch<AccountItem>(`accounts/${encodeURIComponent(item.record.id)}`, {
+      config: editConfig.value,
+      label
+    })
+    closeEdit()
+    error.value = ""
+    await refreshAccounts()
+  } catch (err) {
+    // 逐字段的错误标回表单里，而不是只在顶部显示一句 —— 一份十几项的配置里
+    // 「哪一项填错了」是使用者真正需要的那半句话
+    if (err instanceof ApiError && err.issues.length > 0) editIssues.value = err.issues
+    editError.value = errorText(err)
   } finally {
     busy.value = ""
   }
@@ -437,6 +544,13 @@ onUnmounted(() => {
                   断开
                 </button>
                 <button :disabled="busy === item.record.id" @click="void act(item.record.id, 'reconnect')">重连</button>
+                <!--
+                  改这个账号的配置
+
+                  内核的 `PATCH accounts/:id` 一直支持改 `config`，此前只是面板没给入口 ——
+                  表现为「适配器配置改不了，只能删掉重建」，而重建会丢掉登录态。
+                -->
+                <button :disabled="busy === item.record.id" @click="openEdit(item)">配置</button>
                 <button
                   class="danger"
                   :disabled="busy === item.record.id"
@@ -524,5 +638,56 @@ onUnmounted(() => {
         <button class="primary" :disabled="busy === 'new'" @click="void createAccount()">创建账号</button>
       </template>
     </div>
+
+    <!--
+      ───── 改已有账号的配置 ─────
+
+      做成模态而不是在表格里展开一行：一份账号配置动辄十几项（地址、凭据、各种开关），
+      塞进表格行里会把那一行撑成半屏高，而其余几行的操作按钮被推得看不见。
+
+      `wide` 形制：表单与「添加账号」处同一套 `SchemaForm`，窄框里每个字段都要折行。
+    -->
+    <Modal
+      :open="editing !== undefined"
+      :title="`配置 ${editing?.record.label ?? editing?.record.id ?? ''}`"
+      :sub="editSchema === undefined ? '' : `${editAdapter?.name ?? editing?.record.adapterId} · 保存后会自动重连该账号`"
+      wide
+      @close="closeEdit()"
+    >
+      <p v-if="editError !== ''" class="banner">{{ editError }}</p>
+
+      <div class="field">
+        <label for="editLabel">备注</label>
+        <input id="editLabel" v-model="editLabel" placeholder="选填，用于在列表中区分多个账号" />
+      </div>
+
+      <!--
+        取不到 schema 时不给空表单：适配器插件被卸载后它名下的账号仍在（那是刻意的，
+        装回来就能连上），此时无从知道这份配置长什么样。硬画一个空表单会让使用者
+        以为「配置项都没了」，而一保存就把原有的值清空。
+      -->
+      <SchemaForm
+        v-if="editSchema !== undefined"
+        :schema="editSchema"
+        :value="editConfig"
+        :issues="editIssues"
+        @change="onEditChange"
+      />
+      <p v-else class="hint">
+        该账号所属的适配器 <code>{{ editing?.record.adapterId }}</code> 当前未注册（插件未装或已卸载），
+        故无从知道它的配置项长什么样。装回该适配器插件后即可在此编辑，现在仍可改备注。
+      </p>
+
+      <template #actions>
+        <button @click="closeEdit()">取消</button>
+        <button
+          class="primary"
+          :disabled="editing !== undefined && busy === editing.record.id"
+          @click="void saveEdit()"
+        >
+          保存并重连
+        </button>
+      </template>
+    </Modal>
   </div>
 </template>

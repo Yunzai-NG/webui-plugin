@@ -1,8 +1,11 @@
 /**
- * 模块职责：面板插件商店的取数地址、页签筛选与「一次安装的结果该怎么说」
+ * 模块职责：面板插件商店的取数地址、装后步骤的说法与「一次安装的结果该怎么说」
  * 依赖方向：只依赖本目录的类型声明，纯函数
  * 生命周期：无状态
- * 注意事项：抽出组件之外是为了能立断言 —— 用例只覆盖 `.ts`，`.vue` 里的逻辑无 jsdom 测不到。
+ * 注意事项：页签与筛选**不在此处**，在 `filter.ts` —— 两个市场页签语义相同（全部 / 已安装 /
+ *          可更新），各写一份迟早分叉。留在这里的都是面板插件包独有的说法。
+ *
+ *          抽出组件之外是为了能立断言 —— 用例只覆盖 `.ts`，`.vue` 里的逻辑无 jsdom 测不到。
  *          三处说错就会把使用者引向错动作：
  *
  *          1) **「装完之后该做什么」有三种答案，取决于包的形态。** 只有浏览器侧的包刷新
@@ -26,92 +29,6 @@ const STORE_SCOPE = "/plugin/webui/panelstore"
  */
 export function storeUrlOf(path = ""): string {
   return path === "" ? STORE_SCOPE : `${STORE_SCOPE}/${path}`
-}
-
-/** 三个页签的标识 */
-export type StoreTab = "all" | "installed" | "updatable"
-
-/**
- * 页签定义，顺序即呈现顺序
- *
- * **「全部」在最前且为默认** —— 还没装任何面板插件的人打开商店，该看到有什么可装，
- * 而不是一个空的「已安装」。
- */
-export const STORE_TABS: readonly { id: StoreTab; label: string }[] = [
-  { id: "all", label: "全部" },
-  { id: "installed", label: "已安装" },
-  { id: "updatable", label: "可更新" }
-]
-
-/**
- * 一条是否落在某个页签里
- * @param item 条目
- * @param tab 页签
- * @returns 是否可见
- */
-export function inTab(item: PanelStoreItem, tab: StoreTab): boolean {
-  if (tab === "installed") return item.installed
-  if (tab === "updatable") return item.updatable
-  return true
-}
-
-/**
- * 逐页签的条目数
- *
- * 角标里的数。**按同一个 `inTab` 算**，不另写一遍求和 —— 分两处写迟早对不上，
- * 症状是「角标说有 3 个，点进去只有 2 个」。
- * @param items 全部条目
- * @returns 页签标识到条目数
- */
-export function tabCounts(items: readonly PanelStoreItem[]): Record<StoreTab, number> {
-  return {
-    all: items.length,
-    installed: items.filter(item => inTab(item, "installed")).length,
-    updatable: items.filter(item => inTab(item, "updatable")).length
-  }
-}
-
-/**
- * 索引里出现过的全部分类，按出现次数降序、同次数按名称
- *
- * **分类做成一排可点的标签而非页签**：标签数由索引决定，十几个页签在窄屏上会折行，
- * 把「全部 / 已安装 / 可更新」这条主路挤到第二行。
- * @param items 全部条目
- * @returns 分类名数组
- */
-export function tagsOf(items: readonly PanelStoreItem[]): string[] {
-  const count = new Map<string, number>()
-  for (const item of items) for (const tag of item.tags) count.set(tag, (count.get(tag) ?? 0) + 1)
-  return [...count.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([tag]) => tag)
-}
-
-/**
- * 按页签、分类与关键词筛一遍
- *
- * 分类为「或」而非「且」：勾了「监控」与「系统」两个标签，要的是这两类里的全部东西，
- * 而不是同时属于两类的那一小撮 —— 后者在一份手工维护的索引上几乎恒为空。
- * @param items 全部条目
- * @param tab 当前页签
- * @param tags 选中的分类；空数组意为不按分类筛
- * @param keyword 关键词，空串意为不筛
- * @returns 可见条目
- */
-export function visibleItems(
-  items: readonly PanelStoreItem[],
-  tab: StoreTab,
-  tags: readonly string[],
-  keyword: string
-): PanelStoreItem[] {
-  const word = keyword.trim().toLowerCase()
-  return items.filter(item => {
-    if (!inTab(item, tab)) return false
-    if (tags.length > 0 && !item.tags.some(tag => tags.includes(tag))) return false
-    if (word === "") return true
-    const haystack = [item.name, item.title, item.description, item.author ?? "", ...item.tags].join(" ").toLowerCase()
-    return haystack.includes(word)
-  })
 }
 
 /**

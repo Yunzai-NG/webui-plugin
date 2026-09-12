@@ -337,6 +337,15 @@ export interface MarketItem {
   source: string
   /** 插件目录下是否已存在同名目录 */
   installed: boolean
+  /**
+   * 已装那份的版本，读自安装目录的 package.json
+   *
+   * 已装但读不到时本字段不出现（没有 package.json，或它没写 version）—— 那与「0.0.0」
+   * 不是一回事，后者会让页面显示一个磁盘上并不存在的数字。
+   */
+  installedVersion?: string
+  /** 索引声明的版本是否高于已装那份；两侧任一读不到版本时恒为假 */
+  updatable: boolean
 }
 
 /** 一个条目声明的装后步骤 */
@@ -390,10 +399,35 @@ export interface MarketInstallResult extends SetupOutcome {
   fromVersion?: string
   /** 就地拉取时是否确实有新提交；假即已是最新。仅 `via` 为 `pull` 时存在 */
   changed?: boolean
+  /**
+   * 本次是否暂存了目录里的改动
+   *
+   * 为真意味着**使用者的东西此刻在 git 的暂存区里**，须在提示里说明取回办法 ——
+   * 那是他自己改的内容，不说清就等于替他丢掉了。
+   */
+  stashed?: boolean
   /** 覆盖安装前是否卸载了旧版本 */
   unloaded: boolean
   /** 本次加载成功的插件名 */
   loaded: string[]
+}
+
+/**
+ * `GET /api/market/:name/update-probe`
+ *
+ * 更新之前先问一句「这次会走哪条路、目录里有没有改动」。存在的理由是**面板要在动手之前
+ * 就知道该不该问那一问**：没有它，只能每次更新都问一遍（多数插件目录是干净的，那一问
+ * 纯属白问），或者先发一次注定失败的更新、靠错误文本反推。
+ */
+export interface UpdateProbe {
+  /** 这次更新会不会走就地拉取；假即整目录重装那条路 */
+  willPull: boolean
+  /**
+   * 目录里有没有未提交的改动（含未跟踪文件）
+   *
+   * **只在 `willPull` 为真时才可能为真**：整目录重装根本不碰 git，那条路上无所谓暂存。
+   */
+  dirty: boolean
 }
 
 /**

@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>消息统计</title>
+    <!--
+      本页跑在 sandbox 且**不带 allow-same-origin** 的 iframe 里（见 web/src/views/CustomPageView.vue），
+      由此带来三条硬约束，改动本页时都不能忘：
+
+      1. 源不透明，**读不到面板的 localStorage**，故取数只能走 postMessage 数据桥；
+         也**不能用 localStorage 存偏好** —— 存了不报错，只是下次打开丢掉。
+      2. 取不到面板那份带哈希的产物 CSS，故样式自带一份，令牌值抄 web/src/styles.css
+         的浅色/深色两套，观感与面板一致。
+      3. 主题跟随系统（prefers-color-scheme）而非面板当前主题：面板的主题存在 localStorage
+         里，本页读不到。这会在使用者手动切换面板主题时出现不一致，但不一致好过
+         「亮色面板里嵌一块永远深色的方块」。
+    -->
+    <style>
+      :root {
+        --bg: #f0f2f5;
+        --panel: #ffffff;
+        --line: rgba(30, 33, 40, 0.08);
+        --text: #1e2128;
+        --muted: #6b7280;
+        --accent: hsl(239, 84%, 67%);
+        --accent-solid: hsl(239, 78%, 56%);
+        --accent-soft: hsla(239, 84%, 67%, 0.12);
+        --ok: #10b981;
+        --warn: #f59e0b;
+        --err: #ef4444;
+        --recv: hsl(239, 78%, 60%);
+        --sent: #10b981;
+        /*
+         * 「全部」那一档要在一张图上分辨六条系列（收/发 × 消息/图片/表情包）
+         *
+         * 六色而非「同色系深浅」：后者在柱形图上挨着放时分不出，而这张图的常用形态正是柱形。
+         * 收与发不靠明暗区分、各自给一个独立色相 —— 明暗差在深浅两套主题下不一致，
+         * 浅色模式里「浅的那根」到了深色模式反而更显眼。
+         */
+        --recv-img: hsl(38, 92%, 50%);
+        --sent-img: hsl(190, 85%, 40%);
+        --recv-stk: hsl(340, 82%, 60%);
+        --sent-stk: hsl(280, 68%, 58%);
+        --r-1: 8px;
+        --r-2: 12px;
+        --r-3: 16px;
+        --dur-1: 150ms;
+        --dur-2: 250ms;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f1117;
+          --panel: #1a1d27;
+          --line: rgba(232, 234, 240, 0.1);
+          --text: #e8eaf0;
+          --muted: #8b92a5;
+          --accent: hsl(239, 84%, 74%);
+          --accent-solid: hsl(239, 84%, 67%);
+          --accent-soft: hsla(239, 84%, 74%, 0.18);
+          --ok: #34d399;
+          --warn: #fbbf24;
+          --err: #f87171;
+          --recv: hsl(239, 84%, 74%);
+          --sent: #34d399;
+          /* 与浅色那套同色相、提亮：深色底上原样照搬会暗成一片，尤其那两个蓝绿 */
+          --recv-img: hsl(38, 95%, 62%);
+          --sent-img: hsl(190, 80%, 55%);
+          --recv-stk: hsl(340, 85%, 70%);
+          --sent-stk: hsl(280, 75%, 72%);
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 18px;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.6 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      /* 动画一律短且只用 transform/opacity：本页嵌在面板里，一段缓慢的入场动画会让
+         切页面这个动作显得卡顿。偏好减少动态时全部关掉。 */
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          transition: none !important;
+          animation: none !important;
+        }
+      }
+
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--r-3);
+        padding: 16px;
+      }
+
+      .card + .card {
+        margin-top: 14px;
+      }
+
+      .card-head {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 14px;
+      }
+
+      .card-title {
+        font-size: 15px;
+        font-weight: 600;
+      }
+
+      .card-sub {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      /* ── 分段控件：时间范围与图表类型共用 ── */
+      .seg {
+        display: inline-flex;
+        gap: 2px;
+        padding: 3px;
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: var(--r-2);
+      }
+
+      .seg button {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        font: inherit;
+        font-size: 13px;
+        padding: 5px 12px;
+        border-radius: var(--r-1);
+        cursor: pointer;
+        transition: color var(--dur-1), background var(--dur-1);
+      }
+
+      .seg button:hover:not([aria-pressed="true"]) {
+        color: var(--text);
+      }
+
+      .seg button[aria-pressed="true"] {
+        background: var(--panel);
+        color: var(--accent-solid);
+        font-weight: 600;
+      }
+
+      .seg button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+
+      /* ── 自定义日期 ── */
+      .range {
+        display: none;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px dashed var(--line);
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .range[data-on="1"] {
+        display: flex;
+      }
+
+      /* select 与 input 同形：账号筛选与自定义日期在同一行区域，长得不一样会像两套控件 */
+      .range input,
+      .range select {
+        font: inherit;
+        color: var(--text);
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: var(--r-1);
+        padding: 5px 8px;
+      }
+
+      .range input:focus-visible,
+      .range select:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+
+      /* ── 计数卡 ── */
+      .tiles {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 12px;
+      }
+
+      .tile {
+        padding: 14px;
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: var(--r-2);
+      }
+
+      .tile-label {
+        color: var(--muted);
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .tile-value {
+        font-size: 24px;
+        font-weight: 650;
+        font-variant-numeric: tabular-nums;
+        margin-top: 4px;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex: none;
+      }
+
+      .dot-recv {
+        background: var(--recv);
+      }
+
+      .dot-sent {
+        background: var(--sent);
+      }
+
+      /* ── 图表 ── */
+      .chart {
+        width: 100%;
+        height: 260px;
+        display: block;
+        overflow: visible;
+      }
+
+      .chart text {
+        fill: var(--muted);
+        font-size: 11px;
+        font-family: inherit;
+      }
+
+      .grid-line {
+        stroke: var(--line);
+        stroke-width: 1;
+      }
+
+      .bar {
+        transition: opacity var(--dur-1);
+      }
+
+      .bar:hover {
+        opacity: 0.72;
+      }
+
+      /*
+       * 图例贴右下角
+       *
+       * 靠右而非居左：左下角紧邻纵轴最末一个刻度数字，两者挨在一起时读起来像是刻度的一部分。
+       * 图的右下方是整张图里唯一恒定的空白（柱子自左向右生长，最后一组之后仍留着间隙）。
+       */
+      .legend {
+        display: flex;
+        justify-content: flex-end;
+        gap: 16px;
+        flex-wrap: wrap;
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 6px;
+      }
+
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      /* ── 会话表 ── */
+      .tw {
+        overflow-x: auto;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+
+      th,
+      td {
+        text-align: right;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--line);
+        white-space: nowrap;
+      }
+
+      th {
+        color: var(--muted);
+        font-weight: 500;
+        font-size: 12px;
+        position: sticky;
+        top: 0;
+        background: var(--panel);
+      }
+
+      th:first-child,
+      td:first-child {
+        text-align: left;
+        white-space: normal;
+        min-width: 160px;
+      }
+
+      td {
+        font-variant-numeric: tabular-nums;
+      }
+
+      tbody tr:last-child td {
+        border-bottom: 0;
+      }
+
+      tbody tr:hover td {
+        background: var(--accent-soft);
+      }
+
+      .tag {
+        display: inline-block;
+        padding: 1px 7px;
+        border-radius: 999px;
+        font-size: 11px;
+        background: var(--bg);
+        border: 1px solid var(--line);
+        color: var(--muted);
+        margin-left: 6px;
+      }
+
+      /* ── 状态与提示 ── */
+      .note {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 12px;
+        padding: 10px 12px;
+        background: var(--bg);
+        border-radius: var(--r-1);
+        border-left: 2px solid var(--warn);
+      }
+
+      .empty {
+        text-align: center;
+        color: var(--muted);
+        padding: 36px 12px;
+        font-size: 13px;
+      }
+
+      .err {
+        border-left-color: var(--err);
+        color: var(--err);
+      }
+
+      [hidden] {
+        display: none !important;
+      }
+
+      /*
+       * 点选某一格后的读数
+       *
+       * 图上的说明走 SVG 原生 title，而它只响应悬停 —— 触屏上看不到任何东西。这一行补上
+       * 那条路。空着时 `:empty` 收掉上下外边距，不在图与图例之间留一道无来由的空隙。
+       */
+      .readout {
+        margin: 6px 0 0;
+        font-size: 12px;
+        color: var(--text);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .readout:empty {
+        margin: 0;
+      }
+
+      /* 感应区铺满整列，指针落在哪一列都算；手型指针提示「这里点得动」 */
+      .hit {
+        cursor: pointer;
+      }
+
+      .sr {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- 状态先行：取数要走一次 postMessage 往返，首屏必然有一小段没有数据的时间 -->
+    <div class="card" id="statusCard" hidden>
+      <div class="note" id="statusText" role="status"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">时间范围</div>
+          <div class="card-sub" id="rangeLabel">读取中…</div>
+        </div>
+        <div class="seg" role="group" aria-label="时间范围">
+          <button type="button" data-span="today" aria-pressed="true">当天</button>
+          <button type="button" data-span="1" aria-pressed="false">1 日</button>
+          <button type="button" data-span="7" aria-pressed="false">7 日</button>
+          <button type="button" data-span="30" aria-pressed="false">30 日</button>
+          <button type="button" data-span="custom" aria-pressed="false">自定义</button>
+        </div>
+      </div>
+      <div class="range" id="rangeBox" data-on="0">
+        <label for="fromDate">起</label>
+        <input type="date" id="fromDate" />
+        <label for="toDate">止</label>
+        <input type="date" id="toDate" />
+        <span id="rangeHint"></span>
+      </div>
+      <!--
+        账号筛选
+
+        整行在只有一个账号（或还没采到任何账号）时隐去：那时这个下拉只有「全部账号」一项，
+        摆着是个点了没反应的控件。多账号部署里它才有意义 —— 见 stats.page.js 的 drawAccounts。
+      -->
+      <div class="range" id="acctBox" data-on="0">
+        <label for="acctPick">账号</label>
+        <select id="acctPick"></select>
+        <span class="hint" id="acctHint"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">计数</div>
+        <div class="card-sub" id="countSub"></div>
+      </div>
+      <div class="tiles" id="tiles"></div>
+      <!-- 这句不是可选的说明文字：不写的话，一个天天发表情包的使用者会看到「发出表情包 0」
+           而以为统计坏了。见 src/msgstats.ts 文件头 -->
+      <div class="note">
+        发出的表情包只统计 QQ 原生表情（<code>face</code>）。以图片形式发出的表情包在内核的发送出口处已无从分辨，
+        它们计入「发出图片」。收到的一侧不受此限，三项齐全。
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">趋势</div>
+          <div class="card-sub" id="chartSub"></div>
+        </div>
+        <div class="seg" role="group" aria-label="图表类型">
+          <button type="button" data-chart="bar" aria-pressed="true">柱形图</button>
+          <button type="button" data-chart="line" aria-pressed="false">折线图</button>
+          <button type="button" data-chart="area" aria-pressed="false">面积图</button>
+          <button type="button" data-chart="stack" aria-pressed="false">堆叠柱</button>
+        </div>
+      </div>
+      <!--
+        「全部」是缺省项：进来第一眼该看的是「一共多少来往」，而不是先挑一个分项。
+        它把三项叠在一张图上，故图例要说明哪根是哪一项（见下面的 legend）。
+      -->
+      <div class="seg" role="group" aria-label="统计项" style="margin-bottom: 12px">
+        <button type="button" data-metric="all" aria-pressed="true">全部</button>
+        <button type="button" data-metric="messages" aria-pressed="false">消息</button>
+        <button type="button" data-metric="images" aria-pressed="false">图片</button>
+        <button type="button" data-metric="stickers" aria-pressed="false">表情包</button>
+      </div>
+      <svg class="chart" id="chart" role="img" aria-labelledby="chartDesc"></svg>
+      <p class="sr" id="chartDesc"></p>
+      <!--
+        点选某一格后的读数
+
+        图上的说明走 SVG 原生 `<title>`，而它**只响应悬停** —— 触屏上一个字都看不到，
+        而 Termux 部署的人多半就是在手机上看这一页。故点一下把同一段文字写到这里。
+        `aria-live` 让读屏软件跟着念；初始为空，不占位。
+      -->
+      <p class="readout" id="chartReadout" aria-live="polite"></p>
+      <!--
+        图例靠右下：图的左侧是纵轴刻度，图例压在那儿会与数字挤作一团。内容由 JS 按当前
+        统计项重画 —— 选「全部」时是三项各一色，选单项时是收/发两色。
+      -->
+      <div class="legend" id="legend"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">各会话收发</div>
+          <div class="card-sub" id="peerSub"></div>
+        </div>
+      </div>
+      <div class="tw">
+        <table id="peerTable">
+          <thead>
+            <tr>
+              <th scope="col">会话</th>
+              <th scope="col">收消息</th>
+              <th scope="col">发消息</th>
+              <th scope="col">收图片</th>
+              <th scope="col">发图片</th>
+              <th scope="col">收表情</th>
+              <th scope="col">发表情</th>
+            </tr>
+          </thead>
+          <tbody id="peerBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="peerEmpty" hidden>这段时间没有任何会话记录</div>
+    </div>
+
+    <!--
+      两处都是**经典脚本**，不带 `type="module"`，且顺序不能颠倒。
+
+      模块脚本的抓取一律走 CORS 模式，而本页所在的 iframe 不带 allow-same-origin、源不透明
+      （发出的是 `Origin: null`），内核的静态挂载不回 `Access-Control-Allow-Origin` ——
+      于是模块脚本被静默拦下：一行不执行、控制台之外无任何迹象，页面永远停在「读取中…」。
+      经典脚本走 no-cors，不需要那个响应头。
+
+      msgstats.js 必须在前：它把聚合函数挂到 window.YZNG_MSGSTATS，stats.page.js 在顶层就读它。
+    -->
+    <script src="./msgstats.js"></script>
+    <script src="./stats.page.js"></script>
+  </body>
+</html>

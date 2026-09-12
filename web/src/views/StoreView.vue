@@ -24,19 +24,10 @@ import { computed, onMounted, ref } from "vue"
 import { delAt, getAt, postAt } from "../api.js"
 import { askConfirm } from "../confirm.js"
 import { datetime, errorText } from "../format.js"
-import {
-  STORE_TABS,
-  setupNotes,
-  storeResultText,
-  storeUrlOf,
-  tabCounts,
-  tagsOf,
-  versionText,
-  visibleItems,
-  willRunPm,
-  type StoreTab
-} from "../panelstore.js"
+import { MARKET_TABS, tabCounts, tagsOf, toggleTag, visibleItems, type MarketTab } from "../filter.js"
+import { setupNotes, storeResultText, storeUrlOf, versionText, willRunPm } from "../panelstore.js"
 import { hrefOf } from "../router.js"
+import Modal from "../components/Modal.vue"
 import PageHeader from "../components/PageHeader.vue"
 import type { PanelStoreItem, PanelStoreResult, PanelStoreSnapshot } from "../types.js"
 
@@ -46,12 +37,17 @@ const notice = ref("")
 const busy = ref("")
 const loading = ref(false)
 const keyword = ref("")
-const tab = ref<StoreTab>("all")
+const tab = ref<MarketTab>("all")
 /** 选中的分类；空数组意为不按分类筛 */
 const picked = ref<string[]>([])
+/** 正在看哪个条目的详情；空串意为详情模态未开 */
+const viewing = ref("")
 
 /** 全部条目 */
 const items = computed(() => snapshot.value?.panels ?? [])
+
+/** 正在看的那个条目 */
+const viewed = computed(() => items.value.find(item => item.name === viewing.value))
 
 /** 索引获取失败的地址 */
 const badSources = computed(() => snapshot.value?.sources.filter(source => !source.ok) ?? [])
@@ -84,14 +80,6 @@ async function load(refresh = false): Promise<void> {
   } finally {
     loading.value = false
   }
-}
-
-/**
- * 切一个分类的选中状态
- * @param tag 分类名
- */
-function toggleTag(tag: string): void {
-  picked.value = picked.value.includes(tag) ? picked.value.filter(item => item !== tag) : [...picked.value, tag]
 }
 
 /**
@@ -252,7 +240,7 @@ onMounted(() => void load())
     <!-- 横向页签，形制取 `.toolbar.tabs`（插件页与帮助页已在用），不新画一种 -->
     <div class="toolbar tabs">
       <button
-        v-for="item in STORE_TABS"
+        v-for="item in MARKET_TABS"
         :key="item.id"
         :class="{ primary: tab === item.id }"
         @click="tab = item.id"
@@ -270,7 +258,13 @@ onMounted(() => void load())
         分类做成一排可点的标签而非页签：标签数由索引决定，十几个页签在窄屏上必然折行，
         而折行会把上面那三个主页签挤到第二行去
       -->
-      <span v-for="item in tags" :key="item" class="tag pick" :class="{ on: picked.includes(item) }" @click="toggleTag(item)">
+      <span
+        v-for="item in tags"
+        :key="item"
+        class="tag pick"
+        :class="{ on: picked.includes(item) }"
+        @click="picked = toggleTag(picked, item)"
+      >
         {{ item }}
       </span>
       <button v-if="picked.length > 0" @click="picked = []">清空分类</button>
@@ -291,7 +285,8 @@ onMounted(() => void load())
         </header>
 
         <p class="mono hint">{{ item.name }} · {{ versionText(item) }}</p>
-        <p>{{ item.description }}</p>
+        <!-- 说明限两行、溢出省略；全文在「查看」里，理由见 `.plugin-desc` 的样式注释 -->
+        <p class="plugin-desc">{{ item.description }}</p>
 
         <p class="hint">
           <span v-if="item.author">作者 {{ item.author }}</span>
@@ -324,6 +319,7 @@ onMounted(() => void load())
             </button>
           </template>
           <a v-else-if="item.installed" class="button" :href="hrefOf('plugins')">在插件页查看</a>
+          <button @click="viewing = item.name">查看</button>
           <a v-if="item.homepage" class="button" :href="item.homepage" target="_blank" rel="noreferrer noopener">
             主页
           </a>
@@ -339,11 +335,58 @@ onMounted(() => void load())
     </p>
 
     <p class="hint">
-      面板插件装进 <code>plugins/webui/plugins/</code>，该目录会被「更新 webui」清空，请对改动过的包留一份备份。
+      面板插件装进 <code>plugins/webui/plugins/</code>。更新 webui 时，从这里用 git 装来的包自带
+      <code>.git</code>，会被原样留下；归档下载装的包与你手放的文件则被暂存收走（在 webui 安装目录执行
+      <code>git stash pop</code> 取回）。本机没有 git 或卸载 webui 时是整目录删除，请对改动过的包留一份备份。
       商店只装「包」形态（一个目录 + <code>index.js</code> + <code>package.json</code>）——
-      单文件的 <code>.js</code> 手放仍可用，但它的版本号 node 侧读不到，无从判断该不该更新。
+      安装单位是目录，git clone 与归档下载都取不了单个文件。单文件的 <code>.js</code> 手放仍可用。
     </p>
     </div>
     </Transition>
+
+    <!--
+      查看：卡片上摆不下的那些事实，以及被截成两行的说明的全文
+
+      不做成页签：这里只有一组事实，一个页签栏只会多一次点击。与插件市场页那个模态同形
+      —— 两个市场在使用者眼里是同一种页面，详情的形制不该各来一套。
+    -->
+    <Modal :open="viewing !== ''" wide :title="`面板插件「${viewed?.title ?? ''}」`" @close="viewing = ''">
+      <template v-if="viewed">
+        <p>{{ viewed.description }}</p>
+        <dl class="facts">
+          <dt>包名</dt>
+          <dd class="mono">{{ viewed.name }}</dd>
+          <dt>版本</dt>
+          <dd class="mono">{{ versionText(viewed) }}</dd>
+          <dt v-if="viewed.author">作者</dt>
+          <dd v-if="viewed.author">{{ viewed.author }}</dd>
+          <dt v-if="viewed.minWebui">最低面板版本</dt>
+          <dd v-if="viewed.minWebui" class="mono">{{ viewed.minWebui }}</dd>
+          <!-- 组件数是索引作者填的预告，真实数目要 import 过才知道，故写「约」 -->
+          <dt v-if="viewed.widgets !== undefined">组件数</dt>
+          <dd v-if="viewed.widgets !== undefined">约 {{ viewed.widgets }} 枚（索引里的预告，装完以插件页为准）</dd>
+          <dt>形态</dt>
+          <dd>
+            {{ viewed.server === true ? "带 node 侧 —— 装完须到插件页重载 webui" : "只有浏览器侧 —— 装完刷新页面即生效" }}
+          </dd>
+          <dt>分类</dt>
+          <dd>{{ viewed.tags.length === 0 ? "未声明" : viewed.tags.join("、") }}</dd>
+          <dt>装后步骤</dt>
+          <dd>
+            <span v-if="(viewed.setup?.scripts.length ?? 0) > 0" class="mono">
+              {{ viewed.setup?.scripts.join("、") }}
+            </span>
+            <span v-else-if="viewed.deps === true">无 —— 只装依赖</span>
+            <span v-else>无 —— 既不装依赖也不跑 script</span>
+          </dd>
+          <dt>来源索引</dt>
+          <dd class="mono">{{ viewed.source }}</dd>
+          <dt v-if="viewed.homepage">主页</dt>
+          <dd v-if="viewed.homepage">
+            <a :href="viewed.homepage" target="_blank" rel="noreferrer noopener">{{ viewed.homepage }}</a>
+          </dd>
+        </dl>
+      </template>
+    </Modal>
   </div>
 </template>

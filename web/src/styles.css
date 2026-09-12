@@ -414,6 +414,32 @@ h3 {
 }
 
 /*
+ * 标题右侧的淡色小字：说的是「这一页由谁提供」
+ *
+ * 与标题同行而非另起一行：它是对标题的限定，不是一句独立的说明。字号与字重都压到
+ * 副标题一档，`h1` 的语义仍归标题本身 —— 一枚 `<small>` 不会被读屏器当成另一个标题。
+ *
+ * 中文里不带括号，靠字号与颜色分层：括号在 13px 下几乎看不出，只是多两个字符。
+ */
+.page-note {
+  margin-left: var(--s2);
+  color: var(--muted);
+  font-size: var(--fs-body);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+/*
+ * 出处那枚标记：`cursor: help` 是它带着鼠标提示的唯一外显
+ *
+ * 提示里那句话比标记本身更全（「由插件「x」注册的页面」对「由 x 提供」），不给光标
+ * 的话没人会把鼠标停上去 —— 等于写了一句没人看得到的话。
+ */
+.page-from {
+  cursor: help;
+}
+
+/*
  * 动作组：与标题基线对齐
  *
  * `align-items: flex-start` 使整行按顶部对齐，动作组因此需要一点下压才与 `h1` 齐平。
@@ -664,28 +690,122 @@ h3 {
   color: var(--accent);
 }
 
-/* 扩展页面主入口下的二级挂载项 */
-.nav-expand {
-  margin-left: auto;
-  padding: 0 var(--s1);
-  color: var(--muted);
-  border: 0;
+/*
+ * 扩展页面：主入口那一行与其下的二级挂载项
+ *
+ * 两类行都过一层 `.nav-row`，间距因此由它统一 —— 不在同一层容器里时行高会差一两像素。
+ *
+ * 折叠态下二级项**照样显示**（只是缩成一列小圆点）：那时「扩展页面」那一行是展开钮而非
+ * 链接，藏掉二级项等于让它点了没反应，而它是 72px 窄条下进插件页面的唯一入口。
+ */
+.nav-row {
+  display: flex;
+  align-items: center;
+}
+
+.nav-row > a,
+.nav-row > .nav-toggle {
+  flex: 1;
+  min-width: 0;
+}
+
+/*
+ * 「扩展页面」那一行：整行都是展开折叠的靶子
+ *
+ * 与 `.nav a` 同形（同内边距、同圆角、同左侧 3px 让位），使它读起来仍是导航的一项，
+ * 而不是一枚按钮 —— 它在视觉层级上确实与「插件」「插件市场」并列。
+ *
+ * **但它永远不取 `.on` 的高亮**：高亮表示「你正在看这一页」，而这一行自己没有内容可看，
+ * 当前看的是它下面某一页。此前点在文字上会跳进某个插件的页面，那一页并不是使用者选的。
+ */
+.nav-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  width: 100%;
+  padding: 10px var(--s3);
+  margin: 2px var(--s2);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
   background: transparent;
-  font-size: 16px;
-  line-height: 1;
+  border: 0;
+  /* 与 `.nav a` 的 `border-left: 3px` 等宽，两类行的图标才对得齐 */
+  border-left: 3px solid transparent;
+  border-radius: var(--r-ctl);
+  box-shadow: none;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
 }
 
-.nav-child {
-  padding-left: 44px !important;
-  border-left-color: transparent !important;
-  font-size: var(--fs-body);
+.nav-toggle:hover:not(:disabled) {
+  background: var(--raise);
+  color: var(--accent);
+  border-color: transparent;
+  border-left-color: transparent;
+  box-shadow: none;
 }
 
-.nav-child-icon {
-  width: 18px;
+.nav-toggle:hover .nav-icon {
+  color: var(--text);
+}
+
+/*
+ * 折角靠右
+ *
+ * `margin-left: auto` 把它推到行末，不用绝对定位：文案过长时前者自然被挤，
+ * 后者会与文字重叠。
+ */
+.nav-caret {
   flex: none;
+  width: 16px;
+  height: 16px;
+  margin-left: auto;
   color: var(--muted);
-  text-align: center;
+  transition: color var(--dur-1) var(--ease);
+}
+
+.nav-toggle:hover .nav-caret {
+  color: var(--text);
+}
+
+/*
+ * 二级项：整个盒子内缩一档，其余一切与一级项同形
+ *
+ * **缩进的是盒子，不是文案。** 此前只把文案右推、把图标藏掉、再把选中色条换成一枚右移的
+ * `::before`，三处叠起来使「消息统计」读着像另一个物种：一级项有图标、色条贴着高亮块左缘，
+ * 它却没有图标、色条浮在文字左边、高亮块的边界还与上面几行对不齐。层级本就该由**位置**
+ * 表达，而不是由「少一个图标、换一种选中标记」表达。
+ *
+ * 于是：图标留着（那枚圆点标出「插件提供的页」）、选中仍走 `.nav a.on` 的
+ * `border-left-color`，盒子整体靠 `margin-left` 内缩一档 —— 色条、底色、圆角与图标列因此
+ * 与一级项严格同形，只是整块右移，主次一眼可分。
+ */
+.nav-child {
+  margin-left: calc(var(--s2) + var(--s4));
+}
+
+/*
+ * 折叠态：取消内缩，与一级项一样居中
+ *
+ * 72px 宽里内缩没有意义（缩进量本身就接近半个侧栏宽）。此时文案隐去，只剩那枚圆点 ——
+ * 读不出是哪一页，靠 `title` 交代（那句话里带着页名与提供方）。一串小圆点不算好看，
+ * 但「认不出是哪一页」远好过「进不去」：「扩展页面」那一行此时是一枚展开钮而非链接，
+ * 把它展开后要显示的东西藏掉，等于让这枚钮点了没反应。
+ *
+ * 折角在这个宽度里放不下，故隐去。
+ */
+@media (min-width: 860px) {
+  .shell.collapsed .nav-caret {
+    display: none;
+  }
+
+  .shell.collapsed .nav-child {
+    margin-left: var(--s2);
+    justify-content: center;
+  }
 }
 
 /*
@@ -733,6 +853,68 @@ h3 {
   min-width: 0;
   width: 100%;
   max-width: var(--content-max);
+}
+
+/*
+ * 逐页微调间距：`.main` 上带一个 `page-<路由标识>` 类
+ *
+ * 十个视图共用 `.card` / `.grid` / `.toolbar` / `.row` / `.field` 这一套全局类 —— 那是有意的，
+ * 同一种东西在十页里长同一副样子，正是设计系统的用处。但共用的代价是「改插件页的卡片间距」
+ * 会连带改掉其余九页。逐页加 scoped 样式能解决，代价是同一个卡片的样式散在十个文件里，
+ * 下次改配色要挨个找。
+ *
+ * 故取第三条路：**外壳给每页一个作用域类，页内一律不写选择器，只重声明令牌。**
+ * 全站的间距、圆角、栏距都读 `--s1..--s8` / `--r-card` / `--gutter`（这条规矩本就成文，
+ * 见文件头），令牌在 `.page-*` 上重声明即向下继承到该页所有元素。
+ *
+ * 想把插件页的卡片间距收紧一档，写这么一条就够，不必碰任何组件：
+ *
+ *     .page-plugins { --s5: 16px; --s6: 20px; }
+ *
+ * 想让日志页更贴边、正文更宽：
+ *
+ *     .page-logs { --gutter: var(--s2); --content-max: none; }
+ *
+ * 需要精确到某个元素时再落选择器，前缀住作用域即可：`.page-market .card { ... }`。
+ * 标识取自 `router.ts` 的 `ROUTES`（overview / accounts / logs / plugins / market /
+ * store / config / help / appearance / custom），与哈希里那一段同名 —— 地址栏写着
+ * `#/plugins` 时要改的就是 `.page-plugins`，不必再查一张对照表。
+ *
+ * 本段刻意不写任何逐页覆盖：留空是为了让「哪些页做过特殊处理」这件事一看即知。
+ */
+
+/*
+ * 扩展页面：页头之下由插件的 iframe 吃掉剩余高度
+ *
+ * 高度不写 `calc(100vh - 常数)`：真正在滚的是 `.main`（见下一段的宽屏增强），而窄屏下
+ * 顶栏还在场 —— 手数出来的那个常数在两种布局里必有一种差一截，表现为页底多出一条空白
+ * 或 iframe 被切掉一行。改成 `.custom-page` 撑满自身、iframe `flex: 1`，两种布局都合。
+ *
+ * `min-height: 0` 不可省：flex 子项的默认最小高度是内容高度，缺它时 iframe 只会长不会缩，
+ * 窄屏上把页头推出视野。
+ */
+.custom-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.custom-frame {
+  flex: 1;
+  min-height: 360px;
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  background: var(--panel);
+  overflow: hidden;
+}
+
+/* 插件页面自带背景，此处不再给内边距 —— 那会在两层背景之间露出一圈边 */
+.custom-frame iframe {
+  flex: 1;
+  width: 100%;
+  border: 0;
 }
 
 /*
@@ -917,16 +1099,20 @@ h3 {
     flex: none;
   }
 
-  /* 品牌名淡出：保留占位避免布局跳动，但不再被读屏读取 */
+  /*
+   * 折叠态里三处文字的隐去：**只过渡 opacity，尺寸一步到位**
+   *
+   * 原先连 `max-width` / `max-height` 一起过渡，那两样逐帧触发重排（违反文件头规则 4），
+   * 而侧栏一折叠就是整棵导航树同时重排，在手机浏览器上正是「动一下卡一下」的来源。
+   * 尺寸归零不过渡并不显得突然：栅格列宽那一路仍由 `--side-now` 平滑收窄（见上），
+   * 使用者看到的是侧栏在收，文字在同一段时间里淡出。
+   */
   .shell.collapsed .brand {
     opacity: 0;
     visibility: hidden;
     max-height: 0;
     overflow: hidden;
-    transition:
-      opacity var(--dur-2) var(--ease-in),
-      max-height var(--dur-2) var(--ease-settle),
-      visibility var(--dur-2) var(--ease-in);
+    transition: opacity var(--dur-2) var(--ease-in);
     margin: 0;
     padding: 0;
   }
@@ -936,10 +1122,7 @@ h3 {
     opacity: 0;
     visibility: hidden;
     max-width: 0;
-    transition:
-      opacity var(--dur-2) var(--ease-in),
-      max-width var(--dur-2) var(--ease-settle),
-      visibility var(--dur-2) var(--ease-in);
+    transition: opacity var(--dur-2) var(--ease-in);
   }
 
   /* 组标题淡出并收起高度 */
@@ -950,10 +1133,7 @@ h3 {
     overflow: hidden;
     padding: 0;
     margin: 0;
-    transition:
-      opacity var(--dur-2) var(--ease-in),
-      max-height var(--dur-2) var(--ease-settle),
-      visibility var(--dur-2) var(--ease-in);
+    transition: opacity var(--dur-2) var(--ease-in);
   }
 
   .shell.collapsed .nav {
@@ -973,8 +1153,9 @@ h3 {
     padding-top: var(--s2);
   }
 
-  /* 导航项居中：文字宽度归零后，图标自然居中 */
-  .shell.collapsed .nav a {
+  /* 导航项居中：文字宽度归零后，图标自然居中。`.nav-toggle` 与链接同形，故一并命中 */
+  .shell.collapsed .nav a,
+  .shell.collapsed .nav-toggle {
     justify-content: center;
     gap: 0;
     padding: var(--s2) 0;
@@ -995,15 +1176,12 @@ h3 {
     min-width: 0;
   }
 
-  /* 底部按钮的标签同样淡出 */
+  /* 底部按钮的标签同样淡出，同样只过渡 opacity */
   .shell.collapsed .side-foot .nav-label {
     opacity: 0;
     visibility: hidden;
     max-width: 0;
-    transition:
-      opacity var(--dur-2) var(--ease-in),
-      max-width var(--dur-2) var(--ease-settle),
-      visibility var(--dur-2) var(--ease-in);
+    transition: opacity var(--dur-2) var(--ease-in);
   }
 }
 
@@ -1033,60 +1211,94 @@ h3 {
   transform: translateY(4px);
 }
 
-.page-enter-active,
+/*
+ * 进出同向、同时长：`mode="out-in"` 下两段动画首尾相接，总时长是两者之和。
+ * 一进一出取相反方向（旧页上移、新页下移）会让高频的导航点击看起来像内容在弹，
+ * 而两次点击若间隔短于总时长，第二次还得排在第一次的退场之后。
+ *
+ * 退场比进场短一档：使用者点了导航就已经知道要走，等旧页慢慢淡出没有信息量。
+ */
+.page-enter-active {
+  transition:
+    opacity var(--dur-2) var(--ease-out),
+    transform var(--dur-2) var(--ease-out);
+}
+
 .page-leave-active {
   transition:
-    opacity var(--dur-2) var(--ease),
-    transform var(--dur-2) var(--ease);
+    opacity var(--dur-1) var(--ease-in),
+    transform var(--dur-1) var(--ease-in);
 }
 
-.page-enter-from {
-  opacity: 0;
-  transform: translateY(8px);
+/*
+ * 页签切换过渡
+ *
+ * 时长取 --dur-1、位移 6px，且不缩放：页签同样配 `mode="out-in"`，350ms 一进一出
+ * 是 700ms —— 在同一张卡里换个页签要等将近一秒，快速对比两个页签的内容时尤其难受。
+ * `scale` 一并去掉：它让页签内的文字在过渡期间发虚。
+ */
+.tab-enter-active {
+  transition:
+    opacity var(--dur-1) var(--ease-out),
+    transform var(--dur-1) var(--ease-out);
 }
 
-.page-leave-to {
-  opacity: 0;
-  transform: translateY(-8px);
-}
-
-/* ─────────────── 页签切换过渡 ─────────────── */
-.tab-enter-active,
 .tab-leave-active {
   transition:
-    opacity var(--dur-3) var(--ease-out),
-    transform var(--dur-3) var(--ease-out);
+    opacity var(--dur-1) var(--ease-in),
+    transform var(--dur-1) var(--ease-in);
 }
 
 .tab-enter-from {
   opacity: 0;
-  transform: translateX(16px) scale(0.98);
+  transform: translateX(6px);
 }
 
 .tab-leave-to {
   opacity: 0;
-  transform: translateX(-16px) scale(0.98);
+  transform: translateX(-6px);
 }
 
 /* ─────────────── 卡片与网格 ─────────────── */
+/*
+ * 内边距走刻度不写 calc：`calc(var(--s6) * 1.1)` 是 26.4px，既不在 4px 刻度上，
+ * 也让每页想单独调间距的人无从下手 —— 重声明 `--s6` 会被那个 1.1 倍再乘一遍。
+ * 见文件头「间距刻度」与本文件末的分页作用域一节。
+ *
+ * 卡片**不抬升、不投影**：它是页面平面之内的东西，规则 3 把投影只留给真正浮起的
+ * 那几样。整页十几张卡各自会在指针经过时抬一下，鼠标横穿页面就像走过一片琴键。
+ * 悬停只留描边加深 —— 那已足够说明「这一张是指针所在」。
+ */
 .card {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--r-card);
-  padding: calc(var(--s6) * 1.1);
+  padding: var(--s6);
   margin-bottom: var(--s5);
-  box-shadow: var(--shadow-sm);
   overflow: hidden;
-  transition:
-    box-shadow var(--dur-2) var(--ease),
-    border-color var(--dur-2) var(--ease),
-    transform var(--dur-2) var(--ease);
+  transition: border-color var(--dur-1) var(--ease);
 }
 
 .card:hover {
-  box-shadow: var(--shadow-md);
   border-color: var(--border-strong);
-  transform: translateY(-2px);
+}
+
+/*
+ * 内含浮层的卡片：自动放开裁切
+ *
+ * `.card` 的 `overflow: hidden` 会把绝对定位的下拉在卡片边界处切掉（见 `.cdd-menu` 的注释）。
+ *
+ * **按内容判定，不靠调用点加类**：站内有两类浮层 —— 自绘下拉 `.cdd`（SchemaField 里的每个
+ * 枚举字段、账号页的适配器选择）与行内菜单 `.menu`（插件页与市场页的「更多」）。它们出现在
+ * 多少张卡片里由页面内容决定，逐处挂类是打地鼠：漏一处的表现就是「这个下拉被切了半截」，
+ * 而新加一处下拉的人未必知道还要去挂这个类。
+ *
+ * 代价是这类卡片不再裁剪子元素的溢出，故其中的圆角靠子元素自己保证。`:has()` 在本仓
+ * 已用于 `html:has(dialog[open])`，浏览器支持面一致。
+ */
+.card:has(.cdd),
+.card:has(.menu) {
+  overflow: visible;
 }
 
 /*
@@ -1103,7 +1315,8 @@ h3 {
 
 /* 市场条目含标题、说明、标签与一排操作按钮，180px 会把按钮挤成竖排 */
 .grid.market {
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  /* `min()` 的理由同 `.grid.plugins`：`minmax` 的下限是硬下限，窄屏上会顶穿容器 */
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
 }
 
 /*
@@ -1116,7 +1329,13 @@ h3 {
  * 说明文字长短不一，固定高度必然要么截断要么留白。
  */
 .grid.plugins {
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  /*
+   * `min()` 而非直接写 320px：`minmax` 的下限是**硬下限**，栅格不会为了装进容器而破它 ——
+   * 视口窄于 320px 加上左右 gutter 时，这一列会比容器宽，整页因此横向滚动。320px 宽的老
+   * 设备（iPhone SE 一代、部分 Android）减去两侧 gutter 只剩不到 300px，正好撞上。
+   * 取 `min(320px, 100%)` 后，窄屏上下限降为容器宽度，卡片照样单列，只是不再溢出。
+   */
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
 }
 
 /*
@@ -1201,19 +1420,12 @@ h3 {
  * 现已改用 `.card` 包裹（与磁盘/显卡等组件一致），故此处只保留数字样式与悬停效果。
  * 卡片样式（背景、边框、圆角、阴影、内边距）由 `.card` 统一提供。
  */
+/*
+ * 计数块的悬停与投影都由 `.card` 给，此处不再重复一套 —— 原先那两行还写了字面 rgba，
+ * 与规则 1「颜色一律经令牌」相悖。概览页六个计数块并列，各自抬升时整排会依次浮动。
+ */
 .stat {
   border: 1px solid var(--border);
-  box-shadow: 2px 2px 6px rgb(0 0 0 / 6%);
-  transition:
-    box-shadow var(--dur-2) var(--ease),
-    border-color var(--dur-2) var(--ease),
-    transform var(--dur-2) var(--ease);
-}
-
-.stat:hover {
-  box-shadow: 3px 3px 10px rgb(0 0 0 / 10%);
-  border-color: var(--border-strong);
-  transform: translateY(-2px);
 }
 
 .stat b {
@@ -2294,6 +2506,16 @@ textarea {
   transform: rotate(180deg);
 }
 
+/*
+ * 下拉浮层
+ *
+ * **它会越出所在卡片的边界**，而 `.card` 带 `overflow: hidden`（那一条为的是让子元素的
+ * 背景跟着卡片圆角裁切）—— 于是浮层在卡片下沿被切掉半截。绝对定位的元素被最近的
+ * 有 `overflow` 的祖先裁切，`z-index` 对此无能为力，提高层级并不会让它露出来。
+ *
+ * 故 `.card:has(.cdd)` 自动放开裁切（见 `.card` 一节），而不是把 `.card` 的 `overflow`
+ * 全局改掉 —— 那会让表格一类靠它裁圆角的地方露出直角。
+ */
 .cdd-menu {
   position: absolute;
   top: calc(100% + 4px);
@@ -3118,12 +3340,17 @@ textarea {
  * 激活标签上的计数角标随按钮反色
  *
  * `.tag` 的默认取色是 `--muted` 配 `--border-strong`，那是为浅底设的；压在填了主色的
- * 激活项上，那枚数字实测几乎看不见（截图里只余一个淡圈）。角标在此只是个计数，
- * 故直接继承按钮的前景色，边框由同色兑出半透明。
+ * 激活项上，那枚数字实测几乎看不见。角标在此只是个计数，故直接继承按钮的前景色，
+ * 边框与底色都由同色兑出半透明。
+ *
+ * **`background` 这一条不可省。** `.tag` 自带 `background: var(--panel)`（浅色模式下是
+ * 纯白），只改 `color: inherit` 的话就成了白底衬白字 —— 那枚数字彻底看不见，而指针
+ * 经过时因 hover 规则把前景改回 `--text` 又会重新出现，读起来像「数字只在鼠标指着时才有」。
  */
 .toolbar.tabs button.primary .tag {
   color: inherit;
   border-color: color-mix(in srgb, currentcolor 45%, transparent);
+  background: color-mix(in srgb, currentcolor 16%, transparent);
 }
 
 .check {
@@ -3843,11 +4070,165 @@ button.log-more:active:not(:disabled) {
   padding: var(--s2);
 }
 
-/* ─────────────── 令牌闸门 ─────────────── */
+/*
+ * ─────────────── 令牌闸门 ───────────────
+ *
+ * 三态（正在连接 / 无法连接 / 需要令牌）分两层：`.gate` 只管把内容摆到视口正中，
+ * 卡片是它里面的 `.card.gate-body`。**两者刻意不合并到一个元素上** —— 合并过一次，
+ * 结果是这一节的 `padding` 把 `.card` 的内边距覆盖成 0（本节在 `.card` 之后），
+ * 表现为标题贴着上沿、按钮贴着下沿，看着就像「这一页没有样式」。
+ *
+ * 用 flex 居中而非 `margin: 12vh auto`：闸门是整页唯一的内容，此时它上下居中比钉在
+ * 距顶 12vh 处更稳 —— 后者在矮窗口（横屏手机）里会把按钮推到视口之外。
+ */
 .gate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: var(--s6) var(--gutter);
+}
+
+.gate-body {
+  width: 100%;
   max-width: 420px;
-  margin: 12vh auto;
-  padding: 0 var(--gutter);
+  /* 卡片默认带 margin-bottom，居中容器里那会让它整体偏上一截 */
+  margin-bottom: 0;
+}
+
+/*
+ * 品牌一行：三态共用
+ *
+ * 少了它，「正在连接内核…」就是一张浮在空白页正中、没有出处的卡片 —— 使用者此刻
+ * 还没进面板，页面上没有任何别的东西能说明这是什么。
+ */
+.gate-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0 0 var(--s5);
+  padding-bottom: var(--s4);
+  border-bottom: 1px solid var(--glass-border);
+}
+
+/* 闸门里的标题不必与页头的 h1 同样大：这一块只有一件事要做 */
+.gate h1 {
+  margin: 0 0 var(--s1);
+  font-size: var(--fs-h2);
+}
+
+.gate .sub {
+  margin-bottom: var(--s4);
+}
+
+.gate .hint {
+  margin: var(--s2) 0 0;
+}
+
+/*
+ * 动作区：与上方内容留一道明确的间隔
+ *
+ * 按钮撑满 —— 闸门里只有一个动作，撑满使它成为明确的下一步，也避免一枚孤零零的
+ * 小按钮浮在宽卡片左下角。
+ */
+.gate-actions {
+  margin-top: var(--s5);
+}
+
+.gate-actions button {
+  width: 100%;
+}
+
+/* 「正在连接内核…」是一句状态而非一段内容，居中并降为次要色 */
+.gate-wait {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  margin: 0;
+  padding: var(--s4) 0;
+  color: var(--muted);
+}
+
+/*
+ * 转圈
+ *
+ * 连不上时这一态会停留数秒，一行静止的文字读不出「还在试」还是「卡住了」。
+ * `prefers-reduced-motion` 下停转但保留那个圈：它同时是个视觉锚点，去掉会让那一行
+ * 突然缺一块。
+ */
+.spinner {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: var(--r-pill);
+  animation: gate-spin 0.7s linear infinite;
+}
+
+@keyframes gate-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}
+
+/*
+ * 输入框下那一行：说明在左，「发送到日志」贴右
+ *
+ * 两者同处一行而非上下堆叠：它们说的是同一件事（令牌在哪儿、怎么再看一次）。
+ * 窄屏下 `flex-wrap` 让按钮落到下一行，仍靠右。
+ */
+.gate-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s2);
+}
+
+/* 点过之后那句回话：与上一行拉开，避免读成提示的一部分 */
+.gate-said {
+  margin-top: var(--s2);
+  color: var(--accent);
+}
+
+/*
+ * 文字按钮
+ *
+ * 与 `.primary` 之外的按钮不同形：它不是这一页的动作，只是一处「顺便可做的事」。
+ * 仍用 `<button>` 而非 `<a>` —— 它触发的是一次请求，不导航到任何地方。
+ */
+button.link {
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--fs-label);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+button.link:hover:not(:disabled) {
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--accent-solid);
+}
+
+button.link:disabled {
+  color: var(--muted);
+  text-decoration: none;
+  cursor: default;
 }
 
 /*
@@ -4122,6 +4503,19 @@ button.danger.solid {
   box-shadow: var(--glass-shadow-hover), var(--glass-highlight);
 }
 
+/*
+ * 朝上弹的变体
+ *
+ * 触发按钮贴近视口下沿时由脚本挂上（高度是打开后实测的，见 `PluginsView.toggleMenu`）。
+ * `bottom: 100%` 把菜单顶到按钮上方；`margin-top` 必须归零 —— 静态位置的那份上边距在
+ * `bottom` 生效后会变成「离按钮更远」而不是更近。
+ */
+.menu-list.up {
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: var(--s1);
+}
+
 /* 菜单项：左对齐的整行按钮，去掉描边免得看起来像一叠独立按钮 */
 .menu-list > button,
 .menu-list > .button {
@@ -4152,6 +4546,22 @@ button.danger.solid {
   transition:
     opacity var(--dur-1) var(--ease),
     transform var(--dur-1) var(--ease);
+}
+
+/*
+ * 朝上弹时，进出场也从下往上
+ *
+ * 原点与位移一并翻过来，否则一个贴着按钮上缘的菜单会从上方缩进去 —— 那读起来像是
+ * 从别的东西里长出来的。选择器多带一个 `.menu-list.up` 以压过上面那两条。
+ */
+.menu-list.up.menu-enter-from,
+.menu-list.up.menu-leave-to {
+  transform: scale(0.96) translateY(4px);
+}
+
+.menu-list.up.menu-enter-active,
+.menu-list.up.menu-leave-active {
+  transform-origin: bottom right;
 }
 
 .menu-list > button:hover:not(:disabled),

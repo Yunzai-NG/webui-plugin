@@ -2,6 +2,9 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# 构建时由 scripts/sync-webadapter.mjs 从 dist/ 拷入，不是手写的源码
+webadapter/msgstats.js
+
 # 编辑器 / 系统
 .DS_Store
 Thumbs.db

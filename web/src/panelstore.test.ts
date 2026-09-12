@@ -3,21 +3,12 @@
  *
  * 重点是 `storeResultText` 的第三段（「下一步该做什么」）：那一段有三种答案，而说错任一种
  * 都会让使用者做错事 —— 把「须重载 webui」说成「刷新页面」，他会刷新、看不到东西、
- * 然后以为装坏了。其余是筛选与角标的一致性。
+ * 然后以为装坏了。
+ *
+ * **页签与筛选的用例不在此处**：那几个判据已与插件市场页共用，收在 `filter.test.ts`。
  */
 import { describe, expect, it } from "vitest"
-import {
-  STORE_TABS,
-  inTab,
-  setupNotes,
-  storeResultText,
-  storeUrlOf,
-  tabCounts,
-  tagsOf,
-  versionText,
-  visibleItems,
-  willRunPm
-} from "./panelstore.js"
+import { setupNotes, storeResultText, storeUrlOf, versionText, willRunPm } from "./panelstore.js"
 import type { PanelStoreItem, PanelStoreResult } from "./types.js"
 
 /**
@@ -69,89 +60,6 @@ describe("storeUrlOf", () => {
 
   it("**不在 `/api` 之下** —— 商店是 webui 自己开的，内核对它一无所知", () => {
     expect(storeUrlOf()).not.toContain("/api/")
-  })
-})
-
-describe("页签", () => {
-  it("三个页签，「全部」在最前", () => {
-    expect(STORE_TABS.map(tab => tab.id)).toEqual(["all", "installed", "updatable"])
-  })
-
-  it("「全部」收下一切", () => {
-    expect(inTab(itemOf(), "all")).toBe(true)
-    expect(inTab(itemOf({ installed: true }), "all")).toBe(true)
-  })
-
-  it("「已安装」只收装了的", () => {
-    expect(inTab(itemOf({ installed: false }), "installed")).toBe(false)
-    expect(inTab(itemOf({ installed: true }), "installed")).toBe(true)
-  })
-
-  it("「可更新」只收可更新的", () => {
-    expect(inTab(itemOf({ installed: true, updatable: false }), "updatable")).toBe(false)
-    expect(inTab(itemOf({ installed: true, updatable: true }), "updatable")).toBe(true)
-  })
-
-  it("角标与筛选**同出一源**，故两者永不打架", () => {
-    const items = [
-      itemOf({ name: "a" }),
-      itemOf({ name: "b", installed: true }),
-      itemOf({ name: "c", installed: true, updatable: true })
-    ]
-    const counts = tabCounts(items)
-    expect(counts).toEqual({ all: 3, installed: 2, updatable: 1 })
-    for (const tab of STORE_TABS) {
-      expect(visibleItems(items, tab.id, [], "")).toHaveLength(counts[tab.id])
-    }
-  })
-})
-
-describe("tagsOf", () => {
-  it("按出现次数降序 —— 常见的分类排在前面", () => {
-    const items = [
-      itemOf({ name: "a", tags: ["监控", "系统"] }),
-      itemOf({ name: "b", tags: ["监控"] }),
-      itemOf({ name: "c", tags: ["监控"] })
-    ]
-    expect(tagsOf(items)[0]).toBe("监控")
-  })
-
-  /*
-   * 同次数时按名称，**用 ASCII 名字验**
-   *
-   * 中文的 localeCompare 取决于 Node 带的 ICU（完整版按拼音，small-icu 退化为码位序），
-   * 断言一个具体的中文次序等于把用例绑在构建选项上 —— 那种失败与本函数毫无关系。
-   */
-  it("同次数时按名称升序", () => {
-    const items = [itemOf({ name: "a", tags: ["zeta", "alpha"] }), itemOf({ name: "b", tags: ["mid"] })]
-    expect(tagsOf(items)).toEqual(["alpha", "mid", "zeta"])
-  })
-
-  it("没有标签时给空数组", () => {
-    expect(tagsOf([itemOf({ tags: [] })])).toEqual([])
-  })
-})
-
-describe("visibleItems", () => {
-  const items = [
-    itemOf({ name: "hardware", title: "硬件信息", tags: ["监控"], author: "Yunzai-NG" }),
-    itemOf({ name: "clockx", title: "时钟", tags: ["装饰"], installed: true }),
-    itemOf({ name: "quote", title: "一言", tags: ["装饰", "娱乐"] })
-  ]
-
-  it("分类为「或」而非「且」—— 勾两个标签要的是两类的全部", () => {
-    expect(visibleItems(items, "all", ["监控", "娱乐"], "").map(item => item.name)).toEqual(["hardware", "quote"])
-  })
-
-  it("关键词命中名称、标题、说明、作者与标签", () => {
-    expect(visibleItems(items, "all", [], "yunzai-ng").map(item => item.name)).toEqual(["hardware"])
-    expect(visibleItems(items, "all", [], "一言").map(item => item.name)).toEqual(["quote"])
-    expect(visibleItems(items, "all", [], "装饰").map(item => item.name)).toEqual(["clockx", "quote"])
-  })
-
-  it("页签、分类、关键词三者叠加", () => {
-    expect(visibleItems(items, "installed", ["装饰"], "时钟").map(item => item.name)).toEqual(["clockx"])
-    expect(visibleItems(items, "installed", ["娱乐"], "").map(item => item.name)).toEqual([])
   })
 })
 
