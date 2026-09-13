@@ -10,10 +10,20 @@
  *          `M12 17.2h.01`，换成 butt 端帽会整点消失。
  *
  *          统一 `aria-hidden`：图标一律伴随文字出现，读屏器再念一遍纯属噪声。
+ *
+ *          **`shapes` 与 `path` 并存，不合成一个 prop。** 面板自己那二十来枚图标都是一段 path，
+ *          写成 `:path="..."` 最直接；而插件自报的图标可能含 `circle`、`rect` 一类元素，
+ *          经服务端 `pageicon.ts` 抠成逐元素的几何数据后由 `shapes` 进来。两者都进同一个
+ *          外壳，故上色（描边 + `currentColor`）对插件图标同样成立 —— 那正是它跟着深浅主题
+ *          变色的原因：**几何归插件，颜色一概归这里**。
  */
+import type { IconShape } from "../types.js"
+
 defineProps<{
-  /** 24×24 网格上的 svg path 数据 */
-  path: string
+  /** 24×24 网格上的 svg path 数据；给了 `shapes` 时可省 */
+  path?: string
+  /** 逐元素的几何数据，插件自报的图标走这一路；与 `path` 二者其一 */
+  shapes?: readonly IconShape[]
 }>()
 </script>
 
@@ -28,6 +38,15 @@ defineProps<{
     aria-hidden="true"
     focusable="false"
   >
-    <path :d="path" />
+    <!--
+      `shapes` 优先：两者都给时以逐元素的那份为准（调用方拿它当回落值传 `path` 也就成立了）。
+
+      属性经 `v-bind` 原样铺开是安全的：键名与取值都已由服务端的白名单过过一遍，
+      既不含 `on*` 也不含括号引号 —— 见 pageicon.ts 的 `SHAPES` 与 `GEOMETRY_RE`。
+    -->
+    <template v-if="shapes !== undefined && shapes.length > 0">
+      <component :is="shape.tag" v-for="(shape, i) in shapes" :key="i" v-bind="shape.attrs" />
+    </template>
+    <path v-else-if="path !== undefined" :d="path" />
   </svg>
 </template>

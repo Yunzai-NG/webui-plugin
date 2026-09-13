@@ -44,6 +44,22 @@ export type {
   TaskInfo
 } from "@yunzai-ng/types"
 
+/**
+ * 一枚插件自报图标的几何数据，随 `GET /plugin/webui/custom-pages` 回来
+ *
+ * 形状与面板插件服务端的 `src/pageicon.ts` 对齐，此处另声明一份而非 import ——
+ * 理由同本文件其余重声明：分层门禁不许 web 依赖 node 侧那半边。
+ *
+ * **只有几何，没有颜色。** 键名与取值都已在服务端过过白名单，故 `AppIcon` 可以
+ * 原样 `v-bind` 铺开；上色一概归那个 svg 外壳，图标因此跟着深浅主题变色。
+ */
+export interface IconShape {
+  /** 元素名，取值限于服务端白名单内的形状元素（path、circle、rect …） */
+  tag: string
+  /** 该元素的几何属性 */
+  attrs: Record<string, string>
+}
+
 /** `GET /api/overview` */
 export interface Overview {
   /** 内核版本 */

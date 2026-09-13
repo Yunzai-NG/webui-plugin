@@ -21,6 +21,7 @@ import { errorText } from "../format.js"
 import { currentQuery } from "../router.js"
 import { attachBridge } from "../custombridge.js"
 import PageHeader from "../components/PageHeader.vue"
+import type { IconShape } from "../types.js"
 
 /** 一个已挂载的插件页面，字段与服务端 `CustomPage` 一一对应 */
 interface Page {
@@ -34,6 +35,8 @@ interface Page {
   provider: string
   /** 页面 HTML 地址 */
   url: string
+  /** 插件自报的图标，逐元素的几何数据；没给或不可用时服务端不下发这一项 */
+  icon?: readonly IconShape[]
 }
 
 const pages = ref<Page[]>([])
@@ -96,7 +99,7 @@ onUnmounted(detach)
   <div class="custom-page">
     <!-- 标题取页面自己的名字，出处另作一枚淡色标记跟在标题后：两者是不同的事，
          挤进同一句会让「这一页做什么」被出处挤掉 -->
-    <PageHeader route="custom" :title="headTitle" :sub="headSub">
+    <PageHeader route="custom" :title="headTitle" :sub="headSub" :icon="page?.icon">
       <template v-if="page !== undefined" #titleNote>
         <span class="page-from" :title="`由插件「${page.provider}」注册的页面`">
           由 {{ page.provider }} 提供

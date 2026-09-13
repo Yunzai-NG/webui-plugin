@@ -27,6 +27,7 @@
 import { computed } from "vue"
 import AppIcon from "./AppIcon.vue"
 import { routeOf } from "../router.js"
+import type { IconShape } from "../types.js"
 
 /** 标识未登记时的图标：一个空心圆，读作「未知的页」 */
 const UNKNOWN = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18"
@@ -38,6 +39,14 @@ const props = defineProps<{
   sub?: string
   /** 覆盖标题；缺省取 ROUTES 里的导航文案。只给运行时才知道标题的页用 */
   title?: string
+  /**
+   * 覆盖图标，逐元素的几何数据；缺省取 `ROUTES` 里那一枚
+   *
+   * 与 `title` 是同一类东西、只为同一种页开（内容由插件提供、图标在运行时才知道），
+   * 同样不该推广到别处：其余页面的图标必须与侧栏是同一枚，各页自己传一遍就会出现
+   * 「侧栏一个样、页头另一个样」。
+   */
+  icon?: readonly IconShape[]
 }>()
 
 /** 实际显示的标题 */
@@ -53,8 +62,9 @@ const def = computed(() => routeOf(props.route))
 
 <template>
   <header class="page-head">
+    <!-- `icon` 在场即以它为准，否则仍取那份表里的一枚（见 AppIcon：`shapes` 优先于 `path`） -->
     <span class="page-icon">
-      <AppIcon :path="def?.icon ?? UNKNOWN" />
+      <AppIcon :path="def?.icon ?? UNKNOWN" :shapes="icon" />
     </span>
     <div class="page-titles">
       <!-- 标题右侧那行淡色小字与标题同行：它是对「这是谁的页」的限定，

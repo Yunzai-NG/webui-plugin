@@ -241,6 +241,44 @@ describe("mountCustomPages", () => {
     expect(rec.statics).toHaveLength(0)
   })
 
+  it("插件自报的图标经解析进描述符，只留几何、丢掉上色属性", async () => {
+    const rec = recorder()
+    const plug = nameOf("icon")
+    const root = await makePlugins({
+      [plug]: `export default {
+        title: "统计",
+        icon: '<svg viewBox="0 0 24 24" fill="#333"><path d="M4 20V10" stroke="#f00"/><circle cx="12" cy="12" r="3"/></svg>'
+      }`
+    })
+
+    await mountCustomPages(ctxOf(rec), root)
+    const page = pagesOf(rec)[0]
+
+    expect(page?.icon).toEqual([
+      { tag: "path", attrs: { d: "M4 20V10" } },
+      { tag: "circle", attrs: { cx: "12", cy: "12", r: "3" } }
+    ])
+    // 上色一概不留：留着 `fill="#333"`，深色主题下它就是一团黑
+    expect(JSON.stringify(page?.icon)).not.toContain("#")
+    expect(rec.warns).toHaveLength(0)
+  })
+
+  it("图标不可用只是回落到默认图标，那一页照常注册 —— 与入口写错不是一类事", async () => {
+    const rec = recorder()
+    const plug = nameOf("badicon")
+    const root = await makePlugins({
+      [plug]: `export default { title: "统计", icon: '<svg><script>alert(1)</script></svg>' }`
+    })
+
+    await mountCustomPages(ctxOf(rec), root)
+    const pages = pagesOf(rec)
+
+    expect(pages).toHaveLength(1)
+    expect(pages[0]).toMatchObject({ id: plug, title: "统计" })
+    expect(pages[0]?.icon).toBeUndefined()
+    expect(rec.warns.some(line => line.includes("图标无法解析"))).toBe(true)
+  })
+
   it("plugins 目录不存在时照样挂上清单端点，返回空数组 —— 全新安装尚未建该目录", async () => {
     const rec = recorder()
 

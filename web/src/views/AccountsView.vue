@@ -14,13 +14,13 @@
  */
 import { computed, onMounted, onUnmounted, ref, watch } from "vue"
 import { del, get, patch, post } from "../api.js"
-import { defaultsOf } from "../configedit.js"
-import { DUR_UNITS } from "../duration.js"
+import { defaultsOf, snapshot } from "../configedit.js"
 import { errorText, statusClass, statusText } from "../format.js"
-import { globalNote, globalRetryOf, isRetryCustom, retryFormOf, retryOverrideOf, retrySummary } from "../retry.js"
+import { globalRetryOf, isRetryCustom, retryFormOf, retryOverrideOf, retrySummary } from "../retry.js"
 import { askConfirm } from "../confirm.js"
 import Modal from "../components/Modal.vue"
 import PageHeader from "../components/PageHeader.vue"
+import RetryFields from "../components/RetryFields.vue"
 import SchemaForm from "../components/SchemaForm.vue"
 import { ApiError } from "../api.js"
 import type { GlobalRetry, RetryForm } from "../retry.js"
@@ -46,6 +46,16 @@ const draftConfig = ref<Record<string, unknown>>({})
 const draftLabel = ref("")
 /** 新建账号的逐字段错误 */
 const draftIssues = ref<readonly SchemaIssue[]>([])
+/**
+ * 新建账号的重连覆盖，四项皆以字符串存 —— 空串即「跟随全局」
+ *
+ * **建号时就能填，而不是建完再进一次配置框。** 内核的 `POST accounts` 本就收 `retry`
+ * （`api.ts` 的 `retryOverrideOf`），且刻意做成一次 `create()` 完成 —— 建完再 PATCH
+ * 一次会因 `config` 到达而断开重连，一个刚接上的号先闪一次离线。
+ *
+ * 与 `draftConfig` 分开的理由同 `editRetry`：这四项归内核所有，不属于任何适配器的 schema。
+ */
+const draftRetry = ref<RetryForm>(retryFormOf(undefined))
 /** 用户为当前提问填写的答案 */
 const answers = ref<Record<string, string>>({})
 /** 适配器下拉是否展开 */
@@ -109,7 +119,7 @@ const editSchema = computed(() => editAdapter.value?.accountSchema)
  * 的保存会让这个号断线重连，那期间的消息全丢。
  *
  * 比 JSON 文本而非深比对：此处只需判「有没有动过」，而任何一处取值改变都会让序列化结果
- * 不同（`editConfig` 是同一对象的 `structuredClone`，键序本就一致）。**宁可多判成变了**
+ * 不同（`editConfig` 是同一对象的 `snapshot`，键序本就一致）。**宁可多判成变了**
  * —— 代价只是多一次重连；漏判的代价是「改了地址却没重连」，那正是要防的那件事。
  */
 const configChanged = computed(() => {
@@ -117,9 +127,6 @@ const configChanged = computed(() => {
   if (before === undefined) return false
   return JSON.stringify(before) !== JSON.stringify(editConfig.value)
 })
-
-/** 编辑框里此刻填了至少一项重连覆盖 */
-const retryCustomized = computed(() => retryOverrideOf(editRetry.value) !== null)
 
 /*
  * 换适配器即按它的 schema 铺一遍默认值
@@ -131,6 +138,9 @@ const retryCustomized = computed(() => retryOverrideOf(editRetry.value) !== null
  * 铺的是**副本**（`defaultsOf` 每次新造对象），故改动不会污染 schema 里的声明；
  * 换一次适配器就整份重铺，不保留上一个适配器填过的东西 —— 两者的字段本就不同名，
  * 留下来只会把 A 的地址带进 B 的表单。
+ *
+ * **`draftRetry` 不跟着重铺**：那四项归内核所有，字段与适配器无关，换一次适配器
+ * 把「我要这个号最多重连 3 次」抹掉没有道理。
  */
 watch(draft, adapter => {
   draftConfig.value = adapter === undefined ? {} : defaultsOf(adapter.accountSchema)
@@ -283,21 +293,30 @@ function onDraftChange(path: string, value: unknown): void {
   node[leaf] = value
 }
 
-/** 依据手工填写的配置创建账号 */
+/**
+ * 依据手工填写的配置创建账号
+ *
+ * **四项全空即不送 `retry`**（而非像编辑那样送 `null`）：`null` 的意思是「清掉已有的覆盖」，
+ * 而一个还不存在的账号没有覆盖可清。内核的 `create()` 也只在有键时才存这一项，送空对象
+ * 与不送等价 —— 但少送一个字段就少一处要内核去理解的意图。
+ */
 async function createAccount(): Promise<void> {
   const adapter = draft.value
   if (adapter === undefined) return
   busy.value = "new"
   draftIssues.value = []
   try {
+    const retry = retryOverrideOf(draftRetry.value)
     await post("accounts", {
       adapterId: adapter.id,
       config: draftConfig.value,
-      ...(draftLabel.value === "" ? {} : { label: draftLabel.value })
+      ...(draftLabel.value === "" ? {} : { label: draftLabel.value }),
+      ...(retry === null ? {} : { retry })
     })
     draftAdapter.value = ""
     draftConfig.value = {}
     draftLabel.value = ""
+    draftRetry.value = retryFormOf(undefined)
     error.value = ""
     await refreshAccounts()
   } catch (err) {
@@ -319,8 +338,16 @@ async function createAccount(): Promise<void> {
  */
 function openEdit(item: AccountItem): void {
   editing.value = item
-  // structuredClone 而非 JSON 往返：配置里可能有 undefined 与嵌套对象，后者会被 JSON 悄悄丢掉
-  editConfig.value = structuredClone(item.record.config)
+  /*
+   * 用 `snapshot`（JSON 往返）而非 `structuredClone`
+   *
+   * `accounts` 是个 `ref`，`item.record.config` 取到的是 Vue 的响应式代理，而
+   * `structuredClone` 克隆代理直接抛 DataCloneError —— 它抛在 `editing.value = item`
+   * 之后，于是模态照常打开、`editConfig` 停在空对象：**表现为「点配置，配置项全是空的」**，
+   * 且因为空对象与已存的配置不同，标题还会挂上一句「适配器配置已改动」，一保存就把
+   * 这个号的地址与凭据清空。配置值本身来自 JSON 响应，JSON 往返对它无损。
+   */
+  editConfig.value = snapshot(item.record.config)
   editLabel.value = item.record.label ?? ""
   editRetry.value = retryFormOf(item.record.retry)
   editIssues.value = []
@@ -334,11 +361,6 @@ function closeEdit(): void {
   editRetry.value = retryFormOf(undefined)
   editIssues.value = []
   editError.value = ""
-}
-
-/** 把四项一并改回跟随全局 */
-function clearRetry(): void {
-  editRetry.value = retryFormOf(undefined)
 }
 
 /**
@@ -715,6 +737,16 @@ onUnmounted(() => {
           :issues="draftIssues"
           @change="onDraftChange"
         />
+
+        <!--
+          重连策略在建号时就给出，而非建完再进一次配置框
+
+          内核的 `POST accounts` 本就收 `retry`，且刻意做成一次 `create()` ——
+          建完再 PATCH 一次会因 `config` 到达而断开重连，一个刚接上的号先闪一次离线。
+          与「配置」模态里是同一个组件，故两处的文案与语义不会走散。
+        -->
+        <RetryFields v-model="draftRetry" :global="globalRetry" />
+
         <button class="primary" :disabled="busy === 'new'" @click="void createAccount()">创建账号</button>
       </template>
     </div>
@@ -759,80 +791,7 @@ onUnmounted(() => {
         内核 0.5.2 起可以直接改。
       </p>
 
-      <!--
-        ───── 重连策略 ─────
-
-        与上面那张表单**不是一类东西**，故单独成节而不混进 SchemaForm：那张表由适配器的
-        `accountSchema` 驱动（「这个号的 WS 地址与 token 是什么」），而这四项归内核所有 ——
-        重连是内核替所有适配器统一做的事，适配器根本不参与。混进去就得要求每个适配器作者
-        各自声明一遍这四项，于是同一件事有 N 份声明，且哪个适配器忘了写，它的账号就没有
-        这个能力。
-
-        每一项都可以留空，留空即跟随全局 —— 故**一律不给默认值**：预先填上此刻的全局值
-        等于把「跟随全局」偷换成「此刻的全局值」，而后者从此不跟着全局改动走，症状是
-        「我改了全局间隔，这个号却不听」。
-      -->
-      <div class="subsect">
-        <h3>重连策略</h3>
-        <p class="hint">
-          四项各自可留空，留空的那项跟随全局设置（配置页 → 适配器）。这四项由内核统一执行，与适配器无关。
-        </p>
-
-        <div class="field">
-          <label for="retryLimit">重连次数上限</label>
-          <input
-            id="retryLimit"
-            v-model="editRetry.limit"
-            type="number"
-            min="0"
-            max="1000"
-            step="1"
-            placeholder="跟随全局"
-          />
-          <p class="hint">{{ globalNote("limit", globalRetry) }}。填 0 表示一直重连；连上一次即归零。</p>
-        </div>
-
-        <div class="field">
-          <label for="retryInterval">首次重连间隔</label>
-          <div class="dur">
-            <input id="retryInterval" v-model="editRetry.interval" type="number" min="0" placeholder="跟随全局" />
-            <select v-model="editRetry.intervalUnit" aria-label="首次重连间隔的单位">
-              <option v-for="unit in DUR_UNITS" :key="unit.value" :value="unit.value">{{ unit.label }}</option>
-            </select>
-          </div>
-          <p class="hint">{{ globalNote("interval", globalRetry) }}。第一次失败之后等多久再试。</p>
-        </div>
-
-        <div class="field">
-          <label for="retryMaxInterval">重连间隔上限</label>
-          <div class="dur">
-            <input id="retryMaxInterval" v-model="editRetry.maxInterval" type="number" min="0" placeholder="跟随全局" />
-            <select v-model="editRetry.maxIntervalUnit" aria-label="重连间隔上限的单位">
-              <option v-for="unit in DUR_UNITS" :key="unit.value" :value="unit.value">{{ unit.label }}</option>
-            </select>
-          </div>
-          <p class="hint">{{ globalNote("maxInterval", globalRetry) }}。退避增长到此为止，不再变长。</p>
-        </div>
-
-        <div class="field">
-          <label for="retryFactor">退避倍率</label>
-          <input
-            id="retryFactor"
-            v-model="editRetry.factor"
-            type="number"
-            min="1"
-            max="10"
-            step="0.1"
-            placeholder="跟随全局"
-          />
-          <p class="hint">
-            {{ globalNote("factor", globalRetry) }}。每失败一次把等待乘上这个数；填 1 即不退避、始终按首次间隔重试。
-          </p>
-        </div>
-
-        <button :disabled="!retryCustomized" @click="clearRetry()">四项一并改回跟随全局</button>
-      </div>
-
+      <RetryFields v-model="editRetry" :global="globalRetry" />
       <template #actions>
         <button @click="closeEdit()">取消</button>
         <button

@@ -25,7 +25,10 @@ export function init(ctx) {
   ctx.registerPage({
     title: "消息统计",
     sub: "收发消息、图片与表情包的计数与趋势",
-    provider: "WebUI"
+    provider: "WebUI",
+    // 只给几何，颜色由面板给（描边取 currentColor，故跟着主题走）——
+    // 这也是第三方插件该走的路，webui 自己先用一遍
+    icon: "M4 20V10M10 20V4M16 20v-7M21 20H3"
   })
 
   // 一次返回按天分桶的全量，范围筛选全在页面做：数据桥的路径白名单不含 `?`，

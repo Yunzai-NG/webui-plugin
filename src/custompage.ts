@@ -24,6 +24,8 @@ import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { isSafeRoutePath } from "./panelserver.js"
+import { parseIcon } from "./pageicon.js"
+import type { IconShape } from "./pageicon.js"
 
 /** 一个插件页面的描述符，`GET /plugin/webui/custom-pages` 返回其数组 */
 export interface CustomPage {
@@ -37,6 +39,13 @@ export interface CustomPage {
   readonly provider: string
   /** 页面 HTML 的地址，前端据此加载 iframe */
   readonly url: string
+  /**
+   * 导航与页头的图标，逐元素给出的几何数据；插件没给或给的不可用时缺省
+   *
+   * **只有几何，没有颜色**：上色归面板的 svg 外壳（见 web 侧 AppIcon），故图标跟着
+   * 深浅主题变色。缺省时前端回落到通用图标，不是显示成一块空白。
+   */
+  readonly icon?: readonly IconShape[]
 }
 
 /** 插件在 `webadapter/index.js` 里注册页面时给的内容 */
@@ -49,6 +58,14 @@ export interface CustomPageInput {
   provider?: string
   /** 页面入口文件名，相对 `webadapter/`，缺省 `index.html` */
   src?: string
+  /**
+   * 导航与页头的图标：整段 `<svg>` markup，或只一段 path 的 `d` 数据
+   *
+   * 两种写法都收，取的都只是其中的**几何**（见 `parseIcon`）：`stroke` / `fill` 一类
+   * 上色属性会被丢掉，图标由面板按当前主题的前景色描边。写错了不会让页面注册失败，
+   * 只是这一项用通用图标。
+   */
+  icon?: string
 }
 
 /** 传给 `webadapter/index.js` 的 `init()` 的上下文 */
@@ -162,12 +179,24 @@ export async function mountCustomPages(ctx: Ctx, pluginsDir: string): Promise<vo
           ctx.logger.warn(`自定义页面 ${plugin}：入口 ${src} 不是合法的相对文件路径，已跳过`)
           return
         }
+        /*
+         * 图标解析不出来只是少一个图标，不影响这一页能不能开
+         *
+         * 故不像入口路径那样把整次注册作废：入口写错了页面是空的，而图标写错了页面照常
+         * 能看，回落到通用图标即可。留一条警告说明它被丢了 —— 否则作者只会看到「我传了
+         * 图标却没生效」，无从知道是哪一步不认。
+         */
+        const icon = parseIcon(input.icon)
+        if (icon === undefined && typeof input.icon === "string" && input.icon.trim() !== "") {
+          ctx.logger.warn(`自定义页面 ${plugin}：图标无法解析（只收形状元素与几何属性），已回落到默认图标`)
+        }
         page = {
           id: plugin,
           title: typeof input.title === "string" && input.title !== "" ? input.title : plugin,
           ...(typeof input.sub === "string" && input.sub !== "" ? { sub: input.sub } : {}),
           provider: typeof input.provider === "string" && input.provider !== "" ? input.provider : plugin,
-          url: `${PREFIX}/custom/${plugin}/${src}`
+          url: `${PREFIX}/custom/${plugin}/${src}`,
+          ...(icon === undefined ? {} : { icon })
         }
       }
 

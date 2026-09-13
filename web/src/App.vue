@@ -22,7 +22,7 @@ import { ApiError } from "./api.js"
 import { errorText } from "./format.js"
 import { ROUTES, currentQuery, currentRoute, hrefOf, type RouteDef } from "./router.js"
 import { THEME_LABEL, cycleTheme, themeChoice, type ThemeChoice } from "./theme.js"
-import type { Overview } from "./types.js"
+import type { IconShape, Overview } from "./types.js"
 import AppIcon from "./components/AppIcon.vue"
 import ConfirmDialog from "./components/ConfirmDialog.vue"
 import PathPicker from "./components/PathPicker.vue"
@@ -47,6 +47,13 @@ interface MountedPage {
   title: string
   /** 提供者显示名，二级项的 `title` 提示据它说明出处 */
   provider: string
+  /**
+   * 插件自报的图标，逐元素的几何数据；没给或给的不可用时服务端不下发这一项
+   *
+   * 缺省时回落到 `PAGE_DOT`（见模板）—— 一枚看不见的图标与一个项目符号相比，
+   * 后者至少说明「这一组下还有一项」。
+   */
+  icon?: readonly IconShape[]
 }
 
 /**
@@ -440,7 +447,13 @@ onUnmounted(() => {
                   :aria-current="route.id === currentRoute && currentQuery.name === page.id ? 'page' : undefined"
                   :title="`${page.title} —— 由 ${page.provider} 提供`"
                 >
-                  <AppIcon class="nav-icon" :path="PAGE_DOT" />
+                  <!--
+                    插件自报的图标优先，没给就是那枚项目符号
+
+                    两个 prop 同时给：`AppIcon` 以 `shapes` 为先、缺了才用 `path`，
+                    故这一行既是「用它的图标」也是「没有就回落」，判定不必写在模板里。
+                  -->
+                  <AppIcon class="nav-icon" :path="PAGE_DOT" :shapes="page.icon" />
                   <span class="nav-label">{{ page.title }}</span>
                 </a>
               </div>
