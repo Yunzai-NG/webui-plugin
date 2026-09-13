@@ -62,6 +62,21 @@ export default defineConfig({
     // 走的是 temp/ 下针对真实实例的浏览器脚本，比在 jsdom 里模拟更接近实情。
     include: ["src/**/*.test.ts", "web/src/**/*.test.ts"],
     environment: "node",
+    /*
+     * 钉住时区，否则消息统计那组用例的结论取决于跑它的机器在哪儿
+     *
+     * `msgstats.ts` 整个模块都在算**本地**日期键与小时桶（`dayKey` 刻意不用
+     * `toISOString()`，见那里的注释），而用例用 `new Date(2026, 8, 11, 1, 30)`
+     * 一类的本地构造器造时刻。于是「本地切出来的键与 UTC 不同」这条断言在东八区
+     * 的开发机上成立、在 UTC 的 CI runner 上必然失败 —— 本仓库的 CI 就这样红过一次，
+     * 而报错（`expected '2026-09-11' not to be '2026-09-11'`）看不出与时区有关。
+     *
+     * 取 `Asia/Shanghai` 而非随便一个非 UTC 时区：本插件的使用者绝大多数在这个时区，
+     * 让用例跑在与实际部署相同的偏移上，边界（凌晨那几个小时）才是真实的那一个。
+     * **不选带夏令时的时区** —— 那会让「某一天有 23 或 25 个小时」渗进小时桶的用例，
+     * 而那是另一件事，不该夹在这里顺带测。
+     */
+    env: { TZ: "Asia/Shanghai" },
     // 内核用到 level/sqlite 等原生模块，串行更稳
     pool: "forks",
     coverage: {
