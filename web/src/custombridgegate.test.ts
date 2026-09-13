@@ -92,6 +92,29 @@ describe("judgeRequest", () => {
     expect(judgeRequest(ask({ path: "stats", self: 1 }), "demo").act).toBe("deny")
   })
 
+  it("配置编辑默认关闭，iframe 自报授权无效", () => {
+    expect(judgeRequest(ask({ config: true, configurable: true }), "demo").act).toBe("deny")
+    expect(judgeRequest(ask({ config: true }), "demo", true)).toEqual({ act: "config", method: "GET", path: "config/demo" })
+  })
+
+  it("只允许本插件配置 GET/PATCH，不能指定其他配置名", () => {
+    expect(judgeRequest(ask({ config: true, plugin: "victim", method: "PATCH", body: { enable: false } }), "demo", true))
+      .toEqual({ act: "config", method: "PATCH", path: "config/demo", body: { enable: false } })
+    for (const extra of [
+      { path: "config/yunzai" }, { self: true }, { method: "DELETE" },
+      { method: "PATCH", body: [] }, { method: "PATCH", body: null }
+    ]) expect(judgeRequest(ask({ config: true, ...extra }), "demo", true).act).toBe("deny")
+    for (const name of ["", "yunzai", "YUNZAI", "../yunzai", "demo/other"]) {
+      expect(judgeRequest(ask({ config: true }), name, true).act).toBe("deny")
+    }
+  })
+
+  it("开放本插件配置不放开普通白名单或 self 写入", () => {
+    expect(judgeRequest(ask({ path: "config/yunzai" }), "demo", true).act).toBe("deny")
+    expect(judgeRequest(ask({ path: "accounts", method: "POST" }), "demo", true).act).toBe("deny")
+    expect(judgeRequest(ask({ path: "stats", self: true, method: "PATCH" }), "demo", true).act).toBe("deny")
+  })
+
   it("白名单是拷贝，改不动桥里那份", () => {
     const first = allowedPaths() as string[]
     first.length = 0

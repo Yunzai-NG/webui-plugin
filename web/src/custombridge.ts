@@ -1,5 +1,5 @@
 /**
- * 模块职责：自定义页面的只读数据桥 —— 收 iframe 的取数请求，按闸门的判定代取，回同一条消息的应答
+ * 模块职责：自定义页面数据桥 —— 只读取数与显式授权的本插件配置编辑
  * 依赖方向：依赖 api（借它的令牌与错误归一化）与 custombridgegate（判定）；不认识任何视图
  * 生命周期：由 CustomPageView 挂载与拆除，随页面切换
  * 注意事项：**iframe 的 sandbox 不给 `allow-same-origin`**（见 CustomPageView.vue），故 iframe 内的脚本
@@ -22,7 +22,7 @@
  *          （序列化为 `"null"`），指定任何具体值都投递不到。应答内容仅限白名单内的只读数据，
  *          且只回给 `event.source` 这一个窗口，故不构成额外泄露。
  */
-import { get, getAt, ApiError } from "./api.js"
+import { get, getAt, request, ApiError } from "./api.js"
 import { judgeRequest, BRIDGE_KIND, type BridgeRequest } from "./custombridgegate.js"
 
 export { allowedPaths } from "./custombridgegate.js"
@@ -43,9 +43,11 @@ interface BridgeReply {
  * 不认窗口就等于让任何 iframe 都能借这条桥取数。
  * @param frame 目标 iframe 元素的取值函数，元素在 `onMounted` 后才存在
  * @param plugin 当前页面所属的插件标识取值函数，`self` 请求据它拼前缀；取不到则拒掉 `self`
+ * @param configurable 当前服务端页面描述符是否开启配置编辑
  * @returns 拆除函数
  */
-export function attachBridge(frame: () => HTMLIFrameElement | null, plugin: () => string): () => void {
+export function attachBridge(frame: () => HTMLIFrameElement | null, plugin: () => string, configurable: () => boolean = () => false): () => void {
+  let active = true
   /**
    * 处理一条消息
    * @param event 消息事件
@@ -54,7 +56,9 @@ export function attachBridge(frame: () => HTMLIFrameElement | null, plugin: () =
     const target = frame()
     if (target === null || event.source !== target.contentWindow) return
 
-    const verdict = judgeRequest(event.data, plugin())
+    const owner = plugin()
+    const source = event.source as Window
+    const verdict = judgeRequest(event.data, owner, configurable())
     if (verdict.act === "ignore") return
 
     const id = (event.data as BridgeRequest).id ?? null
@@ -63,7 +67,9 @@ export function attachBridge(frame: () => HTMLIFrameElement | null, plugin: () =
      * @param reply 除 kind 与 id 之外的内容
      */
     const send = (reply: Omit<BridgeReply, "kind" | "id">): void => {
-      target.contentWindow?.postMessage({ kind: BRIDGE_KIND, id, ...reply } satisfies BridgeReply, "*")
+      // 切换页面或拆除桥后，不把上一页（可能含配置）的结果交给新页面。
+      if (!active || frame() !== target || plugin() !== owner || target.contentWindow !== source) return
+      source.postMessage({ kind: BRIDGE_KIND, id, ...reply } satisfies BridgeReply, "*")
     }
 
     if (verdict.act === "deny") {
@@ -71,7 +77,9 @@ export function attachBridge(frame: () => HTMLIFrameElement | null, plugin: () =
       return
     }
 
-    const task = verdict.act === "self" ? getAt<unknown>(verdict.url) : get<unknown>(verdict.path)
+    const task = verdict.act === "config"
+      ? request<unknown>(verdict.method, verdict.path, verdict.body)
+      : verdict.act === "self" ? getAt<unknown>(verdict.url) : get<unknown>(verdict.path)
     void task.then(
       data => send({ ok: true, data }),
       (err: unknown) => send({ ok: false, error: err instanceof ApiError ? err.message : String(err) })
@@ -79,5 +87,8 @@ export function attachBridge(frame: () => HTMLIFrameElement | null, plugin: () =
   }
 
   window.addEventListener("message", onMessage)
-  return () => window.removeEventListener("message", onMessage)
+  return () => {
+    active = false
+    window.removeEventListener("message", onMessage)
+  }
 }

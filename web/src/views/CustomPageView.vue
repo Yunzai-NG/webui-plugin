@@ -34,6 +34,10 @@ interface Page {
   provider: string
   /** 页面 HTML 地址 */
   url: string
+  /** 插件描述符中的 emoji 或图片数据 */
+  icon?: string
+  /** 由服务端清单授权，不接受 iframe 自报 */
+  configurable?: boolean
 }
 
 const pages = ref<Page[]>([])
@@ -87,7 +91,8 @@ onMounted(async () => {
 // 插件标识由这里给，不收 iframe 自报的：否则一个插件的页面填上别人的名字就能读另一家的接口
 const detach = attachBridge(
   () => frame.value,
-  () => page.value?.id ?? ""
+  () => page.value?.id ?? "",
+  () => page.value?.configurable === true
 )
 onUnmounted(detach)
 </script>
@@ -96,7 +101,7 @@ onUnmounted(detach)
   <div class="custom-page">
     <!-- 标题取页面自己的名字，出处另作一枚淡色标记跟在标题后：两者是不同的事，
          挤进同一句会让「这一页做什么」被出处挤掉 -->
-    <PageHeader route="custom" :title="headTitle" :sub="headSub">
+    <PageHeader route="custom" :title="headTitle" :sub="headSub" :emoji="page?.icon ?? '📄'">
       <template v-if="page !== undefined" #titleNote>
         <span class="page-from" :title="`由插件「${page.provider}」注册的页面`">
           由 {{ page.provider }} 提供
@@ -118,6 +123,7 @@ onUnmounted(detach)
     <div v-else-if="frameUrl !== ''" class="custom-frame">
       <iframe
         ref="frame"
+        :key="frameUrl"
         :src="frameUrl"
         :title="page?.title ?? '自定义页面'"
         sandbox="allow-scripts allow-forms"

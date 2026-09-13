@@ -17,7 +17,7 @@
  *          副标题另有一个 `meta` 插槽，同行紧随其后。日志页的连接状态徽标属于这一处：它是对副标题
  *          那句话的即时限定，且并不可点，放进动作组会与可点击项混在一起。
  *
- *          `title` 是**唯一**可覆盖那份表的一项，只为一种页：内容由插件提供、标题在运行时才知道
+ *          `title` 和 `emoji` 可覆盖表中的展示，只为一种页：内容由插件提供、标题在运行时才知道
  *          （扩展页面）。这一项不该推广到别处 —— 其余页面的标题与导航文案必须是同一个词，
  *          各页自己传一遍就会出现「侧栏叫 A、页头叫 B」而无人察觉。
  *
@@ -26,6 +26,7 @@
  */
 import { computed } from "vue"
 import AppIcon from "./AppIcon.vue"
+import CustomPageIcon from "./CustomPageIcon.vue"
 import { routeOf } from "../router.js"
 
 /** 标识未登记时的图标：一个空心圆，读作「未知的页」 */
@@ -38,6 +39,8 @@ const props = defineProps<{
   sub?: string
   /** 覆盖标题；缺省取 ROUTES 里的导航文案。只给运行时才知道标题的页用 */
   title?: string
+  /** 自定义页面 emoji 或图片数据；未提供时保留路由图标 */
+  emoji?: string
 }>()
 
 /** 实际显示的标题 */
@@ -53,8 +56,9 @@ const def = computed(() => routeOf(props.route))
 
 <template>
   <header class="page-head">
-    <span class="page-icon">
-      <AppIcon :path="def?.icon ?? UNKNOWN" />
+    <span class="page-icon" aria-hidden="true">
+      <CustomPageIcon v-if="emoji" class="page-emoji" :icon="emoji" />
+      <AppIcon v-else :path="def?.icon ?? UNKNOWN" />
     </span>
     <div class="page-titles">
       <!-- 标题右侧那行淡色小字与标题同行：它是对「这是谁的页」的限定，
@@ -73,3 +77,12 @@ const def = computed(() => routeOf(props.route))
     </div>
   </header>
 </template>
+
+<style scoped>
+.page-emoji {
+  width: 24px;
+  height: 24px;
+  font-size: 24px;
+  line-height: 1;
+}
+</style>

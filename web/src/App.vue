@@ -24,6 +24,7 @@ import { ROUTES, currentQuery, currentRoute, hrefOf, type RouteDef } from "./rou
 import { THEME_LABEL, cycleTheme, themeChoice, type ThemeChoice } from "./theme.js"
 import type { Overview } from "./types.js"
 import AppIcon from "./components/AppIcon.vue"
+import CustomPageIcon from "./components/CustomPageIcon.vue"
 import ConfirmDialog from "./components/ConfirmDialog.vue"
 import PathPicker from "./components/PathPicker.vue"
 import OverviewView from "./views/OverviewView.vue"
@@ -45,6 +46,8 @@ import CustomPageView from "./views/CustomPageView.vue"
 interface MountedPage {
   id: string
   title: string
+  /** emoji 或插件图片数据 */
+  icon?: string
   /** 提供者显示名，二级项的 `title` 提示据它说明出处 */
   provider: string
 }
@@ -440,7 +443,8 @@ onUnmounted(() => {
                   :aria-current="route.id === currentRoute && currentQuery.name === page.id ? 'page' : undefined"
                   :title="`${page.title} —— 由 ${page.provider} 提供`"
                 >
-                  <AppIcon class="nav-icon" :path="PAGE_DOT" />
+                  <CustomPageIcon v-if="page.icon" class="nav-icon" :icon="page.icon" />
+                  <AppIcon v-else class="nav-icon" :path="PAGE_DOT" />
                   <span class="nav-label">{{ page.title }}</span>
                 </a>
               </div>
