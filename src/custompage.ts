@@ -6,8 +6,8 @@
  *          左侧导航是使用者找东西的地方，一个插件能占任意多项时，装三五个插件就把导航挤满，
  *          而挤占的代价由其他插件承担，不由挤占者承担。想放多块内容的插件在自己那一页里分区。
  *
- *          **只给 GET。** 页面能注册的接口一律只读，写操作走内核插件自己的 `ctx.route()` ——
- *          那里有配置校验、只读模式与日志。此处放开写等于开一条绕过 `server.readonly` 的旁路。
+ *          registerApi **只给 GET。**显式 configurable 页面通过受限数据桥读写自己的
+ *          `/api/config/<插件名>`，由内核执行配置校验、只读模式与日志，不增加裸写接口。
  *
  *          **`apiPath` 必须过 `isSafeRoutePath()`**，理由与面板插件同（见 panelserver.ts）：
  *          路径里带 `..` 或绝对路径能让一个插件的接口落到另一个插件的前缀下，悄悄接管它的数据。
@@ -24,6 +24,7 @@ import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { isSafeRoutePath } from "./panelserver.js"
+import { isImageIcon, loadImageIcon } from "./customicon.js"
 
 /** 一个插件页面的描述符，`GET /plugin/webui/custom-pages` 返回其数组 */
 export interface CustomPage {
@@ -37,6 +38,10 @@ export interface CustomPage {
   readonly provider: string
   /** 页面 HTML 的地址，前端据此加载 iframe */
   readonly url: string
+  /** emoji 文本或服务器读取声明图片后生成的数据 URL */
+  readonly icon: string
+  /** 显式允许页面读写本插件配置，默认关闭 */
+  readonly configurable?: boolean
 }
 
 /** 插件在 `webadapter/index.js` 里注册页面时给的内容 */
@@ -49,6 +54,10 @@ export interface CustomPageInput {
   provider?: string
   /** 页面入口文件名，相对 `webadapter/`，缺省 `index.html` */
   src?: string
+  /** emoji 或相对插件根目录的图片路径，如 src/logo.png；默认 📄 */
+  icon?: string
+  /** 开放本插件自己的配置通道，不允许指定其他配置名 */
+  configurable?: boolean
 }
 
 /** 传给 `webadapter/index.js` 的 `init()` 的上下文 */
@@ -167,7 +176,10 @@ export async function mountCustomPages(ctx: Ctx, pluginsDir: string): Promise<vo
           title: typeof input.title === "string" && input.title !== "" ? input.title : plugin,
           ...(typeof input.sub === "string" && input.sub !== "" ? { sub: input.sub } : {}),
           provider: typeof input.provider === "string" && input.provider !== "" ? input.provider : plugin,
-          url: `${PREFIX}/custom/${plugin}/${src}`
+          url: `${PREFIX}/custom/${plugin}/${src}`,
+          icon: typeof input.icon === "string" && input.icon.trim() !== "" ? input.icon.trim() : "📄",
+          ...(input.configurable === true && /^[a-z][a-z0-9._-]*$/i.test(plugin) && plugin.toLowerCase() !== "yunzai"
+            ? { configurable: true } : {})
         }
       }
 
@@ -199,6 +211,16 @@ export async function mountCustomPages(ctx: Ctx, pluginsDir: string): Promise<vo
       if (!declaredOnce) take({})
 
       if (page !== undefined) {
+        if (isImageIcon(page.icon)) {
+          try {
+            page = { ...page, icon: await loadImageIcon(join(pluginsDir, plugin), page.icon) }
+          } catch (error) {
+            ctx.logger.warn(`自定义页面 ${plugin} 图标读取失败，使用默认图标：${error instanceof Error ? error.message : String(error)}`)
+            page = { ...page, icon: "📄" }
+          }
+        } else {
+          page = { ...page, icon: page.icon.slice(0, 64) }
+        }
         pages.push(page)
         ctx.static(`custom/${plugin}`, dir)
       }

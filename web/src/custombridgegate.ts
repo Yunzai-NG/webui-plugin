@@ -12,8 +12,8 @@
  *          返回体里带着面板令牌与各适配器的连接密钥。插件页面拿到那些等于拿到整台机器。
  *          故配置一律不进白名单。
  *
- *          **只放 GET。** 写操作没有「读得到就写得动」的理由，且内核的写路径上挂着
- *          只读模式与操作日志。
+ *          默认只放 GET。服务端描述符显式开启 configurable 时，另开放本插件配置的
+ *          GET/PATCH 通道；路径由外壳决定，仍由内核执行鉴权、校验与只读限制。
  */
 
 /** 允许插件页面读取的接口路径全集，相对 `/api` */
@@ -73,6 +73,12 @@ export interface BridgeRequest {
   path?: unknown
   /** 取本插件自己 `registerApi` 注册的接口，而非白名单内的面板接口 */
   self?: unknown
+  /** 请求本插件配置，必须由服务端描述符授权 */
+  config?: unknown
+  /** 配置通道支持 GET/PATCH，其他通道只读 */
+  method?: unknown
+  /** PATCH 的配置补丁 */
+  body?: unknown
 }
 
 /** 一条请求该怎么处理 */
@@ -85,6 +91,8 @@ export type BridgeVerdict =
   | { readonly act: "panel"; readonly path: string }
   /** 代取本插件自建接口，`url` 是绝对路径 */
   | { readonly act: "self"; readonly url: string }
+  /** 配置名由当前页面所属插件决定，不由 iframe 传入 */
+  | { readonly act: "config"; readonly path: string; readonly method: "GET" | "PATCH"; readonly body?: unknown }
 
 /**
  * 读取白名单，供页面自我说明与用例用
@@ -98,12 +106,27 @@ export function allowedPaths(): readonly string[] {
  * 判一条请求该怎么处理
  * @param body 页面发来的消息体，未经任何校验
  * @param plugin 当前页面所属的插件标识，取不到时为空串
+ * @param configurable 服务端页面描述符是否授权配置编辑
  * @returns 处置方式
  */
-export function judgeRequest(body: unknown, plugin: string): BridgeVerdict {
+export function judgeRequest(body: unknown, plugin: string, configurable = false): BridgeVerdict {
   if (body === null || typeof body !== "object") return { act: "ignore" }
   const req = body as BridgeRequest
   if (req.kind !== BRIDGE_KIND) return { act: "ignore" }
+
+  if (req.config === true) {
+    if (!configurable || !/^[a-z][a-z0-9._-]*$/i.test(plugin) || plugin.toLowerCase() === "yunzai") {
+      return { act: "deny", error: "当前页面未启用本插件配置编辑" }
+    }
+    if (req.path !== undefined || req.self !== undefined) return { act: "deny", error: "配置通道不能指定接口路径" }
+    const method = req.method ?? "GET"
+    if (method !== "GET" && method !== "PATCH") return { act: "deny", error: "配置通道仅支持 GET/PATCH" }
+    if (method === "PATCH" && (!req.body || typeof req.body !== "object" || Array.isArray(req.body))) {
+      return { act: "deny", error: "配置补丁必须为对象" }
+    }
+    return { act: "config", path: `config/${plugin}`, method, ...(method === "PATCH" ? { body: req.body } : {}) }
+  }
+  if (req.method !== undefined && req.method !== "GET") return { act: "deny", error: "此通道仅支持只读请求" }
 
   const path = typeof req.path === "string" ? req.path : ""
   const shown = path === "" ? "(空)" : path

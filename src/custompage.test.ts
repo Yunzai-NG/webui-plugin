@@ -110,6 +110,42 @@ function nameOf(hint: string): string {
 }
 
 describe("mountCustomPages", () => {
+  it("透传 emoji 与显式配置授权，未授权的页面保持关闭", async () => {
+    const rec = recorder()
+    const enabled = nameOf("configurable")
+    const plain = nameOf("plain")
+    const root = await makePlugins({
+      [enabled]: `export default { title: "早柚", icon: "🦊", configurable: true, src: "page.html" }`,
+      [plain]: `export default { title: "只读" }`
+    })
+    await mountCustomPages(ctxOf(rec), root)
+    expect(pagesOf(rec).find(page => page.id === enabled)).toMatchObject({ icon: "🦊", configurable: true })
+    expect(pagesOf(rec).find(page => page.id === plain)).toMatchObject({ icon: "📄" })
+    expect(pagesOf(rec).find(page => page.id === plain)).not.toHaveProperty("configurable")
+  })
+
+  it("图片从插件根目录解析而非 webadapter，失败仅降级图标不丢页面", async () => {
+    const rec = recorder()
+    const image = nameOf("image")
+    const missing = nameOf("missing")
+    const root = await makePlugins({
+      [image]: `export default { title: "图片", icon: "src/logo.png" }`,
+      [missing]: `export default { title: "缺图", icon: "src/missing.png" }`
+    })
+    await mkdir(join(root, image, "src"))
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j6WQAAAAASUVORK5CYII=", "base64")
+    await writeFile(join(root, image, "src/logo.png"), png)
+    await mountCustomPages(ctxOf(rec), root)
+    expect(pagesOf(rec).find(page => page.id === image)).toMatchObject({
+      icon: `data:image/png;base64,${png.toString("base64")}`
+    })
+    expect(pagesOf(rec).find(page => page.id === missing)).toMatchObject({ icon: "📄" })
+    for (const page of pagesOf(rec)) expect(Object.keys(page).sort()).toEqual(["icon", "id", "provider", "title", "url"])
+    expect(rec.statics).toEqual(expect.arrayContaining([`custom/${image}`, `custom/${missing}`]))
+    expect(rec.statics).toHaveLength(2)
+    expect(rec.warns.some(line => line.includes("图标读取失败"))).toBe(true)
+  })
+
   it("默认导出的描述符即可注册一页，入口缺省为 index.html", async () => {
     const rec = recorder()
     const plug = nameOf("demo")
