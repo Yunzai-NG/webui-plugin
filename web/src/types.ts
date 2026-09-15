@@ -2,12 +2,8 @@
  * 模块职责：面板 API 的响应形状
  * 依赖方向：仅引用 `@yunzai-ng/types`
  * 生命周期：纯类型
- * 注意事项：约半数形状在此重新声明是刻意的：`LoginSnapshot`、`RendererInfo`、`ConfigSummary`、
- *          `LogRecord` 定义于 `@yunzai-ng/core`，而分层门禁禁止前端依赖内核，故按 HTTP 契约
- *          另声明一份 —— 前端消费的本就是 JSON。
- *
- *          代价是内核改响应形状时此处不会立即报错。故只声明**前端确实读取的字段**，
- *          未读取的不声明，其变更与前端无关。
+ * 注意事项：约半数形状在此重新声明是刻意的 —— 它们定义在 `@yunzai-ng/core`，而分层门禁禁止
+ *          前端依赖内核。代价是内核改响应形状时此处不会立即报错，故只声明前端确实读取的字段。
  */
 import type {
   AccountState,
@@ -137,21 +133,11 @@ export interface GpuInfo {
   memoryTotal?: number
 }
 
-/**
- * `GET /api/system`
- *
- * **CPU 与内存不在这里**，在 `Overview` 的 `usage` 与 `platform` 里。同一事实两处供给，
- * 采样时刻不同，页面上就会出现「CPU 卡片与 CPU 环不是一个数」。
- */
+/** `GET /api/system`。CPU 与内存不在这里，在 `Overview` 的 `usage` 与 `platform` 里 */
 export interface SystemInfo {
   /** 各分区占用；一个都探不到时为空数组 */
   disks: DiskInfo[]
-  /**
-   * 各显卡
-   *
-   * **测不到时本字段不出现**，与「有 0 块显卡」相区分：后者仍画出一个空组件，前者整个隐去。
-   * 故此处是 `?` 而非空数组兜底。
-   */
+  /** 各显卡；测不到时本字段不出现，与「有 0 块显卡」相区分（后者仍画一个空组件） */
   gpus?: GpuInfo[]
 }
 
@@ -344,12 +330,7 @@ export interface MarketItem {
   official: boolean
   /** 要求的最低内核版本 */
   minCore?: string
-  /**
-   * 索引声明的装后步骤，缺省即「装完依赖就算完」
-   *
-   * 用来在确认框里**先说清这次会跑什么**。别拿它当「装完了会有产物」的凭据 ——
-   * 它只是索引的声明，真跑没跑看返回值的 `ranScripts`。
-   */
+  /** 索引声明的装后步骤，仅用于在确认框里说清这次会跑什么；真跑没跑看返回值的 `ranScripts` */
   setup?: MarketSetup
   /** 条目来自哪个索引地址 */
   source: string
@@ -404,12 +385,7 @@ export interface MarketInstallResult extends SetupOutcome {
   name: string
   /** 安装目录 */
   dir: string
-  /**
-   * 取源方式
-   *
-   * `pull` 是更新独有的一种：目录已是 git 仓库，就地 `fetch` + `reset --hard`。与 `git` 分开
-   * 是因为可见后果不同 —— `pull` 保住了那份 `node_modules`，`git` 是全新目录、依赖得重装。
-   */
+  /** 取源方式。`pull` 是更新独有的一种，它保住了那份 `node_modules`，`git` 则是全新目录、依赖得重装 */
   via: "git" | "tarball" | "pull"
   /** 实际安装到的版本 */
   version: string
@@ -417,13 +393,15 @@ export interface MarketInstallResult extends SetupOutcome {
   fromVersion?: string
   /** 就地拉取时是否确实有新提交；假即已是最新。仅 `via` 为 `pull` 时存在 */
   changed?: boolean
-  /**
-   * 本次是否暂存了目录里的改动
-   *
-   * 为真意味着**使用者的东西此刻在 git 的暂存区里**，须在提示里说明取回办法 ——
-   * 那是他自己改的内容，不说清就等于替他丢掉了。
-   */
+  /** 本次是否暂存了目录里的改动；为真时须在提示里说明取回办法 */
   stashed?: boolean
+  /**
+   * 本次是否按使用者的选择丢弃了目录里的改动
+   *
+   * 与 {@link stashed} 互斥，不能合成一个字段：合起来之后「可执行 git stash pop 取回」
+   * 会对一个刚把改动丢掉的人说他的东西还在。
+   */
+  discarded?: boolean
   /** 覆盖安装前是否卸载了旧版本 */
   unloaded: boolean
   /** 本次加载成功的插件名 */

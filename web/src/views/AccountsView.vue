@@ -3,14 +3,12 @@
  * 模块职责：账号页 —— 适配器列表、账号增删改与连接控制、交互式登录会话
  * 依赖方向：依赖 api / format / SchemaForm / types
  * 生命周期：挂载时拉取一次；存在进行中的登录会话时按秒轮询
- * 注意事项：**添加账号有两条路径，取决于适配器声明的能力**：声明了 `loginModes` 的走交互式登录
- *          （扫码、验证码），会话由内核驱动，面板只渲染 steps 并把 prompt 的答案回送；未声明者
- *          手工填配置，表单由 `accountSchema` 驱动 —— 与配置页共用同一套组件。
+ * 注意事项：添加账号两条路径，取决于适配器声明的能力：声明了 `loginModes` 的走交互式登录（会话由
+ *          内核驱动，面板只渲染 steps 并回送 prompt 答案），未声明者手工填配置、表单由
+ *          `accountSchema` 驱动。
  *
- *          **登录会话用轮询而非 WebSocket**：一次扫码只存续数分钟、状态变化不足十次，推送通道
- *          要多一个内核端点与一套重连逻辑，换来的只是把 1 秒延迟降到 0。
- *
- *          轮询只在**存在进行中的会话**时启用（见 `syncLogins`），空闲时不留任何定时器。
+ *          登录会话用轮询而非 WebSocket：一次扫码只存续数分钟、状态变化不足十次，推送通道要多一个
+ *          端点与一套重连逻辑。轮询只在存在进行中的会话时启用（见 `syncLogins`），空闲时无定时器。
  */
 import { computed, onMounted, onUnmounted, ref, watch } from "vue"
 import { del, get, patch, post } from "../api.js"
@@ -49,11 +47,8 @@ const draftIssues = ref<readonly SchemaIssue[]>([])
 /**
  * 新建账号的重连覆盖，四项皆以字符串存 —— 空串即「跟随全局」
  *
- * **建号时就能填，而不是建完再进一次配置框。** 内核的 `POST accounts` 本就收 `retry`
- * （`api.ts` 的 `retryOverrideOf`），且刻意做成一次 `create()` 完成 —— 建完再 PATCH
- * 一次会因 `config` 到达而断开重连，一个刚接上的号先闪一次离线。
- *
- * 与 `draftConfig` 分开的理由同 `editRetry`：这四项归内核所有，不属于任何适配器的 schema。
+ * 建号时一次 `create()` 填好，不建完再 PATCH：后者会因 `config` 到达而断开重连，
+ * 一个刚接上的号先闪一次离线。与 `draftConfig` 分开的理由同 `editRetry`。
  */
 const draftRetry = ref<RetryForm>(retryFormOf(undefined))
 /** 用户为当前提问填写的答案 */
@@ -112,15 +107,10 @@ const editSchema = computed(() => editAdapter.value?.accountSchema)
 /**
  * 这次编辑动过适配器配置吗
  *
- * 判它是为了**不为一次只改重连策略的保存踢掉一个在线的号**。内核的 `update()` 只要收到
- * `config` 就断开重连，那是对的 —— 地址或 token 变了而 socket 还是旧的，使用者会以为
- * 「改了没生效」；而 `label` 与 `retry` 都不参与建连，内核那侧专门为此留了「只动这两项
- * 就不动连接」的路。面板若每次都捎上 `config`，那条路永远走不到，一次把上限从 5 改成 10
- * 的保存会让这个号断线重连，那期间的消息全丢。
+ * 判它是为了不为一次只改重连策略的保存踢掉一个在线的号：内核收到 `config` 就断开重连，
+ * 而 `label` 与 `retry` 不参与建连，那侧专留了「只动这两项就不动连接」的路。
  *
- * 比 JSON 文本而非深比对：此处只需判「有没有动过」，而任何一处取值改变都会让序列化结果
- * 不同（`editConfig` 是同一对象的 `snapshot`，键序本就一致）。**宁可多判成变了**
- * —— 代价只是多一次重连；漏判的代价是「改了地址却没重连」，那正是要防的那件事。
+ * 比 JSON 文本而非深比对，且宁可多判成变了 —— 多一次重连是小事，漏判则是「改了地址却没重连」。
  */
 const configChanged = computed(() => {
   const before = editing.value?.record.config
@@ -131,16 +121,9 @@ const configChanged = computed(() => {
 /*
  * 换适配器即按它的 schema 铺一遍默认值
  *
- * **不铺的话表单是全空的。** 新建账号从空对象起步，而 `default` 只写在 schema 里 ——
- * NapCat 的连接地址声明了 `ws://127.0.0.1:3001`，使用者看到的却是一个空框，得自己
- * 照文档敲一遍。内核配置那边不缺这一步：值由 node 侧读文件时就填好了默认值。
- *
- * 铺的是**副本**（`defaultsOf` 每次新造对象），故改动不会污染 schema 里的声明；
- * 换一次适配器就整份重铺，不保留上一个适配器填过的东西 —— 两者的字段本就不同名，
- * 留下来只会把 A 的地址带进 B 的表单。
- *
- * **`draftRetry` 不跟着重铺**：那四项归内核所有，字段与适配器无关，换一次适配器
- * 把「我要这个号最多重连 3 次」抹掉没有道理。
+ * 不铺的话表单全空：新建账号从空对象起步，而 `default` 只写在 schema 里。铺的是副本
+ * （`defaultsOf` 每次新造对象），故不会污染声明；换适配器整份重铺，两者字段本就不同名。
+ * `draftRetry` 不跟着重铺 —— 那四项归内核所有，与适配器无关。
  */
 watch(draft, adapter => {
   draftConfig.value = adapter === undefined ? {} : defaultsOf(adapter.accountSchema)
@@ -164,12 +147,9 @@ async function load(): Promise<void> {
 /**
  * 取全局重连四项
  *
- * **只留这四个数，整份内核配置不在这一页落地。** `GET config/:name` 刻意不脱敏（面板要能
- * 显示与轮换面板令牌、要能显示适配器的连接密钥），响应体里带着 `server.token`；账号页要的
- * 只是四个数字，没有理由让其余部分在这一页的状态里多待一秒。挑取在 `globalRetryOf` 里。
- *
- * 失败即静默：读不到只是让「跟随全局」少一个括号里的数，表单照旧可用 —— 不该盖掉页面上
- * 更要紧的那条错误（账号列表拉取失败）。
+ * 只留这四个数，整份内核配置不在这一页落地：`GET config/:name` 刻意不脱敏，响应体里带着
+ * `server.token`。挑取在 `globalRetryOf` 里。失败即静默 —— 只是让「跟随全局」少一个
+ * 括号里的数，不该盖掉账号列表拉取失败那条更要紧的错误。
  */
 async function loadGlobalRetry(): Promise<void> {
   try {
@@ -338,15 +318,9 @@ async function createAccount(): Promise<void> {
  */
 function openEdit(item: AccountItem): void {
   editing.value = item
-  /*
-   * 用 `snapshot`（JSON 往返）而非 `structuredClone`
-   *
-   * `accounts` 是个 `ref`，`item.record.config` 取到的是 Vue 的响应式代理，而
-   * `structuredClone` 克隆代理直接抛 DataCloneError —— 它抛在 `editing.value = item`
-   * 之后，于是模态照常打开、`editConfig` 停在空对象：**表现为「点配置，配置项全是空的」**，
-   * 且因为空对象与已存的配置不同，标题还会挂上一句「适配器配置已改动」，一保存就把
-   * 这个号的地址与凭据清空。配置值本身来自 JSON 响应，JSON 往返对它无损。
-   */
+  // 用 `snapshot`（JSON 往返）而非 `structuredClone`：后者克隆 Vue 响应式代理会抛
+  // DataCloneError，且抛在模态已打开之后 —— 表现为「点配置，配置项全是空的」，一保存
+  // 就把这个号的地址与凭据清空
   editConfig.value = snapshot(item.record.config)
   editLabel.value = item.record.label ?? ""
   editRetry.value = retryFormOf(item.record.retry)
@@ -384,13 +358,9 @@ function onEditChange(path: string, value: unknown): void {
 /**
  * 保存改动
  *
- * **`config` 只在真的改过时才送**（见 `configChanged`）：内核收到它就会断开并重连这个账号，
- * 而只改了备注或重连策略的保存不该让一个在线的号掉一次线。故这次保存会不会重连，由内容
- * 决定而非由按钮决定 —— 按钮的文案跟着 `configChanged` 变。
- *
- * `retry` 一律送，且用三态里的两态：填了至少一项即送对象，四项全空即送 `null`
- * （清掉覆盖、回到跟随全局）。不送的那一态（「这次不动它」）在这里没有用武之地 ——
- * 表单已把当前值完整铺开，使用者看到什么就是要保存什么。
+ * `config` 只在真的改过时才送（见 `configChanged`）：内核收到它就断开并重连，而只改备注或
+ * 重连策略的保存不该让一个在线的号掉线。`retry` 一律送 —— 填了至少一项即送对象，四项全空
+ * 送 `null`（清掉覆盖、回到跟随全局）。
  */
 async function saveEdit(): Promise<void> {
   const item = editing.value

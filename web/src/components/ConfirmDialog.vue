@@ -26,6 +26,7 @@
  */
 import { computed, nextTick, onUnmounted, ref, watch } from "vue"
 import { pending, settleConfirm } from "../confirm.js"
+import type { ConfirmAnswer } from "../confirm.js"
 
 const el = ref<HTMLDialogElement | undefined>(undefined)
 const cancelButton = ref<HTMLButtonElement | undefined>(undefined)
@@ -51,12 +52,12 @@ function stopTimer(): void {
  *
  * 每一处结算都必须停表，否则上一问的计时器会把下一问按自己的缺省答掉 —— 而那个下一问
  * 可能是一个删除确认。
- * @param ok 是否确认
+ * @param answer 使用者选了哪一个
  */
-function settle(ok: boolean): void {
+function settle(answer: ConfirmAnswer): void {
   stopTimer()
   left.value = 0
-  settleConfirm(ok)
+  settleConfirm(answer)
 }
 
 // 提问到来时开。`showModal()` 必须在元素已挂进 DOM 之后调用，故等一个 tick ——
@@ -82,8 +83,9 @@ watch(pending, async request => {
   timer = setInterval(() => {
     left.value -= 1
     if (left.value > 0) return
-    // 到点按提问方指定的那一边结算，缺省确认
-    settle(request.timeoutOk !== false)
+    // 到点按提问方指定的那一边结算，缺省确认。**永不按第三选项结算** ——
+    // 那一类是不可撤销的（丢弃改动），不该因为人走开了而自己发生
+    settle(request.timeoutOk === false ? "cancel" : "ok")
   }, 1000)
 })
 
@@ -99,7 +101,7 @@ onUnmounted(stopTimer)
  * @param event 鼠标事件
  */
 function onClick(event: MouseEvent): void {
-  if (dismissible.value && event.target === el.value) settle(false)
+  if (dismissible.value && event.target === el.value) settle("cancel")
 }
 </script>
 
@@ -117,8 +119,8 @@ function onClick(event: MouseEvent): void {
       v-if="pending"
       ref="el"
       class="modal"
-      @cancel.prevent="dismissible && settle(false)"
-      @close="dismissible && settle(false)"
+      @cancel.prevent="dismissible && settle('cancel')"
+      @close="dismissible && settle('cancel')"
       @click="onClick"
     >
       <h2>{{ pending.title }}</h2>
@@ -137,14 +139,23 @@ function onClick(event: MouseEvent): void {
           ，或等 {{ left }} 秒后按「{{ (pending.timeoutOk !== false ? pending.okText : pending.cancelText) ?? "确认" }}」处理</span
         >。
       </p>
+      <!--
+        第三个选项落在最左、取 danger 形制，且**永不**接倒计时
+
+        它是三条路里唯一不可撤销的那一个（丢掉改动没有 stash 可 pop），故不该是任何
+        一次「人走开了」的缺省结果 —— 倒计时的归宿只在确认与取消之间。
+      -->
       <div class="modal-actions">
-        <button ref="cancelButton" @click="settle(false)">
+        <button v-if="pending.altText !== undefined" class="danger" @click="settle('alt')">
+          {{ pending.altText }}
+        </button>
+        <button ref="cancelButton" @click="settle('cancel')">
           {{ pending.cancelText ?? "取消" }}<span v-if="left > 0 && pending.timeoutOk === false">（{{ left }}）</span>
         </button>
         <button
           ref="okButton"
           :class="pending.danger === true ? 'danger solid' : 'primary'"
-          @click="settle(true)"
+          @click="settle('ok')"
         >
           {{ pending.okText ?? "确认" }}<span v-if="left > 0 && pending.timeoutOk !== false"> （{{ left }}）</span>
         </button>

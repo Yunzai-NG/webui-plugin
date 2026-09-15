@@ -4,15 +4,12 @@
  * 生命周期：随插件加载与卸载；`ctx.panel()` 返回的 Disposer 由内核在卸载时执行
  * 注意事项：面板插件只有一处落点：本插件安装目录下的 `plugins/`。面板自己的内置组件
  *          （`web/src/widgets/`）编译进前端产物、由 `registry.ts` 直接注册，不经扫描。
- *
  *          目录只在 `setup()` 时挂一次，清单端点每次请求都重扫，故新增文件刷新页面即生效；
  *          node 侧入口只在 `setup()` 时加载一次，那一半要重载 webui。
- *
  *          webui 自己的写路由要自行判定只读（商店四条 + 面板插件配置两条）：内核的
  *          `requireWritable()` 只拦 `/api` 之下的请求，管不到本插件的 scope。
- *
- *          产物目录取自 `import.meta.dirname` 而非 `process.cwd()`：以服务或 pm2 方式启动时工作目录
- *          并非插件目录。
+ *          产物目录取自 `import.meta.dirname` 而非 `process.cwd()`：以服务或 pm2 方式启动时
+ *          工作目录并非插件目录。
  */
 import { existsSync } from "node:fs"
 import { join } from "node:path"
@@ -37,17 +34,15 @@ const ENTRY = "index.html"
 /**
  * 面板插件清单的文件名，**不含前导斜杠**（由调用点拼）
  *
- * 与 `web/src/panelload.ts` 里的同名地址必须一致。前端拉的是 `/plugin/webui/panels.json`，
- * 不在 `/api` 之下，故前端要用 `getAt()` 而非 `get()`。
+ * 与 `web/src/panelload.ts` 里的同名地址必须一致。不在 `/api` 之下，故前端用 `getAt()`。
  */
 export const PANELS_ENDPOINT = "panels.json"
 
 /**
  * 面板插件包配置的写端点前缀，**不含前导斜杠**
  *
- * 读不在这里 —— 值随清单一并送出（见 `mountPanelPlugins`）。
- * `PUT <前缀>/:owner/:name` 存整份值，`POST <前缀>/:owner/:name/reset` 恢复默认值，
- * 两条各自经 `readonlyRefusal()` 判定只读。
+ * 读不在这里 —— 值随清单一并送出（见 `mountPanelPlugins`）。`PUT <前缀>/:owner/:name` 存整份值，
+ * `POST <前缀>/:owner/:name/reset` 恢复默认值，两条各自经 `readonlyRefusal()` 判定只读。
  */
 export const PANEL_CONFIG_ENDPOINT = "panelconfig"
 
@@ -55,17 +50,13 @@ export const PANEL_CONFIG_ENDPOINT = "panelconfig"
  * 面板插件商店的端点前缀，**不含前导斜杠**
  *
  * 五条：`GET <前缀>` 列出、`POST <前缀>/refresh` 强制回源、`POST <前缀>/install` 装、
- * `POST <前缀>/:name/update` 更、`DELETE <前缀>/:name` 删。
- *
- * 落在 webui 自己的 scope 而非 `/api` 之下，内核的只读模式拦不到，故四条写路由各自读一次
- * `server.readonly` 自行拒绝（见 `coreconfig.ts`）。
+ * `POST <前缀>/:name/update` 更、`DELETE <前缀>/:name` 删。落在 webui 自己的 scope 而非 `/api`
+ * 之下，内核只读模式拦不到，故四条写路由各自读一次 `server.readonly` 自行拒绝。
  */
 export const PANEL_STORE_ENDPOINT = "panelstore"
 
 /**
- * 一条路由收到的请求里，本插件用得到的那两项
- *
- * 以结构类型声明而非引用内核的 `RouteRequest`，使测试无须构造完整请求。
+ * 一条路由收到的请求里，本插件用得到的那两项（结构类型，使测试无须构造完整请求）
  */
 export interface PanelRequest {
   /** 路径参数，`:owner` / `:name` 即在此 */
@@ -170,7 +161,7 @@ export function webDirOf(base: string): string {
  * 由入口所在目录推出本插件的安装目录
  *
  * 入口是 `<安装目录>/dist/index.js`，故上推一级。面板插件落在安装目录下的 `plugins/`，
- * 不在 `dist/` 之下（`pnpm run build` 会清空它），也不在 `dataDir` 之下（那是另一处）。
+ * 不在 `dist/` 之下（`pnpm run build` 会清空它）。
  * @param base 入口文件所在目录，即 `dist/`
  * @returns 安装目录绝对路径
  */
@@ -223,8 +214,7 @@ async function coreSettingsOf(ctx: PanelHost): Promise<{ mirror: string; readonl
  * 取商店那三项设置
  *
  * 每次调用都重读 `ctx.config.get()`，不在 `setup` 里取一次存起来：否则改了索引地址要重启才生效。
- * `s.duration()` 兼收 `"1h"` 与毫秒数，故一律经 `parseDuration` 换算 —— 商店内部只认毫秒。
- * 取不到配置时退回默认值。
+ * 商店内部只认毫秒，故一律经 `parseDuration` 换算；取不到配置时退回默认值。
  * @param ctx 插件上下文
  * @returns 商店设置
  */
@@ -243,10 +233,8 @@ function storeSettingsOf(ctx: PanelHost): PanelStoreSettings {
  * 开出面板插件商店的五条路由
  *
  * `GET` 那条把只读开关一并送出供前端隐去按钮，四条写路由各自还要再判一次 —— 前端那份挡不住
- * 直接发来的请求，node 侧那份才是门。
- *
- * 装与更两条收一个 `dependencies` 标志（要不要跑包管理器），由前端的确认框勾选决定：
- * 跑包管理器等于执行第三方的 install 脚本，该由使用者按下。
+ * 直接发来的请求。装与更两条收一个 `dependencies` 标志，由前端确认框勾选决定：跑包管理器
+ * 等于执行第三方的 install 脚本，该由使用者按下。
  * @param ctx 插件上下文
  * @param webuiRoot webui 自己的安装目录
  * @returns 商店实例，供测试断言
@@ -264,10 +252,7 @@ export function mountPanelStore(ctx: PanelHost, webuiRoot: string): PanelStore {
   })
 
   /**
-   * 把一次失败说成一个响应
-   *
-   * 商店的失败多半使用者可自行处置（源不通、名字不在索引里、目录已存在、只读模式、git 不可用），
-   * 故一律给 400 并把原话带上，而不是抛成 500「内部错误」。
+   * 把一次失败说成一个响应：一律给 400 并带上原话，不抛成 500「内部错误」
    * @param err 捕获到的错误
    * @returns 响应
    */
@@ -290,9 +275,7 @@ export function mountPanelStore(ctx: PanelHost, webuiRoot: string): PanelStore {
   }
 
   /**
-   * 从请求体里取「要不要跑包管理器」
-   *
-   * 缺省为 false：没写这一项的请求不该被当成「同意执行第三方脚本」。
+   * 从请求体里取「要不要跑包管理器」；缺省 false —— 没写这一项不算「同意执行第三方脚本」
    * @param body 请求体
    * @returns 是否跑包管理器
    */
@@ -479,10 +462,8 @@ export async function mountPanelPlugins(ctx: PanelHost, webuiRoot: string): Prom
 /**
  * 插件定义
  *
- * 显式标注类型而非直接 `export default definePlugin(...)`：返回类型 `PluginDefinition` 声明在
- * `@yunzai-ng/types` 内，而插件在使用者主目录里就地构建时，该包的真实路径落在宿主的
- * `node_modules/.pnpm/` 之下 —— tsc 生成 .d.ts 时无从以可移植的方式指称它，报 TS2742。
- * 标注后 .d.ts 直接写下这个名字，与宿主的安装布局无关。
+ * 显式标注类型而非直接 `export default definePlugin(...)`：就地构建时 `@yunzai-ng/types`
+ * 的真实路径在宿主的 `node_modules/.pnpm/` 之下，tsc 生成 .d.ts 时指称不了它，报 TS2742。
  */
 const plugin: PluginDefinition<WebuiConfig> = definePlugin({
   name: "webui",
@@ -494,10 +475,8 @@ const plugin: PluginDefinition<WebuiConfig> = definePlugin({
     mountPanel(ctx, webDirOf(import.meta.dirname))
 
     /*
-     * 采集器须在自定义页面之前起来：webui 自己那一页的接口在 `mountCustomPages` 扫描时注册，
-     * 注册的处理函数向 msghub 取数。反过来的话页面注册那一刻 hub 还是空的 —— 那不会报错，
-     * 只会让统计页面一直显示「统计尚未开始」，而使用者无从知道是顺序问题。
-     *
+     * 采集器须在自定义页面之前起来：页面接口在 `mountCustomPages` 扫描时注册、向 msghub 取数，
+     * 反过来的话 hub 还是空的 —— 不报错，只是统计页永远显示「统计尚未开始」。
      * 采集失败只是没有统计，故与面板本身隔开一次 try。
      */
     try {

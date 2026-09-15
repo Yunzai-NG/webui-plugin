@@ -2,14 +2,13 @@
  * 模块职责：找出全部面板插件文件 —— 扫一处目录、给出待挂载的静态目录与浏览器用的清单
  * 依赖方向：只依赖 node 内置模块、类型包与本目录的 `panelconfig.ts`；不 import 内核，也不认识 Vue
  * 生命周期：`setup()` 时扫一次；清单端点每次被请求时重扫
- * 注意事项：扫描只看磁盘，不执行任何被扫到的 js —— 「这个文件导出了什么」只有浏览器 `import()` 过
- *          才知道，那是 `panelcheck.ts` 的事。
+ * 注意事项：扫描只看磁盘，不执行任何被扫到的 js —— 「这个文件导出了什么」只有浏览器 `import()`
+ *          过才知道，那是 `panelcheck.ts` 的事。
  *
- *          两种形态：单文件 `<名>.js` 与包 `<名>/index.js`。包的入口固定是包根的 `index.js`，缺它即
- *          跳过并告警。
+ *          两种形态：单文件 `<名>.js` 与包 `<名>/index.js`，包的入口固定是包根的 `index.js`。
  *
- *          包键是 `归属/首段目录名`，同时是配置文件名与商店的安装单位。node 侧的 `configKeyOf` 与
- *          浏览器侧的 `packageKeyOf` 各有一份，改一处要改两处。
+ *          包键是 `归属/首段目录名`，同时是配置文件名与商店的安装单位。node 侧的 `configKeyOf`
+ *          与浏览器侧的 `packageKeyOf` 各有一份，改一处要改两处。
  */
 import { readdir, readFile, stat } from "node:fs/promises"
 import { join } from "node:path"
@@ -165,8 +164,7 @@ export function isSafeName(name: string): boolean {
 /**
  * 是否为面板插件文件
  *
- * 只认 `.js` 与 `.mjs`。**不认 `.ts`** —— 浏览器不会编译它，放进去只会得到一个
- * 语法错误，而那个错误指向的是 TypeScript 语法而非真正的问题。
+ * 只认 `.js` 与 `.mjs`，不认 `.ts`：浏览器不编译它，报的语法错误指向 TypeScript 语法而非真正的问题。
  * @param file 文件名
  * @returns 是否为面板插件文件
  */
@@ -264,8 +262,8 @@ export async function listDirFiles(dir: string): Promise<string[]> {
 /**
  * 从一批文件名里挑出面板插件，并为被挡下的记一条警告
  *
- * 被挡下的一律要说一句：静默跳过时使用者只看到「文件放进去了但没反应」，而改名与先编译
- * 是两种处置。`.map` 与 `README` 一类不出声，它们本就不是想被加载的东西。
+ * 被挡下的一律要说一句：静默跳过时使用者只看到「文件放进去了但没反应」。`.map` 与
+ * `README` 一类不出声，它们本就不是想被加载的东西。
  * @param names 目录下的全部文件名
  * @param where 目录说明，写进警告里
  * @param warn 记警告
@@ -534,9 +532,9 @@ export interface PanelDirScan {
 /**
  * 扫一处面板目录：顶层的 `<名>.js` 是单文件，顶层的 `<名>/index.js` 是多文件包
  *
- * 子目录缺 `index.js` 时记一条警告（多半是解压错了层级或忘了改入口名）。缺 package.json
- * 或字段不全的**仍进清单**，带着 `meta: undefined`，由浏览器侧统一画占位格 —— 那格红字
- * 才是使用者真会看到的东西，在 node 侧丢掉它只留一条日志等于什么都没说。
+ * 子目录缺 `index.js` 时记一条警告。缺 package.json 或字段不全的**仍进清单**，
+ * 带着 `meta: undefined`，由浏览器侧统一画占位格 —— 在 node 侧丢掉它只留一条日志，
+ * 使用者什么都看不到。
  * @param owner 归属名
  * @param dir 目录绝对路径
  * @param warn 记一条警告

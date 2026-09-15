@@ -2,23 +2,17 @@
  * 模块职责：面板插件商店 —— 取索引与缓存、装 / 更 / 删一个面板插件包、按需跑包管理器
  * 依赖方向：依赖 node 内置模块、类型包与内核**导出的纯函数**；不认识 Vue
  * 生命周期：随 webui 的 `setup()` 创建一次，索引缓存驻留内存并落盘一份
- * 注意事项：版本门叫 `minWebui` 而非复用内核 `PluginMarket` 的 `minCore`：面板插件要的能力
- *          （`api.config`、页签注册点、一个模块导出多枚组件）随 webui 版本走，塞进 `minCore` 会让
- *          使用者看到「要求内核 0.2.0」而他的内核没问题。
- *
- *          取源那一段与内核 `market.ts` 的 `#fetch` / `#tryPull` 同源，改一处要对着另一处看。
- *
- *          索引顶层键是 `panels` 而非 `plugins`：同名的话，把面板索引填进内核 `market.sources`
- *          会解析成功，于是列出一堆装到错地方的条目。本模块也不认 `{plugins:[...]}` 与顶层数组，双向都挡。
- *
- *          只装「包」，不装单文件：商店要比较版本，而版本号只有 package.json 里那份 node 读得到。
- *
- *          判「像不像面板插件包」比内核严一档，package.json 与 `index.js` 都要有：入口固定是包根的
- *          `index.js`，缺它装完会被扫描器跳过，表现为「装上了却什么都没有」。
- *
- *          四项安全约定与内核一致：名字先过白名单再经 `joinWithin`；先下载到临时目录、校验通过才移入
- *          落点；索引按不可信输入对待，缺字段的条目整条丢弃；归档有体积上限。与内核不同的一处是本模块
- *          会跑包管理器，但要经使用者勾选 —— 理由见 `#finish`。
+ * 注意事项：六条约定 ——
+ *          1) 版本门叫 `minWebui` 而非内核的 `minCore`：面板插件要的能力随 webui 版本走
+ *          2) 取源那一段与内核 `market.ts` 的 `#fetch` / `#tryPull` 同源，改一处要对着另一处看
+ *          3) 索引顶层键是 `panels` 而非 `plugins`，双向都挡：同名会让面板索引在内核
+ *             `market.sources` 里解析成功，列出一堆装到错地方的条目
+ *          4) 只装「包」不装单文件：商店要比较版本，而版本号只有 package.json 里那份读得到
+ *          5) 判「像不像面板插件包」比内核严一档，package.json 与包根 `index.js` 都要有 ——
+ *             缺后者装完会被扫描器跳过，表现为「装上了却什么都没有」
+ *          6) 四项安全约定与内核一致：名字先过白名单再经 `joinWithin`；先下载到临时目录、校验
+ *             通过才移入落点；索引按不可信输入对待，缺字段的条目整条丢弃；归档有体积上限。
+ *             不同的一处是本模块会跑包管理器，但要经使用者勾选 —— 理由见 `#finish`
  */
 import { execFile } from "node:child_process"
 import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
@@ -89,27 +83,20 @@ export interface PanelInstallSpec {
 /**
  * 装后步骤：装完依赖之后还要跑哪些 npm script
  *
- * 与内核 `MarketSetupSpec` 同义，理由亦同：`scripts` 里有开发用的（`test`、`lint`）、
- * 有幂等的（`build`）、有会下载上百兆的，从名字分不出该跑哪些，故由**经审核的索引**说。
- *
- * 对面板插件包尤其要紧：带 node 侧的包，`webuiPanel.server` 多半指向 `dist/index.js`，
- * 而那一层通常被包仓库 `.gitignore` 掉 —— 不跑 `build` 就没有那个文件，表现是「装上了、
- * 组件也在，但 node 侧的接口一律 404」。
+ * 该跑哪些从 script 名分不出来（有开发用的、有幂等的、有会下载上百兆的），故由经审核的
+ * 索引说。带 node 侧的包尤其要紧：`webuiPanel.server` 多半指向被 `.gitignore` 掉的
+ * `dist/`，不跑 `build` 就没有那个文件，表现是组件在而 node 侧接口一律 404。
  *
  * 名字要拼进命令行，逐个过 `pm.ts` 的白名单；不合法的整条丢弃，见 `parseSetup`。
  */
 export interface PanelSetupSpec {
-  /**
-   * 依次要跑的 script 名
-   *
-   * 顺序即依赖关系，故按序执行、**一个失败即停**：后一个多半建立在前一个的产物上。
-   */
+  /** 依次要跑的 script 名；顺序即依赖关系，故按序执行、一个失败即停 */
   readonly scripts: readonly string[]
   /**
-   * 装依赖时是否连 devDependencies 一起装
+   * 装依赖时是否连 devDependencies 一起装，缺省为真
    *
-   * 从源码装、要靠 `build` 出产物的包必须为真：编译器在 devDependencies 里，`--prod`
-   * 装出来的目录跑 `build` 会报「找不到 tsc」，离真实原因很远。缺省为真。
+   * 靠 `build` 出产物的包必须为真：编译器在 devDependencies 里，`--prod` 装出来的目录
+   * 跑 `build` 会报「找不到 tsc」。
    */
   readonly dev: boolean
 }
@@ -132,11 +119,7 @@ export interface PanelStoreEntry {
   readonly tags: readonly string[]
   /** 是否为官方维护 */
   readonly official: boolean
-  /**
-   * 要求的最低 **webui** 版本
-   *
-   * 不是内核版本。面板插件用的是 webui 给的注入口，故门在 webui 上；见文件头。
-   */
+  /** 要求的最低 **webui** 版本，不是内核版本 —— 面板插件用的是 webui 给的注入口 */
   readonly minWebui?: string
   /** 组件数 —— 预告而非事实，真实数目要浏览器 `import()` 过才知道；仅供列表展示 */
   readonly widgets?: number
@@ -146,12 +129,7 @@ export interface PanelStoreEntry {
   readonly deps?: boolean
   /** 安装来源 */
   readonly install: PanelInstallSpec
-  /**
-   * 装后步骤，缺省即「装完依赖就算完」
-   *
-   * 声明在索引里而非包的 package.json 里：要在**取到内容之前**就能让确认框说清
-   * 「这次会跑什么」，而 package.json 得等下载完才读得到。
-   */
+  /** 装后步骤，缺省即「装完依赖就算完」。声明在索引里，故确认框在下载之前就能说清会跑什么 */
   readonly setup?: PanelSetupSpec
   /** 该条目来自哪个索引地址 */
   readonly source: string
@@ -193,12 +171,7 @@ export interface PanelStoreSnapshot {
   readonly readonly: boolean
 }
 
-/**
- * 一次安装的取源方式
- *
- * `pull` 是更新独有的一种：目录已是 git 仓库，就地拉取而非重新下载。与 `git` 分开记录 ——
- * `pull` 保住了 `node_modules`，`git` 是一份全新的目录。同内核的 `InstallVia`。
- */
+/** 一次安装的取源方式；`pull` 是更新独有的一种：就地拉取，保住了 `node_modules` */
 export type PanelInstallVia = PanelInstallSpec["type"] | "pull"
 
 /** 一次安装或更新的结果 */
@@ -347,8 +320,7 @@ interface PanelManifest {
 /**
  * 面板插件商店
  *
- * 索引缓存同时驻留内存与磁盘：磁盘那份服务于重启后的首次打开 —— 无网络时也该列出上次
- * 看到的东西，而不是一个空列表。与内核 `PluginMarket` 同一形制。
+ * 索引缓存同时驻留内存与磁盘：磁盘那份服务于重启后的首次打开，无网络时仍列出上次看到的东西。
  */
 export class PanelStore {
   /** 依赖 */
@@ -519,8 +491,8 @@ export class PanelStore {
   /**
    * 读取磁盘缓存
    *
-   * 缓存文件按不可信输入对待，重新经 `parsePanelIndex` 校验：它可能被手工改动，也可能是
-   * 旧版本写下的、字段形状已不同的内容。
+   * 缓存文件按不可信输入对待，重新经 `parsePanelIndex` 校验：它可能被手工改过，
+   * 也可能是旧版本写下的、字段形状已不同的内容。
    * @returns 缓存内容；文件不存在或不可解析时 undefined
    */
   async #loadCache(): Promise<CacheFile | undefined> {
@@ -537,9 +509,7 @@ export class PanelStore {
   }
 
   /**
-   * 写入磁盘缓存
-   *
-   * 写入失败只记日志：缓存是加速手段，写不进去不该让一次成功的索引获取失败。
+   * 写入磁盘缓存；失败只记日志，缓存写不进去不该让一次成功的索引获取失败
    */
   async #saveCache(): Promise<void> {
     const doc: CacheFile = { fetchedAt: this.#fetchedAt, entries: this.#entries }
@@ -554,8 +524,8 @@ export class PanelStore {
   /**
    * 求一个包的安装目录
    *
-   * 名字先过白名单再经 `joinWithin`：越界校验挡得住 `../`，挡不住 `node_modules` 这类落在
-   * 目录之内却会破事的名字。任一不通过给 undefined，由调用方拒绝。
+   * 名字先过白名单再经 `joinWithin`：越界校验挡得住 `../`，挡不住 `node_modules` 这类
+   * 落在目录之内却会破事的名字。
    * @param name 包名
    * @returns 目录绝对路径；名字不合法时 undefined
    */
@@ -610,9 +580,8 @@ export class PanelStore {
   /**
    * 探测本机 git 可用性
    *
-   * 结果缓存到进程结束。**先建出临时目录再探测**：它是这条命令的 cwd，而子进程的 cwd
-   * 不存在时 execFile 报 ENOENT，那会被误记成「本机没有 git」并缓存到进程结束，此后每次
-   * 安装都退回归档下载。
+   * 结果缓存到进程结束。先建出临时目录再探测：它是这条命令的 cwd，不存在时 execFile
+   * 报 ENOENT，会被误记成「本机没有 git」并缓存到进程结束。
    * @returns git 是否可用
    */
   async #hasGit(): Promise<boolean> {
@@ -631,9 +600,9 @@ export class PanelStore {
   /**
    * 拒绝只读模式下的写操作
    *
-   * 内核的 `requireWritable()` 只拦 `/api` 之下的写请求，管不到 webui 自己 scope 里的路由，
-   * 故商店的四条写路由经此自行判定，`server.readonly` 由 `coreconfig.ts` 读。
-   * 文案与内核那条刻意一致：挡住使用者的是哪一侧属于实现细节，他该看到同一句话。
+   * 内核的 `requireWritable()` 只拦 `/api` 之下的写请求，管不到 webui 自己 scope 里的
+   * 路由，故商店的四条写路由经此自行判定。文案与内核那条刻意一致：挡住使用者的是哪一侧
+   * 属于实现细节，他该看到同一句话。
    * @throws 只读模式开启时
    */
   async #requireWritable(): Promise<void> {
@@ -646,8 +615,8 @@ export class PanelStore {
   /**
    * 装一个面板插件包
    *
-   * 全过程在临时目录内完成，仅在校验通过后才移入落点，因此失败时落点保持原状。
-   * 装完不加载：浏览器侧刷新页面即生效，node 侧入口要重载 webui，由返回值的 `hasServer` 区分。
+   * 全过程在临时目录内完成，仅在校验通过后才移入落点，故失败时落点保持原状。装完不加载：
+   * 浏览器侧刷新即生效，node 侧要重载 webui，由返回值的 `hasServer` 区分。
    * @param name 包名
    * @param opts 可选参数
    * @param opts.replace 目标已存在时先删除再装
@@ -732,11 +701,9 @@ export class PanelStore {
    * 试着就地拉取一个包
    *
    * 命令序列与内核 `#tryPull` 逐条一致（见 `market.ts`）：`fetch` + `reset --hard` 而非 `pull`；
-   * 改动先 `stash push --include-untracked`，**顺序即安全性** —— 先 reset 后 stash 就是数据丢失；
-   * fetch 的地址每次由 `applyMirror` 现算，不沿用目录里的 origin。
-   *
-   * 不具备条件时给 undefined 由调用方退回重装，而拉取本身失败则抛错：那时退回重装会把一次
-   * 可修复的失败变成一次目录删除。
+   * 改动先 `stash push --include-untracked`（**先 reset 后 stash 就是数据丢失**）；地址每次由
+   * `applyMirror` 现算，不沿用目录里的 origin。不具备条件时给 undefined 由调用方退回重装，
+   * 拉取本身失败则抛错 —— 那时退回重装会把一次可修复的失败变成一次目录删除。
    * @param name 包名
    * @param dir 包目录
    * @param dependencies 是否跑包管理器
@@ -779,12 +746,7 @@ export class PanelStore {
     if (changed) this.#deps.logger.debug(`面板插件 ${name} 已就地更新至 ${version}（${wasAt.slice(0, 7)} → ${nowAt.slice(0, 7)}）`)
     else this.#deps.logger.debug(`面板插件 ${name} 已是最新版本 ${version}`)
 
-    /*
-     * 远端没有新提交、且依赖不缺时不跑收尾
-     *
-     * 那一次「更新」什么都没改，重跑 `build` 只是白等一遍编译。缺依赖是例外 —— 那与有没有
-     * 新提交无关，使用者点这一下要的就是把它补齐。
-     */
+    // 没有新提交时跳过收尾，重跑 `build` 只是白等；缺依赖是例外，与有没有新提交无关
     const missing =
       Object.keys(manifest?.dependencies ?? {}).length > 0 &&
       manifest?.skipInstall !== true &&
@@ -796,16 +758,10 @@ export class PanelStore {
   /**
    * 收尾：算出依赖需求，按需装依赖与跑装后步骤，拼出结果
    *
-   * 跑包管理器不是一道新的信任边界：带 node 侧的包，它的入口下一秒就会被 `import()` 进
-   * node 进程跑 `setup()`，install 脚本与它同属一道门。故缺省就跑 —— 不跑的后果是
-   * 「装完却加载失败」成为常态，而那条「请自行执行」的提示对着一个多数人不会开的终端。
-   *
-   * **装后步骤即便依赖不缺也要跑。** 包的 `dist/` 多半被它自己的仓库 `.gitignore` 掉了
-   * （hardware 的 `webuiPanel.server` 就指向 `dist/index.js`），就地拉取拉来新提交之后
-   * `node_modules` 还在而产物已旧 —— 此时跳过，跑的就还是上一版代码，且毫无迹象。
-   *
-   * 失败不向上抛：包已装好，缺的只是依赖或产物，抛出去会让使用者以为「什么都没装成」
-   * 而去重装，重装同样会在这一步失败。故记进 `dependencyError` / `setupError` 由前端说明。
+   * 装后步骤即便依赖不缺也要跑：包的 `dist/` 多半被它自己的仓库 `.gitignore` 掉了，就地拉取
+   * 拉来新提交后 `node_modules` 还在而产物已旧，跳过就跑的还是上一版代码且毫无迹象。
+   * 失败不向上抛而记进 `dependencyError` / `setupError`：包已装好，抛出去会让人以为什么都没装成
+   * 而去重装，重装同样会在这一步失败。
    * @param name 包名
    * @param dir 包目录
    * @param via 取源方式
@@ -877,9 +833,8 @@ export class PanelStore {
   /**
    * 把包内容取到临时目录
    *
-   * git 优先：克隆得到的目录带 `.git`，故此后的更新可以就地拉取（保住 `node_modules`），
-   * 使用者也能自行切分支。git 不可用时退回归档下载 —— GitHub 仓库地址可换算出 codeload
-   * 归档地址，其余来源若只提供 git 则明确报错，而不是静默失败。
+   * git 优先：克隆得到的目录带 `.git`，故此后可就地拉取。git 不可用时退回归档下载，
+   * 其余来源若只提供 git 则明确报错。
    * @param entry 索引条目
    * @param staging 临时目录
    * @returns 取源方式与内容根目录
@@ -913,8 +868,8 @@ export class PanelStore {
   /**
    * 校验取到的内容是不是一个面板插件包
    *
-   * 比内核那道严一档，两个文件都要有：入口固定是包根的 `index.js`，自报信息只能写在
-   * package.json 里。缺任一个，装完会被扫描器跳过或画成占位格，而原因在 node 侧的日志里。
+   * 比内核那道严一档，两个文件都要有：缺任一个，装完会被扫描器跳过或画成占位格，
+   * 而原因只在 node 侧的日志里。
    * @param root 内容根目录
    * @param name 包名
    * @throws 缺 package.json 或缺 index.js 时
@@ -935,8 +890,7 @@ export class PanelStore {
   /**
    * 把临时目录里的内容移到落点
    *
-   * `rename` 在跨设备时会失败（EXDEV）—— 临时目录可能在另一个分区，此时退回递归复制。
-   * 复制成本高于改名，故仅作兜底。
+   * `rename` 跨设备会失败（EXDEV）—— 临时目录可能在另一个分区，此时退回递归复制。
    * @param from 源目录
    * @param to 目标目录
    */
@@ -966,8 +920,8 @@ function text(raw: Record<string, unknown>, key: string): string | undefined {
 /**
  * 解析安装来源
  *
- * 不认 `install.path`：子目录装法与 git 就地拉取不相容（`.git` 在仓库根，而装进落点的是
- * 子目录）。一个仓库要放多枚组件时，让那个包导出多枚，而不是切成多个安装单位。
+ * 不认 `install.path`：子目录装法与 git 就地拉取不相容（`.git` 在仓库根，装进落点的是子目录）。
+ * 一个仓库要放多枚组件时，让那个包导出多枚。
  * @param raw 条目中的 `install` 字段
  * @returns 安装来源；字段缺失或类型不符时 undefined
  */
@@ -986,10 +940,8 @@ function parseInstall(raw: unknown): PanelInstallSpec | undefined {
 /**
  * 解析装后步骤
  *
- * 返回 `null` 表示「声明了但不合法」，与 undefined（压根没声明）分开 —— 调用方据此
- * 丢弃整条。**不合法时丢整条而非只忽略这一项**：只忽略会装出一个「依赖装了、产物没编译」
- * 的包，那种包加载时报「找不到 dist/index.js」，离真实原因（索引里的名字写错了）很远；
- * 而整条丢弃的表现是「这个包不出现在列表里」，与 `install` 写错时一致。
+ * 返回 `null` 表示「声明了但不合法」，与 undefined（压根没声明）分开，调用方据此丢弃整条。
+ * 只忽略这一项会装出「依赖装了、产物没编译」的包，报错离真实原因（索引里名字写错）很远。
  * @param raw 条目中的 `setup` 字段
  * @returns 装后步骤；没声明时 undefined；声明了但不合法时 null
  */

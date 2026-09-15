@@ -50,23 +50,39 @@ interface DocGroup {
  * 文档入口
  *
  * **分组与顺序照抄文档站的侧边栏**（`docs/.vitepress/config.mts` 的 `sidebar`）：
- * 平铺一列时「官方插件」那六页会把另外十条挤没，而使用者是按侧边栏的结构记路的。
+ * 平铺一列时「官方插件」那七页会把另外十几条挤没，而使用者是按侧边栏的结构记路的。
  * 文档站加页时此处一并加 —— 两处不同步的表现是面板里查不到一篇已经存在的文档。
  */
 const DOC_GROUPS: readonly DocGroup[] = [
   {
     title: "入门",
     docs: [
-      { title: "快速开始", desc: "环境要求、构建、初始化目录与启动", path: "getting-started" },
+      { title: "快速开始", desc: "装 CLI、初始化目录、启动与打开面板", path: "getting-started" },
+      { title: "CLI 命令", desc: "逐命令的作用、选项与注意事项", path: "cli" },
+      { title: "从源码构建", desc: "改框架自身或跑在未发布的提交上", path: "from-source" },
       { title: "配置与面板", desc: "内核配置逐项说明，与本面板的配置页对应", path: "config" }
+    ]
+  },
+  {
+    title: "插件开发",
+    docs: [
+      { title: "上手", desc: "最小插件、目录与入口、definePlugin 与 ctx 全表", path: "plugin-api" },
+      { title: "发消息", desc: "文本、图片、引用、转发、渲染出图与主动推送", path: "plugin/message" },
+      { title: "命令与事件", desc: "命令声明、匹配语义、中间件与事件对象", path: "plugin/command" },
+      { title: "配置与存储", desc: "配置 schema、KV、SQLite 与进程内缓存", path: "plugin/storage" },
+      { title: "任务与协作", desc: "定时任务、插件间服务、HTTP 路由与生命周期", path: "plugin/service" },
+      { title: "适配器开发", desc: "接一个聊天平台：事件翻译与 BotDriver 能力面", path: "adapter" },
+      { title: "渲染与模板", desc: "出图：两种模板、渲染选项与自写渲染器", path: "renderer" },
+      { title: "测试与发布", desc: "无内核测试命令，以及发布进插件市场", path: "plugin/publish" }
     ]
   },
   {
     title: "官方插件",
     docs: [
       { title: "一览与两个市场", desc: "官方插件有哪些、各自装在哪个市场", path: "official-plugins" },
-      { title: "webui（面板）", desc: "本面板自身：八个页面、面板插件的宿主与商店", path: "plugins/webui" },
+      { title: "webui（面板）", desc: "本面板自身：十个页面、面板插件的宿主与商店", path: "plugins/webui" },
       { title: "adapter-napcat（QQ）", desc: "经 NapCat 接入 QQ 的适配器", path: "plugins/adapter-napcat" },
+      { title: "adapter-qqbot（QQ 官方）", desc: "QQ 开放平台机器人：群、私聊与频道", path: "plugins/adapter-qqbot" },
       { title: "renderer-puppeteer（出图）", desc: "无头浏览器渲染器，模板转图片", path: "plugins/renderer-puppeteer" },
       { title: "hardware（硬件监控）", desc: "概览页的硬件组件与本包的 node 侧采样", path: "plugins/hardware" },
       { title: "webui-example（示例）", desc: "面板插件示例包，照抄它比从零拼快", path: "plugins/webui-example" },
@@ -74,12 +90,10 @@ const DOC_GROUPS: readonly DocGroup[] = [
     ]
   },
   {
-    title: "开发",
+    title: "扩展",
     docs: [
-      { title: "插件开发", desc: "插件上下文、命令声明、渲染与存储接口", path: "plugin-api" },
       { title: "面板插件", desc: "往面板加组件与页签：形态、配置、样式与商店", path: "panel-plugin" },
-      { title: "适配器开发", desc: "统一事件模型与适配器接口的实现要求", path: "adapter" },
-      { title: "渲染与模板", desc: "渲染器接口、模板根与资源根的约定", path: "renderer" },
+      { title: "扩展页面", desc: "插件在面板里挂一个自己的页面", path: "custom-page" },
       { title: "插件市场", desc: "索引文件格式、镜像与自建索引的方式", path: "market" }
     ]
   },

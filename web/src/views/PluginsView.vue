@@ -3,28 +3,21 @@
  * 模块职责：插件页 —— 卡片网格列出已安装插件，就地配置，并按插件查看命令/任务/中间件
  * 依赖方向：依赖 api / format / configedit 一族组件 / types
  * 生命周期：挂载时读取一次，每次动作后重新读取；命令与中间件清单按需（打开查看时）读取
- * 注意事项：**不提供启用与停用按钮** —— 启停即配置项 `plugins.disabled`，已由内核配置的通用表单覆盖，
- *          再开专用接口就是同一项设置两个入口两套校验。
+ * 注意事项：不提供启用与停用按钮 —— 启停即配置项 `plugins.disabled`，已由内核配置的通用表单覆盖。
  *
- *          重载靠在模块地址上追加查询参数绕过 Node 的 ESM 缓存，**旧模块对象仍驻留在内存**（Node ESM
+ *          重载靠在模块地址上追加查询参数绕过 Node 的 ESM 缓存，旧模块对象仍驻留在内存（Node ESM
  *          的固有限制）。页面上明写出来，否则使用者反复重载也定位不到原因。
  *
- *          **配置是就地模态，不跳配置页**：上下文就在这张卡片上。配置页因此收窄为只有内核配置。
+ *          配置是就地模态，不跳配置页；配置页因此收窄为只有内核配置。命令清单在此按插件呈现，
+ *          帮助页那份按全局呈现，两者刻意并存（见 HelpView）。三份清单只在首次打开「查看」时拉取。
  *
- *          **命令清单在此按插件呈现，帮助页那份按全局呈现**，两者刻意并存（见 HelpView）。
- *          三份清单只在首次打开「查看」时拉取 —— 只想点「重载」的人不必付那三个往返。
- *
- *          **面板插件按「包」而非按「组件」列** —— 使用者装的是一个东西，逐枚列会让一个九组件的包独占九行。
- *          页签的另一半是插件自加页签的注册点，故这一页的页签数不是常量。
- *
- *          **「定时任务」一节留在页签之外**：它是页级的一节，跟着页签隐去会在切到「面板插件」时无端消失。
- *
- *          **面板插件包的「配置」按钮只对声明了配置项的包出现**，位置与核心插件一致（卡片首位、primary）。
+ *          面板插件按「包」而非按「组件」列，故这一页的页签数不是常量（另一半是插件自加页签的
+ *          注册点）。「定时任务」一节留在页签之外：跟着页签隐去会在切到「面板插件」时无端消失。
  */
 import { computed, nextTick, onMounted, ref } from "vue"
 import { del, get, post } from "../api.js"
 import { errorText, statusClass, statusText } from "../format.js"
-import { askConfirm } from "../confirm.js"
+import { askConfirm, askConfirm3 } from "../confirm.js"
 import { installDirOf, resultText, setupResultText } from "../market.js"
 import { hrefOf } from "../router.js"
 import ConfigEditor from "../components/ConfigEditor.vue"
@@ -226,13 +219,8 @@ async function load(): Promise<void> {
 /**
  * 读取市场索引，供「可更新」判据与装后步骤声明
  *
- * **单独一路，且失败不写顶部错误条。** 这一页的主体是「我装了什么」，那份事实来自
- * `GET /api/plugins`；索引只是拿来多说两句（有没有新版本、装后要跑哪几个 script）。
- * 索引取不到的常见原因是没网 —— 那时插件页仍须能重载、能卸载，故把它降级成「少一枚
- * 徽标」而非「整页报错」。
- *
- * 走缓存（不加 `refresh`）：这一页不是市场页，没有「我要看最新索引」的诉求，而回源
- * 会让打开速度取决于网络。
+ * 单独一路，失败不写顶部错误条：索引取不到（多半是没网）时插件页仍须能重载、能卸载，
+ * 故降级成「少一枚徽标」而非「整页报错」。走缓存不回源，打开速度不取决于网络。
  */
 async function loadMarket(): Promise<void> {
   try {
@@ -247,9 +235,8 @@ async function loadMarket(): Promise<void> {
 /**
  * 读取命令与中间件清单
  *
- * 单独一次，且只在首次打开「查看」时 —— 只想点「重载」的人不必为此付两个往返。
- * 失败不写页面顶部的错误条：那条是给「插件列表都没读到」用的，而这两份缺失只影响
- * 模态里的两个标签，故就地写在标签内容里。
+ * 只在首次打开「查看」时拉一次。失败不写顶部错误条：那条是给「插件列表都没读到」用的，
+ * 而这两份缺失只影响模态里的两个标签，故就地写在标签内容里。
  */
 async function loadRegistries(): Promise<void> {
   if (registriesLoaded.value) return
@@ -404,13 +391,8 @@ async function manage(name: string, task: () => Promise<string>): Promise<void> 
 /**
  * 更新一个插件
  *
- * 走哪条路由内核判定，前端在点确认时并不知道，故确认文案须把两种后果都写出来 ——
- * 只说「安装前会先卸载当前版本」在就地拉取那一路是假的，会让人以为更新比实际更危险。
- *
- * **撞上本地改动时再问一次，而那一问不可关闭。** 内核不再默认暂存（那等于替使用者做了
- * 一个他没看清的决定），改为把决定权交回来。故这里的流程是：先探测 → 有改动就问 →
- * 带着答案发请求。探测失败不挡住更新 —— 那时按「没有改动」发出去，内核撞上改动会以
- * 400 中止，目录停在原样，比因为一次探测失败就点不动更新要好。
+ * 走哪条路由内核判定，故确认文案须把两种后果都写出来。撞上本地改动时再问一次，那一问不可
+ * 关闭：流程是先探测 → 有改动就问 → 带着答案发请求。
  * @param p 插件
  */
 async function update(p: PluginItem): Promise<void> {
@@ -433,35 +415,42 @@ async function update(p: PluginItem): Promise<void> {
     if (!ok) return
 
     const probe = await probeUpdate(dir)
-    let stash = false
+    let onDirty: "stash" | "discard" | undefined
     if (probe?.dirty === true) {
       /*
-       * 这一问不可关闭，且带 10 秒倒计时
-       *
-       * 它卡在一个**已经开始**的动作中途：使用者已经点过「更新」并确认过一次。此时按 Esc
-       * 不是「什么都没发生」，而是让那次更新以一条 400 收场，而他多半会以为是网络问题。
-       * 故只有两个出口 —— 选一个，或等倒计时替他选缺省的那个（暂存，与内核同一个缺省语义）。
+       * 这一问不可关闭，且带 10 秒倒计时：它卡在一个已经开始的动作中途，按 Esc 不是「什么都
+       * 没发生」而是让那次更新以一条 400 收场。倒计时永不落在「丢弃」上 —— 那一路不可撤销，
+       * 不该因为人走开了而自己发生（见 ConfirmDialog 里 `altText` 那段）。
        */
-      stash = await askConfirm({
+      const answer = await askConfirm3({
         title: `「${p.name}」的目录内有未提交的改动`,
-        body: "更新会把目录重置到远端最新提交。这些改动要先暂存起来，还是取消这次更新？",
+        body: "更新会把目录重置到远端最新提交。这些改动要先暂存起来、直接丢掉，还是取消这次更新？",
         okText: "暂存并更新",
         cancelText: "取消更新",
+        altText: "丢弃改动并更新",
         dismissible: false,
         countdown: 10,
         timeoutOk: true,
         details: [
           "暂存：改动收进 git 的暂存区，更新完可在该目录执行 git stash pop 取回",
+          "丢弃：改动连同新增的文件一起清掉，没有副本，取不回来",
           "取消：这次更新不做，目录停在原样 —— 你可以自己处理那些改动之后再来",
           "改动包括未跟踪的新文件：它们同样会被更新时的 checkout 撞上",
           "倒计时结束按「暂存并更新」处理"
         ]
       })
-      if (!stash) return
+      if (answer === "cancel") return
+      onDirty = answer === "alt" ? "discard" : "stash"
     }
 
     await manage(p.name, async () =>
-      resultText(await post<MarketInstallResult>(`market/${encodeURIComponent(dir)}/update`, { stash }))
+      resultText(
+        await post<MarketInstallResult>(
+          `market/${encodeURIComponent(dir)}/update`,
+          // 没问过就不带这一项：让内核那侧的缺省（abort）成为唯一的缺省，两处各写一个迟早分叉
+          onDirty === undefined ? {} : { onDirty }
+        )
+      )
     )
   })
 }
@@ -469,9 +458,8 @@ async function update(p: PluginItem): Promise<void> {
 /**
  * 整份重装一个插件
  *
- * 与「更新」的差别是**跳过就地拉取**：目录被改花了、`reset --hard` 收不干净、或产物与源码
- * 对不上时要的正是整份换掉。收在「更多」里 —— 它比更新慢得多（依赖跟着重装），多数时候
- * 该点的是更新。
+ * 与「更新」的差别是跳过就地拉取：目录被改花了、产物与源码对不上时要的正是整份换掉。
+ * 收在「更多」里 —— 它比更新慢得多（依赖跟着重装）。
  * @param p 插件
  */
 async function reinstall(p: PluginItem): Promise<void> {
@@ -502,9 +490,8 @@ async function reinstall(p: PluginItem): Promise<void> {
 /**
  * 单独重跑装依赖与装后步骤，不重新取源
  *
- * 三种情形要用到：手工放进插件目录的插件（压根没经过安装动作）、装的时候这一步失败过、
- * 以及使用者自己 `git pull` 过而 `dist/` 已旧。**这一条对不在索引里的插件同样可用** ——
- * 那时只装依赖，没有装后步骤可跑。
+ * 三种情形要用到：手工放进插件目录的、装的时候这一步失败过的、自己 `git pull` 过而 `dist/`
+ * 已旧的。不在索引里的插件同样可用，那时只装依赖。
  * @param p 插件
  */
 async function setup(p: PluginItem): Promise<void> {
@@ -574,15 +561,9 @@ async function view(name: string): Promise<void> {
 /**
  * 切换某张卡片的「更多」菜单
  *
- * 打开时**按视口剩余空间决定往上还是往下弹**。菜单固定向下时，最后一行卡片的菜单会被视口
- * 下沿截断 —— 桌面上如此，手机上视口更短，几乎必然如此。
- *
- * 高度是打开后量的，不是估的：菜单项数按插件而变（可更新时多一条、面板插件包少几条），
- * 估错的表现是「明明放得下却往上弹」这种更难看的错。量高度要等这一帧渲染完，故 `nextTick`；
- * 此刻进场动画的起始态只有 `opacity` 与 `transform`，两者都不影响布局盒的高度。
- *
- * **下方放不下、且上方比下方宽裕**才翻转：只判前一条的话，在一个上下都不够高的窗口里
- * 会把菜单翻到更挤的一侧去。
+ * 按视口剩余空间决定往上还是往下弹。高度是打开后量的（项数按插件而变），故要等这一帧渲染完
+ * 的 `nextTick`。只在下方放不下、且上方比下方宽裕时才翻转 —— 只判前一条会在上下都不够高的
+ * 窗口里翻到更挤的一侧。
  * @param name 插件名
  * @param ev 点击事件，用于取触发按钮的位置
  */

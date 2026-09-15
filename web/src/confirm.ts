@@ -13,9 +13,13 @@
  *
  *          **另有一类「必须当场答」的提问**（`dismissible: false` + `countdown`）：它出现在一个
  *          已经开始、且停不下来的动作中途 —— 更新插件时发现目录里有改动，答案决定那些改动是被
- *          暂存起来还是整个动作作废。此时 Esc 与点遮罩都不该等同于「取消」：使用者以为自己关掉了
- *          一个可有可无的提示，实际上是撤销了一次更新。故那一类不给关闭途径，只给两个明确的选项
- *          与一个倒计时 —— 倒计时到点按 `timeoutOk` 结算，人走开了动作也能自己走完。
+ *          暂存起来、被丢掉，还是整个动作作废。此时 Esc 与点遮罩都不该等同于「取消」：使用者以为
+ *          自己关掉了一个可有可无的提示，实际上是撤销了一次更新。故那一类不给关闭途径，只给几个
+ *          明确的选项与一个倒计时 —— 倒计时到点按 `timeoutOk` 结算，人走开了动作也能自己走完。
+ *
+ *          **答案是三值而非布尔**（`ok` / `cancel` / `alt`）：那个「有本地改动」的提问本就有三条路，
+ *          而不是两条。`askConfirm` 仍返回 `Promise<boolean>` 供绝大多数只有两条路的提问使用，
+ *          要第三条的用 `askConfirm3`。
  */
 import { ref } from "vue"
 
@@ -53,24 +57,52 @@ export interface ConfirmRequest {
   countdown?: number
   /** 倒计时到点时按哪一边结算，缺省确认 */
   timeoutOk?: boolean
+  /**
+   * 第三个选项的文案，缺省不给第三个按钮
+   *
+   * 存在的理由是**有些分支真的有三条路**：更新插件撞上本地改动时，「暂存」与「取消」
+   * 之外还有「丢掉那些改动直接更新」—— 少了它，明知那几个文件是垃圾的人只能先去
+   * 命令行 `git checkout .` 再回来点一次。两条路的框把第三种意图挤成了「自己想办法」。
+   *
+   * 它一律取 `danger` 形制并落在最左：这一类第三选项都是不可撤销的那一个。
+   */
+  altText?: string
 }
+
+/** 一次确认的答复 */
+export type ConfirmAnswer = "ok" | "cancel" | "alt"
 
 /** 当前待答复的请求；无对话框在场时为 undefined */
 export const pending = ref<ConfirmRequest | undefined>(undefined)
 
 /** 当前请求的结算函数 */
-let settleCurrent: ((ok: boolean) => void) | undefined
+let settleCurrent: ((answer: ConfirmAnswer) => void) | undefined
 
 /**
  * 发起一次确认
+ *
+ * 返回 `Promise<boolean>` 而非三值：绝大多数提问只有两条路，若让它们都去判断一个
+ * 三值枚举，每个调用点都要写一次「`=== "ok"`」。要第三条路的用 {@link askConfirm3}。
  * @param request 请求内容
  * @returns 使用者是否点了确认
  */
-export function askConfirm(request: ConfirmRequest): Promise<boolean> {
+export async function askConfirm(request: ConfirmRequest): Promise<boolean> {
+  return (await askConfirm3(request)) === "ok"
+}
+
+/**
+ * 发起一次三选确认
+ *
+ * 与 {@link askConfirm} 同一个对话框，只是把答案原样交回。给了 `altText` 才会出现
+ * 第三个按钮，故不传它时本函数与 `askConfirm` 等价。
+ * @param request 请求内容
+ * @returns 使用者选了哪一个
+ */
+export function askConfirm3(request: ConfirmRequest): Promise<ConfirmAnswer> {
   // 旧提问按「取消」结算：默认取消而非确认，是因为这里的提问一律关乎破坏性操作
-  settleCurrent?.(false)
+  settleCurrent?.("cancel")
   pending.value = request
-  return new Promise<boolean>(resolve => {
+  return new Promise<ConfirmAnswer>(resolve => {
     settleCurrent = resolve
   })
 }
@@ -80,11 +112,11 @@ export function askConfirm(request: ConfirmRequest): Promise<boolean> {
  *
  * 由对话框组件调用。先清状态再 resolve：resolve 会同步唤起提问方的后续代码，
  * 那段代码可能立刻再问一次，此时 `pending` 必须已经是空的。
- * @param ok 是否确认
+ * @param answer 使用者选了哪一个
  */
-export function settleConfirm(ok: boolean): void {
+export function settleConfirm(answer: ConfirmAnswer): void {
   const resolve = settleCurrent
   settleCurrent = undefined
   pending.value = undefined
-  resolve?.(ok)
+  resolve?.(answer)
 }

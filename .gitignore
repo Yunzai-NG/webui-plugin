@@ -5,6 +5,11 @@ dist/
 # 构建时由 scripts/sync-webadapter.mjs 从 dist/ 拷入，不是手写的源码
 webadapter/msgstats.js
 
+# 本机装进面板的插件包 —— 它们由商店或 git clone 装进来，不是本仓的源码。
+# 自带 .git 的包会被 git 记成 160000 gitlink（一条指向别处提交的引用），
+# 而克隆本仓的人在那个 SHA 上什么都取不到。
+plugins/
+
 # 编辑器 / 系统
 .DS_Store
 Thumbs.db
