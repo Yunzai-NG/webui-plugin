@@ -24,9 +24,10 @@ import { computed, onMounted, ref } from "vue"
 import { delAt, getAt, postAt } from "../api.js"
 import { askConfirm } from "../confirm.js"
 import { datetime, errorText } from "../format.js"
-import { MARKET_TABS, tabCounts, tagsOf, toggleTag, visibleItems, type MarketTab } from "../filter.js"
+import { MARKET_TABS, emptyCriteria, gatesOf, tabCounts, visibleItems, type Criteria } from "../filter.js"
 import { setupNotes, storeResultText, storeUrlOf, versionText, willRunPm } from "../panelstore.js"
 import { hrefOf } from "../router.js"
+import MarketFilter from "../components/MarketFilter.vue"
 import Modal from "../components/Modal.vue"
 import PageHeader from "../components/PageHeader.vue"
 import type { PanelStoreItem, PanelStoreResult, PanelStoreSnapshot } from "../types.js"
@@ -36,10 +37,13 @@ const error = ref("")
 const notice = ref("")
 const busy = ref("")
 const loading = ref(false)
-const keyword = ref("")
-const tab = ref<MarketTab>("all")
-/** 选中的分类；空数组意为不按分类筛 */
-const picked = ref<string[]>([])
+/**
+ * 六维筛选判据，整份交给 `MarketFilter`
+ *
+ * 与插件市场页同一形状、同一组纯函数 —— 两页筛的是同一件事，各写一份的代价不是重复，
+ * 而是行为悄悄分叉（见 `filter.ts` 文件头）。
+ */
+const criteria = ref<Criteria>(emptyCriteria())
 /** 正在看哪个条目的详情；空串意为详情模态未开 */
 const viewing = ref("")
 
@@ -55,11 +59,17 @@ const badSources = computed(() => snapshot.value?.sources.filter(source => !sour
 /** 逐页签的条目数，供角标 */
 const counts = computed(() => tabCounts(items.value))
 
-/** 索引里出现过的分类 */
-const tags = computed(() => tagsOf(items.value))
+/** 索引里声明过的最低 webui 版本，升序去重 */
+const gates = computed(() => gatesOf(items.value, item => item.minWebui))
 
-/** 按页签、分类与关键词筛过之后的条目 */
-const visible = computed(() => visibleItems(items.value, tab.value, picked.value, keyword.value))
+/**
+ * 按六维判据筛过之后的条目
+ *
+ * **不给 `current`**：前端拿不到 webui 自身的版本号（没有注入这个常量，也没有一条接口
+ * 给它），故版本门那一维只有「某个版本及以上」，没有「当前这套装得上的」—— 组件在
+ * `current` 缺失时相应地不出那一项，而不是拿一个空串去比出个假答案。
+ */
+const visible = computed(() => visibleItems(items.value, criteria.value, { gateOf: item => item.minWebui }))
 
 /** 是否只读；只读时隐去写按钮 */
 const readonly = computed(() => snapshot.value?.readonly === true)
@@ -242,8 +252,8 @@ onMounted(() => void load())
       <button
         v-for="item in MARKET_TABS"
         :key="item.id"
-        :class="{ primary: tab === item.id }"
-        @click="tab = item.id"
+        :class="{ primary: (criteria.tab ?? 'all') === item.id }"
+        @click="criteria = { ...criteria, tab: item.id }"
       >
         {{ item.label }}
         <span class="tag">{{ counts[item.id] }}</span>
@@ -251,24 +261,22 @@ onMounted(() => void load())
     </div>
 
     <Transition name="tab" mode="out-in">
-    <div :key="tab">
-    <div class="toolbar">
-      <input v-model="keyword" type="search" placeholder="按名称、说明或分类筛选" aria-label="筛选面板插件" />
-      <!--
-        分类做成一排可点的标签而非页签：标签数由索引决定，十几个页签在窄屏上必然折行，
-        而折行会把上面那三个主页签挤到第二行去
-      -->
-      <span
-        v-for="item in tags"
-        :key="item"
-        class="tag pick"
-        :class="{ on: picked.includes(item) }"
-        @click="picked = toggleTag(picked, item)"
-      >
-        {{ item }}
-      </span>
-      <button v-if="picked.length > 0" @click="picked = []">清空分类</button>
-    </div>
+    <div :key="criteria.tab ?? 'all'">
+    <!--
+      六维筛选收进可展开面板，与插件市场同一枚组件
+
+      分类那一排从前常驻在此处，七个条目就占掉两行、把首屏卡片压下去一截。
+      版本门这一维读的是 `minWebui`，故 `gate-label` 写「面板」而非「内核」。
+      当前面板版本前端拿不到，故不传 `current` —— 那一项于是整个不出现，见组件文件头。
+    -->
+    <MarketFilter
+      v-model="criteria"
+      :items="items"
+      :gates="gates"
+      gate-label="面板"
+      placeholder="按名称、说明或分类筛选"
+      search-label="筛选面板插件"
+    />
 
     <p v-if="snapshot" class="hint">
       索引取自 {{ datetime(snapshot.fetchedAt) }}<span v-if="snapshot.cached">（缓存）</span>，共

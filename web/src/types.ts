@@ -332,8 +332,24 @@ export interface MarketItem {
   minCore?: string
   /** 索引声明的装后步骤，仅用于在确认框里说清这次会跑什么；真跑没跑看返回值的 `ranScripts` */
   setup?: MarketSetup
+  /**
+   * 取源方式与地址
+   *
+   * 内核一直在返回它（`MarketListing extends MarketEntry`），此前这一页没用到故未声明。
+   * 自定义条目的详情里要显示那个地址 —— 那是这一条**唯一**能说明来历的东西：它不来自
+   * 任何索引，没有地址就无从判断装的是谁的代码。
+   */
+  install?: MarketInstall
   /** 条目来自哪个索引地址 */
   source: string
+  /**
+   * 这一条是使用者自己登记的，不来自任何索引
+   *
+   * 内核把它与索引条目**登记成同一种东西**（见 core 的 `MarketEntry.custom`），故安装、
+   * 更新、卸载各条路径在这一页上一字不改地适用 —— 这个字段只影响呈现：卡片上多一枚
+   * 「自定义」标记，详情里多一句「不来自任何索引」，以及多一个「撤掉登记」的去处。
+   */
+  custom?: true
   /** 插件目录下是否已存在同名目录 */
   installed: boolean
   /**
@@ -353,6 +369,21 @@ export interface MarketSetup {
   scripts: string[]
   /** 装依赖时是否连 devDependencies 一起装 */
   dev: boolean
+}
+
+/**
+ * 一个条目的取源方式
+ *
+ * 这一页只读它的 `url`，且只在自定义条目的详情里读：那一条的来历就是这个地址，
+ * 而索引条目的来历是 `source` 那个索引地址。
+ */
+export interface MarketInstall {
+  /** 取源方式 */
+  type: "git" | "tarball"
+  /** 仓库地址或归档地址 */
+  url: string
+  /** git 分支，缺省由远端决定 */
+  branch?: string
 }
 
 /** 一个索引地址的获取结果 */

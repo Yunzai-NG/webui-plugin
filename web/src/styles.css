@@ -3689,6 +3689,18 @@ table.pairs td {
 }
 
 /*
+ * 中性的一种，供「自定义」这类说来历而非说好坏的标记
+ *
+ * 不能拿 ok / warn / err 里的任一个顶替：那三个都在说「这件事是好是坏」，而
+ * 「这一条是自己登记的」不含褒贬 —— 用绿色会读成「已审核通过」，恰是它没有的东西。
+ */
+.tag.info {
+  color: var(--info);
+  border-color: color-mix(in srgb, var(--info) 30%, transparent);
+  background: color-mix(in srgb, var(--info) 8%, transparent);
+}
+
+/*
  * 可点选的标签：面板商店按分类筛选用
  *
  * 与 `.tag` 的其余修饰符不同 —— 那些是状态标记（只读），这个是**控件**。故给指针手势与
@@ -4642,6 +4654,148 @@ button.danger.solid:hover:not(:disabled) {
   background: color-mix(in srgb, var(--err) 85%, #fff);
   border-color: color-mix(in srgb, var(--err) 85%, #fff);
   color: #2a1110;
+}
+
+/* ─────────────── 两个市场页的筛选区 ─────────────── */
+
+/*
+ * 筛选区整体：一行工具栏，其下按需长出「已选」一行与展开面板
+ *
+ * **不给它 `.card` 那套底色与阴影。** 它紧贴在页签之下，再加一层卡片会让页签像是
+ * 落在了卡片里 —— 而页签管的是整页，不是这一块。
+ */
+.filterbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  margin-bottom: var(--s4);
+}
+
+/*
+ * 收起态的「已选」一行
+ *
+ * 面板收起后仍要看得见筛掉了什么，否则「怎么只剩 3 个」没有答案。故这一行只在
+ * 有条件时出现（由 `v-if` 管），且每个小标签自带一枚撤销按钮。
+ */
+.chosen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+
+/*
+ * 一枚已选条件
+ *
+ * 形制取自 `.tag`（同一种圆角与字号），但它是个 `button` —— 整枚可点即撤掉这一条，
+ * 故要 `cursor: pointer` 与悬停反馈。用强调色描边而非填充：填充会让它比旁边那些
+ * 表示分类的静态标签更抢眼，而它只是个当前状态的回显。
+ */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: 2px var(--s2);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--accent);
+  font-size: var(--fs-hint);
+  line-height: 1.6;
+  cursor: pointer;
+  transition:
+    background var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+
+.chip:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+/*
+ * 只给读屏器的文字
+ *
+ * 撤销按钮上那个 `×` 读出来是「乘号」，故另给一句「撤掉 xxx」。不用
+ * `display: none` —— 那会让读屏器也跳过它。
+ */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/*
+ * 展开后的面板
+ *
+ * 这一层要底色与描边，因为它是从工具栏「长出来」的一块 —— 没有边界的话，面板里那几排
+ * 标签与页面上其余内容分不开。
+ */
+.filterpanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding: var(--s4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  background: var(--panel);
+}
+
+/*
+ * 一维筛选：左侧固定宽的小标题，右侧自由折行
+ *
+ * 标题列给死 4rem 并右对齐：四个标题字数不等（「首字母」三字、「分类」两字），左对齐时
+ * 右边那些取值排不齐，读起来像四段各自为政的内容。窄屏下改为上下两行（见下方的媒体查询）。
+ */
+.filterrow {
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1fr);
+  gap: var(--s3);
+  align-items: baseline;
+}
+
+.rowlabel {
+  color: var(--muted);
+  font-size: var(--fs-label);
+  text-align: right;
+}
+
+/* 取值自由折行：分类多的索引上这一排会有十几个，而这是使用者主动打开的面板 */
+.rowvals {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+/* 首字母那一排用等宽体：单个字母在比例字体下宽窄不一，排起来像没对齐 */
+.rowvals .tag.mono {
+  min-width: 1.75rem;
+  justify-content: center;
+  text-align: center;
+}
+
+/*
+ * 窄屏：标题落到取值上方
+ *
+ * 4rem 的标题列在手机上会把取值挤成每行一两个。
+ */
+@media (max-width: 560px) {
+  .filterrow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s2);
+  }
+
+  .rowlabel {
+    text-align: left;
+  }
 }
 
 /*
