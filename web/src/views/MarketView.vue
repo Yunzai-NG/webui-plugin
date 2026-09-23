@@ -370,6 +370,24 @@ onMounted(() => {
       往面板上添组件的包在<a :href="hrefOf('store')">面板商店</a>，与此处是两份索引。
     </p>
 
+    <!--
+      首次加载：先摆几块骨架，不给一片空白
+
+      索引要走一趟网络，慢的时候有好几秒。此前那几秒里页面上什么都没有 —— 读不出「在加载」
+      还是「这个索引是空的」。骨架占的正是卡片将要出现的位置，故内容到达时版面不跳。
+      只在**首次**出现（`snapshot` 还没到），刷新索引时不出：那时旧内容还在，拿骨架盖掉
+      已经读得到的东西是倒退。
+    -->
+    <div v-if="snapshot === undefined && loading" class="grid market" aria-hidden="true">
+      <div v-for="n in 6" :key="n" class="card item skeleton-card">
+        <div class="skeleton" style="height: 20px; width: 55%"></div>
+        <div class="skeleton" style="height: 13px; width: 35%"></div>
+        <div class="skeleton" style="height: 13px; width: 100%"></div>
+        <div class="skeleton" style="height: 13px; width: 80%"></div>
+        <div class="skeleton" style="margin-top: auto; height: 32px; width: 60%"></div>
+      </div>
+    </div>
+
     <div class="grid market">
       <article v-for="item in visible" :key="item.name" class="card item">
         <header>

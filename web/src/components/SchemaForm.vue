@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * 模块职责：将一份 SchemaDescriptor 渲染为完整表单，按 group 分区
- * 依赖方向：依赖 SchemaField 与类型
+ * 依赖方向：依赖 SchemaField、SubForm、subform.ts 与类型
  * 生命周期：随所在视图
  * 注意事项：**表单只抛出改动过的路径，不持有整份配置** —— 父组件提交的是补丁，经
  *          `PATCH /api/config/:name` 深合并写入。改成提交整份值（PUT）会抹掉前端没渲染的字段，
@@ -9,9 +9,16 @@
  *
  *          分区按 group 与 order 排列（内核 schema 的 `.group()` / `.order()`）：
  *          排布由声明者决定，不取 Object.keys 的顺序。
+ *
+ *          **嵌套对象成块，不再摊平。** 从前整棵树被递归摊成一串平行的字段行，层级只靠
+ *          左侧一道竖线加缩进表达，一组字段读起来与它上下的字段同级。现在由 `SubForm`
+ *          渲染成带标题的可折叠区块（判据在 subform.ts）。顶层对象仍摊平 —— 它的标题
+ *          就是分区页签上那个名字，再套一层分组等于同一个名字出现两遍。
  */
 import { computed, nextTick, ref, watch } from "vue"
 import SchemaField from "./SchemaField.vue"
+import SubForm from "./SubForm.vue"
+import { sectionNodes, type FormNode } from "../subform.js"
 import { revealTab } from "../tabscroll.js"
 import type { SchemaDescriptor, SchemaIssue } from "../types.js"
 
@@ -183,59 +190,15 @@ const errorOf = computed<Record<string, string>>(() => {
 })
 
 /**
- * 展开一个字段：object 递归为子字段，其余原样返回
+ * 取得某个分区内的节点
  *
- * 递归到叶子而非只展开一层：内核配置就有两层（`server.port`），插件配置可能更深。
- *
- * **`indent` 在此算出，不由字段自行推断**：顶层对象（`server`）不单独成行，它的标题即分区标题，
- * 故其直属子字段层级为 0。字段只看得见自己的路径，判不出首段是分区还是一层嵌套。
- * @param key 字段名
- * @param schema 字段描述
- * @param base 父路径
- * @param parent 父对象的当前值
- * @param depth 本字段所处的缩进层级
- * @returns 叶子字段清单
- */
-function flatten(
-  key: string,
-  schema: SchemaDescriptor,
-  base: string,
-  parent: Record<string, unknown>,
-  depth: number
-): Array<{
-  /** 点号路径 */
-  path: string
-  /** 字段描述 */
-  schema: SchemaDescriptor
-  /** 当前值 */
-  value: unknown
-  /** 同级值，供 showWhen 判断 */
-  siblings: Record<string, unknown>
-  /** 缩进层级 */
-  indent: number
-}> {
-  const path = base === "" ? key : `${base}.${key}`
-  const value = parent[key]
-
-  if (schema.type === "object" && schema.properties !== undefined) {
-    const child = (value ?? {}) as Record<string, unknown>
-    const inner = base === "" ? depth : depth + 1
-    return Object.entries(schema.properties).flatMap(([k, s]) => flatten(k, s, path, child, inner))
-  }
-  return [{ path, schema, value, siblings: parent, indent: depth }]
-}
-
-/**
- * 取得某个分区内的全部叶子字段
+ * 算量在 `subform.ts`：嵌套对象成为一块带标题的分组而非一串带缩进的平行行，
+ * 而「哪个该成组、组里还有什么」是纯粹的取值判断，与渲染无关。
  * @param section 分区
- * @returns 叶子字段清单
+ * @returns 节点清单
  */
-function fieldsOf(section: Section): ReturnType<typeof flatten> {
-  const properties = props.schema.properties ?? {}
-  return section.keys.flatMap(key => {
-    const child = properties[key]
-    return child === undefined ? [] : flatten(key, child, "", props.value, 0)
-  })
+function nodesIn(section: Section): FormNode[] {
+  return sectionNodes(props.schema, section.keys, props.value)
 }
 </script>
 
@@ -270,19 +233,33 @@ function fieldsOf(section: Section): ReturnType<typeof flatten> {
 
     <Transition name="tab" mode="out-in">
     <section v-if="active" :key="active.title" class="card">
-      <!-- 标题在页签上已经写着，故这里不再重复一遍 -->
-      <SchemaField
-        v-for="field in fieldsOf(active)"
-        :key="field.path"
-        :schema="field.schema"
-        :value="field.value"
-        :path="field.path"
-        :siblings="field.siblings"
-        :error="errorOf[field.path]"
-        :disabled="disabled"
-        :indent="field.indent"
-        @update="(path, value) => emit('change', path, value)"
-      />
+      <!--
+        标题在页签上已经写着，故这里不再重复一遍
+
+        叶子字段照常成行，嵌套对象成为一块可折叠的子表单（`SubForm`，其内可再嵌）。
+        `key` 取路径而非序号：`showWhen` 显隐会让同一序号先后指向不同字段，那时 Vue 会
+        复用上一个的 DOM，表现为「输入框里留着另一个字段的值」。
+      -->
+      <template v-for="node in nodesIn(active)" :key="node.path">
+        <SubForm
+          v-if="node.kind === 'group'"
+          :node="node"
+          :error-of="errorOf"
+          :dirty="dirty"
+          :disabled="disabled"
+          @update="(path, value) => emit('change', path, value)"
+        />
+        <SchemaField
+          v-else
+          :schema="node.schema"
+          :value="node.value"
+          :path="node.path"
+          :siblings="node.siblings"
+          :error="errorOf[node.path]"
+          :disabled="disabled"
+          @update="(path, value) => emit('change', path, value)"
+        />
+      </template>
     </section>
     </Transition>
   </div>

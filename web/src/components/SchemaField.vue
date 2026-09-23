@@ -35,12 +35,6 @@ const props = defineProps<{
   error?: string
   /** 是否整体只读 */
   disabled?: boolean
-  /**
-   * 嵌套层级，0 为分区的直属字段；每层以左侧一道竖线加一段缩进表达
-   *
-   * 由父表单按路径算出而非在此推断：首段是否算一层取决于顶层字段是对象还是标量。
-   */
-  indent?: number
 }>()
 
 const emit = defineEmits<{
@@ -144,14 +138,6 @@ const block = computed(() => BLOCK_WIDGETS.has(widget.value))
 
 /** 该字段是否不可编辑 */
 const locked = computed(() => props.disabled === true || props.schema.readonly === true)
-
-/**
- * 缩进层级交给 CSS 变量，缩进量与竖线位置由样式表决定
- *
- * 不在此处算像素：缩进量属间距刻度，写死在组件里会绕过 `--s*` 那套刻度，
- * 日后调整刻度时这一处不会跟着变。
- */
-const indentStyle = computed(() => ({ "--indent": String(props.indent ?? 0) }))
 
 /** 枚举候选 */
 const options = computed<readonly SchemaEnumItem[]>(() => props.schema.enum ?? [])
@@ -688,7 +674,7 @@ function setDuration(text: string, unit: string): void {
 </script>
 
 <template>
-  <div v-if="visible" class="srow" :class="{ bad: error !== undefined, block, nested: (indent ?? 0) > 0 }" :style="indentStyle">
+  <div v-if="visible" class="srow" :class="{ bad: error !== undefined, block }">
     <span class="s-icon"><AppIcon :path="icon" /></span>
 
     <div class="s-text">

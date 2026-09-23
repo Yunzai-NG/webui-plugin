@@ -20,6 +20,7 @@
 -->
 <script setup lang="ts">
 import { computed, ref } from "vue"
+import { collapseHooks } from "../collapse.js"
 import {
   FITS_GATE,
   activeCount,
@@ -164,6 +165,15 @@ function tailOf(url: string): string {
 function clearAll(): void {
   emit("update:modelValue", emptyCriteria())
 }
+
+/* ────────────────────── 展开过渡 ────────────────────── */
+
+/*
+ * 高度过渡的三个钩子在 collapse.ts，与子表单分组共用
+ *
+ * `height: auto` 无从插值，纯 CSS 写不出「从 0 长到内容高度」，故要现量一次真实高度。
+ * 那段算量与本组件无关（谁在展开都一样），复制一份则下一次只会有一处被改对。
+ */
 </script>
 
 <template>
@@ -217,7 +227,17 @@ function clearAll(): void {
       </button>
     </p>
 
-    <div v-if="open" id="market-facets" class="filterpanel">
+    <!--
+      展开与收起走高度过渡
+
+      **高度不能靠 CSS 过渡到 `auto`** —— `height: auto` 无从插值，写了也是硬切。故由这四个
+      钩子量一次真实高度（`scrollHeight`）再让它从 0 走到那个数，播完把 `height` 交还给
+      样式表（置空），否则面板此后被撑高时会停在量到的那一刻。
+
+      `overflow: hidden` 只在过渡期间加：常态下留着它会把面板里的东西裁掉。
+    -->
+    <Transition name="expand" v-on="collapseHooks">
+      <div v-if="open" id="market-facets" class="filterpanel">
       <div v-if="initials.length > 0" class="filterrow">
         <span class="rowlabel">首字母</span>
         <span class="rowvals">
@@ -301,6 +321,7 @@ function clearAll(): void {
           </span>
         </span>
       </div>
-    </div>
+      </div>
+    </Transition>
   </div>
 </template>

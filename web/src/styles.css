@@ -1199,29 +1199,38 @@ h3 {
 }
 
 /*
- * 页面切换：淡入并微微上移
+ * 页面切换：淡入并上移
  *
- * 位移只取 4px：页面切换是高频动作，位移一大就成了每次点导航都要等的一段动画。
+ * 位移取 10px（原为 4px）。4px 在 1440px 宽的屏幕上读不出方向 —— 那个幅度接近
+ * 「闪一下」，于是切页面时只看到内容忽然换掉，而看不出它是**进来**的。10px 在
+ * 一屏内容的尺度上仍是小动作，却足以让眼睛认出运动方向。
+ *
+ * 进场用 `--ease-settle`（cubic-bezier(0.22, 1, 0.36, 1)）而非 `--ease-out`：前者
+ * 起步快、收尾长,读作「滑到位」；后者匀速偏多,读作「移动了一段距离」。落位那一刻
+ * 的手感差别全在这条曲线上。
+ *
  * 只过渡 opacity 与 transform，两者都不触发重排。整段自动落入文末的
  * `prefers-reduced-motion` 关闭块。
  */
 .page-enter-from,
 .page-leave-to {
   opacity: 0;
-  transform: translateY(4px);
+  transform: translateY(10px);
 }
 
 /*
- * 进出同向、同时长：`mode="out-in"` 下两段动画首尾相接，总时长是两者之和。
+ * 进出同向：`mode="out-in"` 下两段动画首尾相接，总时长是两者之和。
  * 一进一出取相反方向（旧页上移、新页下移）会让高频的导航点击看起来像内容在弹，
  * 而两次点击若间隔短于总时长，第二次还得排在第一次的退场之后。
  *
- * 退场比进场短一档：使用者点了导航就已经知道要走，等旧页慢慢淡出没有信息量。
+ * **退场仍压在 --dur-1**：使用者点了导航就已经知道要走,等旧页慢慢淡出没有信息量。
+ * 进场抬到 --dur-3,故一次切换是 150 + 350ms —— 退场那一半没有变长,总时长的增加
+ * 全花在「新内容进来」这件有信息量的事上。
  */
 .page-enter-active {
   transition:
-    opacity var(--dur-2) var(--ease-out),
-    transform var(--dur-2) var(--ease-out);
+    opacity var(--dur-3) var(--ease-settle),
+    transform var(--dur-3) var(--ease-settle);
 }
 
 .page-leave-active {
@@ -1233,14 +1242,18 @@ h3 {
 /*
  * 页签切换过渡
  *
- * 时长取 --dur-1、位移 6px，且不缩放：页签同样配 `mode="out-in"`，350ms 一进一出
- * 是 700ms —— 在同一张卡里换个页签要等将近一秒，快速对比两个页签的内容时尤其难受。
+ * 位移取 10px、进场 --dur-2、退场仍 --dur-1，且不缩放。
+ *
+ * 时长这一项**刻意压在页面切换之下**：页签同样配 `mode="out-in"`，若两侧都取
+ * --dur-3 则一次切换将近 700ms —— 在同一张卡里换个页签要等这么久，快速对比两个
+ * 页签的内容时尤其难受。故 250 + 150ms：比原来的 300ms 略长，但换来了看得清的方向。
+ *
  * `scale` 一并去掉：它让页签内的文字在过渡期间发虚。
  */
 .tab-enter-active {
   transition:
-    opacity var(--dur-1) var(--ease-out),
-    transform var(--dur-1) var(--ease-out);
+    opacity var(--dur-2) var(--ease-settle),
+    transform var(--dur-2) var(--ease-settle);
 }
 
 .tab-leave-active {
@@ -1251,12 +1264,12 @@ h3 {
 
 .tab-enter-from {
   opacity: 0;
-  transform: translateX(6px);
+  transform: translateX(10px);
 }
 
 .tab-leave-to {
   opacity: 0;
-  transform: translateX(-6px);
+  transform: translateX(-10px);
 }
 
 /* ─────────────── 卡片与网格 ─────────────── */
@@ -2280,28 +2293,104 @@ textarea {
 }
 
 /*
- * 嵌套字段的缩进与竖线
+ * ─────────────── 子表单分组 ───────────────
  *
- * `--indent` 由 SchemaField 按层级注入。竖线只画最内一层：更外层的线会与分隔线
- * 交叉成网格，反而读不出层级。
+ * 嵌套对象自成一块内凹的区块，层级由**盒子**表达。此前是把嵌套字段摊成一串平行的
+ * 字段行、只在左侧画一道竖线加缩进 —— 一组字段读起来与它上下的字段同级，那道线要
+ * 对照着数才认得出属于谁。
  *
- * **现有配置均为两层（分区 + 字段），故这套规则在真实数据上无处生效** —— 为插件配置
- * 出现三层时准备。已以一份三层的构造 schema 核对过（拦下 `/api/config` 的响应换成
- * 构造值，渲染仍走真实的 SchemaForm / SchemaField）。
+ * 底色取 `--bg`（页面底色）而非另调一个值：它在两套配色下都与 `--panel` 有分别，
+ * 浅色下是白底上的一块灰、深色下是灰底上的一块更深，故「内凹」这层意思无须各写一套。
  */
-.srow.nested {
-  position: relative;
-  padding-left: calc(var(--indent) * var(--s5));
+.subform {
+  margin: var(--s3) 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-ctl);
+  background: var(--bg);
+  overflow: hidden;
+  transition: border-color var(--dur-1) var(--ease);
 }
 
-.srow.nested::before {
-  content: "";
-  position: absolute;
-  left: calc((var(--indent) - 1) * var(--s5) + var(--s2));
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: var(--border-strong);
+.subform:hover {
+  border-color: var(--border-strong);
+}
+
+/*
+ * 组内含浮层时放开裁切，判据与 `.card` 那一处同形
+ *
+ * `overflow: hidden` 会把组内枚举字段的自绘下拉在区块边界处切掉半截（理由见 `.cdd-menu`
+ * 一节：绝对定位的元素被最近的带 `overflow` 的祖先裁切，`z-index` 救不回来）。分组是嵌套的，
+ * 外层组同样要放开 —— `:has()` 的后代匹配天然涵盖任意深度，故这一条对多层嵌套一并成立。
+ */
+.subform:has(.cdd),
+.subform:has(.menu) {
+  overflow: visible;
+}
+
+/* 组内有字段存不进去时整块转错误色：那一组是折着的，不标出来就找不到红字在哪 */
+.subform.bad {
+  border-color: var(--err);
+}
+
+/*
+ * 标题条整行可点
+ *
+ * 折角只有 16px，只让它可点会让人以为这一组展不开。标题与折角分列两栏、说明落到
+ * 第二行：三者挤在一行时，说明会把折角推到视口之外。
+ */
+.subform-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s1) var(--s3);
+  width: 100%;
+  margin: 0;
+  padding: var(--s3) var(--s4);
+  border: 0;
+  border-radius: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.subform-head:hover {
+  background: var(--raise);
+}
+
+.subform-title {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+  font-weight: 600;
+  font-size: var(--fs-body);
+}
+
+.subform-head .hint {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.subform-caret {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+}
+
+.subform-head:hover .subform-caret {
+  color: var(--text);
+}
+
+/*
+ * 组内区域
+ *
+ * 上缘留一道分隔线而非留白：这一块本就内凹，再加留白会让标题条与内容读成两块东西。
+ * 展开收起走 `.expand-*`（与筛选面板同一套，高度由 collapse.ts 现量）。
+ */
+.subform-body {
+  padding: 0 var(--s4) var(--s3);
+  border-top: 1px solid var(--border);
 }
 
 /*
@@ -3466,8 +3555,14 @@ a.button {
     all var(--dur-2) var(--ease);
 }
 
-/* 按钮悬停效果 - 大厂级微交互 */
-button:hover:not(:disabled),
+/*
+ * 按钮悬停效果 - 大厂级微交互
+ *
+ * `.subform-head` 排除在外：它是子表单那块分组的整条标题栏（整行可点），不是一枚按钮。
+ * 套上这一组会让整条栏变强调色、浮起投影再抬 1px —— 一块内凹区块的标题读作「一个很宽的
+ * 按钮」，且抬起时它与下面的组内区域之间会裂开一道缝。它自己的悬停只换底色（见上方）。
+ */
+button:hover:not(:disabled):not(.subform-head),
 a.button:hover {
   border-color: var(--accent);
   color: var(--accent);
@@ -3477,7 +3572,7 @@ a.button:hover {
 }
 
 /* 按下效果 - 物理反馈 */
-button:active:not(:disabled),
+button:active:not(:disabled):not(.subform-head),
 a.button:active {
   transform: translateY(0);
   box-shadow: var(--shadow-sm);
@@ -4748,6 +4843,43 @@ button.danger.solid:hover:not(:disabled) {
 }
 
 /*
+ * 面板展开：从工具栏「长出来」，而不是凭空出现
+ *
+ * 高度由 MarketFilter.vue 的三个钩子现量后写成内联样式（`height: auto` 无从插值，见那里的
+ * 注释）。此处只管过渡本身与三件配套的事：
+ *
+ * - **`overflow: hidden` 不能省。** 高度归零时里面那几排标签仍占着原来的位置，不裁掉的话
+ *   它们会溢出到下面的卡片上，读作「面板收起时内容漏了出来」。
+ * - **上下内边距一起过渡。** 只动高度的话，`padding` 那 16px 撑着，收起后仍留一道空条 ——
+ *   看起来像收了一半。
+ * - **描边宽度也归零**：一条 1px 的横线留在原处，比留一道空条更显眼。
+ *
+ * 收起比展开短一档：点了「筛选」就已经知道要收，等它慢慢合上没有信息量 —— 与页面切换
+ * 同一个判断。
+ */
+.expand-enter-from,
+.expand-leave-to {
+  height: 0;
+  opacity: 0;
+  padding-block: 0;
+  border-block-width: 0;
+}
+
+.expand-enter-active,
+.expand-leave-active {
+  overflow: hidden;
+  transition:
+    height var(--dur-2) var(--ease-settle),
+    opacity var(--dur-2) var(--ease),
+    padding-block var(--dur-2) var(--ease-settle),
+    border-block-width var(--dur-2) var(--ease-settle);
+}
+
+.expand-leave-active {
+  transition-duration: var(--dur-1);
+}
+
+/*
  * 一维筛选：左侧固定宽的小标题，右侧自由折行
  *
  * 标题列给死 4rem 并右对齐：四个标题字数不等（「首字母」三字、「分类」两字），左对齐时
@@ -4796,6 +4928,251 @@ button.danger.solid:hover:not(:disabled) {
   .rowlabel {
     text-align: left;
   }
+}
+
+/* ─────────────── 入场动画 ─────────────── */
+/*
+ * 内容出现要有动画，不只是状态变化有过渡
+ *
+ * 此前全站 300 余处 `transition` 却只有两个 `@keyframes`：**状态变一变有过渡，内容
+ * 头一次出现却是硬切**。于是切到插件页时十几张卡片同时啪一下就位 —— 那一下正是
+ * 「僵硬」的主要来源，而它不是某一处过渡写得不好，是压根没写。
+ *
+ * 一律用 `animation` 而非 `transition`：这些元素是新插入 DOM 的，没有「变化前的值」
+ * 可供过渡。也因此它们自动落入文末那个 `prefers-reduced-motion` 块 —— 那里的通配
+ * 选择器同时压了 `animation-duration`。
+ *
+ * `backwards` 不能省：带 `animation-delay` 的元素在延迟期间若不取首帧，会先以最终
+ * 样式显示一瞬再跳回起点闪一下 —— 那比没有动画更糟。
+ */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* 逐个错开的入场，供卡片与表格行 */
+@keyframes rise-in-sm {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/*
+ * 网格里的卡片：逐个错开入场
+ *
+ * **错开是这一组的全部意义**。一批同类卡片齐步出现读作「刷新了」，逐个错开几十毫秒
+ * 才读作「内容在铺开」，而两者的代价完全一样。
+ *
+ * 间隔取 40ms、只排到第 12 张：`nth-child` 是硬编码的一串，排到几十张会让最后几张
+ * 等上一秒多 —— 那时使用者已经在看内容了，还有东西在动就成了干扰。第 12 张之后
+ * 一律取第 12 档的延迟，故长列表的尾部一起进场。
+ */
+.grid > .card,
+.grid > .item {
+  animation: rise-in-sm var(--dur-2) var(--ease-out) backwards;
+}
+
+.grid > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.grid > *:nth-child(2) {
+  animation-delay: 40ms;
+}
+
+.grid > *:nth-child(3) {
+  animation-delay: 80ms;
+}
+
+.grid > *:nth-child(4) {
+  animation-delay: 120ms;
+}
+
+.grid > *:nth-child(5) {
+  animation-delay: 160ms;
+}
+
+.grid > *:nth-child(6) {
+  animation-delay: 200ms;
+}
+
+.grid > *:nth-child(7) {
+  animation-delay: 240ms;
+}
+
+.grid > *:nth-child(8) {
+  animation-delay: 280ms;
+}
+
+.grid > *:nth-child(9) {
+  animation-delay: 320ms;
+}
+
+.grid > *:nth-child(10) {
+  animation-delay: 360ms;
+}
+
+.grid > *:nth-child(11) {
+  animation-delay: 400ms;
+}
+
+.grid > *:nth-child(n + 12) {
+  animation-delay: 440ms;
+}
+
+/*
+ * 表格行：同样逐行错开，间隔比卡片更短
+ *
+ * 行比卡片矮得多、数量也多得多，40ms 会让一张二十行的表拖到八百毫秒。24ms 下
+ * 十行恰好在 --dur-2 的量级内铺完。
+ *
+ * **只对 `tbody > tr` 生效**，表头不动：表头是这张表的框架而非内容，它跟着晃会让
+ * 整张表读起来在漂。
+ */
+table.rows tbody > tr,
+table.table tbody > tr {
+  animation: rise-in-sm var(--dur-1) var(--ease-out) backwards;
+}
+
+table tbody > tr:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+table tbody > tr:nth-child(2) {
+  animation-delay: 24ms;
+}
+
+table tbody > tr:nth-child(3) {
+  animation-delay: 48ms;
+}
+
+table tbody > tr:nth-child(4) {
+  animation-delay: 72ms;
+}
+
+table tbody > tr:nth-child(5) {
+  animation-delay: 96ms;
+}
+
+table tbody > tr:nth-child(6) {
+  animation-delay: 120ms;
+}
+
+table tbody > tr:nth-child(7) {
+  animation-delay: 144ms;
+}
+
+table tbody > tr:nth-child(8) {
+  animation-delay: 168ms;
+}
+
+table tbody > tr:nth-child(n + 9) {
+  animation-delay: 192ms;
+}
+
+/*
+ * 提示条：从上方压进来
+ *
+ * 横幅是对刚才那个动作的回话（「已安装」「更新失败」），而它出现的位置往往在视口之外
+ * 或边缘。硬切出现时使用者只看到页面某处多了一块颜色，动一下才认得出是新来的。
+ */
+.banner {
+  animation: rise-in var(--dur-2) var(--ease-settle) backwards;
+}
+
+/*
+ * 事实表：整块淡入
+ *
+ * 不逐行错开 —— `dl.facts` 里一行是「名称 + 取值」两个元素，按 `nth-child` 错开会让
+ * 名称与它的取值分两拍出现，读起来像两列各自在动。
+ */
+dl.facts {
+  animation: rise-in-sm var(--dur-2) var(--ease-out) backwards;
+}
+
+/*
+ * 骨架微光，供加载态
+ *
+ * 一行静止的「加载中…」读不出「还在动」还是「卡住了」。这一条与那枚转圈同一个用意，
+ * 区别在于它占的是内容将要出现的位置，故不必先给一块空白再换成内容。
+ */
+@keyframes skeleton-sweep {
+  from {
+    background-position: -160% 0;
+  }
+
+  to {
+    background-position: 260% 0;
+  }
+}
+
+.skeleton {
+  border-radius: var(--r-ctl);
+  background:
+    linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in srgb, var(--text) 6%, transparent) 50%,
+      transparent 100%
+    ),
+    var(--panel);
+  background-size:
+    200% 100%,
+    100% 100%;
+  background-repeat: no-repeat;
+  animation: skeleton-sweep 1.4s var(--ease) infinite;
+}
+
+/*
+ * 骨架卡片：几条占位横杠竖排
+ *
+ * 尺寸由调用处以内联样式给出（每条多宽多高按它替代的那行内容定），此处只管排布。
+ * `.card.item` 已是 flex 列，这里只多给一档间距 —— 骨架的几条比真实内容更需要留白，
+ * 否则一叠灰杠糊成一块。
+ */
+.skeleton-card {
+  gap: var(--s3);
+}
+
+/*
+ * 数字变化不跳字
+ *
+ * 计数块与环心的数值每拍都在变。`font-variant-numeric: tabular-nums` 已经让字宽固定，
+ * 但取值本身仍是硬切 —— 一个从 3 跳到 12 的计数看起来像闪了一下。这里只过渡颜色：
+ * 数字本身无从插值（那要 JS 逐帧写值），而**让它在变的一瞬亮一下**足以说明「这个数
+ * 刚更新过」，代价是一条 CSS。
+ */
+.counts dd,
+.stat b,
+.ring-value {
+  transition: color var(--dur-2) var(--ease);
+}
+
+/*
+ * 可点的东西统一抬一下
+ *
+ * 此前只有部分按钮有 hover 反馈，而同一页上「有的按钮会动、有的不会」读作没做完，
+ * 不是读作层次。抬 1px 加边框变色，不投影 —— 投影只留给真正浮起的那几样（规则 3）。
+ *
+ * `:not(:disabled)` 不能省：一个禁用的按钮跟着抬起等于在说它可点。
+ *
+ * **文字链形制的按钮排除在外**（`.link` 是行内的「查看详情」一类，`.log-more` 是日志页
+ * 底部那条「加载更多」，`.icon` 是模态右上角那个叉）：它们没有边框与底色，读作一段可点
+ * 的文字而非一个按钮，抬起会让那行文字在指针经过时上下跳一格。
+ *
+ * `.subform-head` 同样排除：它是一整条标题栏，抬起会让它与下面的组内区域之间裂开一道缝。
+ */
+button:hover:not(:disabled):not(.link):not(.log-more):not(.icon):not(.subform-head),
+a.button:hover {
+  transform: translateY(-1px);
+}
+
+button:active:not(:disabled):not(.link):not(.log-more):not(.icon):not(.subform-head),
+a.button:active {
+  transform: translateY(0);
 }
 
 /*
