@@ -116,3 +116,24 @@ export function describePattern(source: string): string | undefined {
   }
   return undefined
 }
+
+/**
+ * 把颜色文本规整成原生取色器认得的 `#rrggbb`
+ *
+ * `<input type="color">` 只收六位十六进制,不认三位简写(`#000`)、不认渐变串
+ * (`gradient:...`)、不认颜色名。故取色器旁边始终留一个文本框收那些写法,而这里只负责
+ * **在取色器上把当前值尽力显示出来**:认得的规整成六位,认不得的返回 undefined(由调用方
+ * 退回一个中性色,取色器不至于空着)。三位简写按 `#rgb → #rrggbb` 逐位翻倍,与 CSS 一致。
+ * @param text 颜色文本
+ * @returns 六位十六进制;认不出时 undefined
+ */
+export function normalizeHex(text: string): string | undefined {
+  const value = text.trim().toLowerCase()
+  if (/^#[0-9a-f]{6}$/.test(value)) return value
+  if (/^#[0-9a-f]{3}$/.test(value)) {
+    const [, r = "", g = "", b = ""] = /^#(.)(.)(.)$/.exec(value) ?? []
+    return `#${r}${r}${g}${g}${b}${b}`
+  }
+  return undefined
+}
+

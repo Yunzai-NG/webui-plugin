@@ -18,6 +18,7 @@
 import { computed, ref } from "vue"
 import AppIcon from "./AppIcon.vue"
 import SchemaField from "./SchemaField.vue"
+import ObjectList from "./ObjectList.vue"
 import { collapseHooks } from "../collapse.js"
 import { countUnder, type GroupNode } from "../subform.js"
 
@@ -95,6 +96,14 @@ const open = computed(() => unfolded.value || badCount.value > 0)
         <template v-for="child in node.children" :key="child.path">
           <SubForm
             v-if="child.kind === 'group'"
+            :node="child"
+            :error-of="errorOf"
+            :dirty="dirty"
+            :disabled="disabled"
+            @update="(path, value) => emit('update', path, value)"
+          />
+          <ObjectList
+            v-else-if="child.kind === 'list'"
             :node="child"
             :error-of="errorOf"
             :dirty="dirty"

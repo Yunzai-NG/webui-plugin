@@ -18,6 +18,7 @@
 import { computed, nextTick, ref, watch } from "vue"
 import SchemaField from "./SchemaField.vue"
 import SubForm from "./SubForm.vue"
+import ObjectList from "./ObjectList.vue"
 import { sectionNodes, type FormNode } from "../subform.js"
 import { revealTab } from "../tabscroll.js"
 import type { SchemaDescriptor, SchemaIssue } from "../types.js"
@@ -243,6 +244,14 @@ function nodesIn(section: Section): FormNode[] {
       <template v-for="node in nodesIn(active)" :key="node.path">
         <SubForm
           v-if="node.kind === 'group'"
+          :node="node"
+          :error-of="errorOf"
+          :dirty="dirty"
+          :disabled="disabled"
+          @update="(path, value) => emit('change', path, value)"
+        />
+        <ObjectList
+          v-else-if="node.kind === 'list'"
           :node="node"
           :error-of="errorOf"
           :dirty="dirty"

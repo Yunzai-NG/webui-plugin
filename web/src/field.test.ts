@@ -7,7 +7,7 @@
  *          而是「不该被识别的也给出了说明」——故此处对反例的断言比对正例的更多。
  */
 import { describe, expect, it } from "vitest"
-import { describePattern, lengthLimitOf, rangeTextOf } from "./field.js"
+import { describePattern, lengthLimitOf, normalizeHex, rangeTextOf } from "./field.js"
 import type { SchemaDescriptor } from "./types.js"
 
 describe("长度计数", () => {
@@ -89,5 +89,31 @@ describe("正则说明", () => {
 
   it("空正则不说", () => {
     expect(describePattern("")).toBeUndefined()
+  })
+})
+
+describe("normalizeHex", () => {
+  it("六位十六进制原样返回（转小写）", () => {
+    expect(normalizeHex("#a1b2c3")).toBe("#a1b2c3")
+    expect(normalizeHex("#A1B2C3")).toBe("#a1b2c3")
+  })
+
+  it("三位简写逐位翻倍成六位 —— 与 CSS 同一规则", () => {
+    expect(normalizeHex("#000")).toBe("#000000")
+    expect(normalizeHex("#f0a")).toBe("#ff00aa")
+  })
+
+  it("首尾空白不影响", () => {
+    expect(normalizeHex("  #fff  ")).toBe("#ffffff")
+  })
+
+  it("**取色器表达不了的写法一律认不出** —— 渐变串、颜色名、无 # 前缀", () => {
+    // 认不出时调用方退回中性色，取色器不至于空着；真实值仍以文本框为准
+    expect(normalizeHex("gradient:271deg,#001bff,#00f0ff")).toBeUndefined()
+    expect(normalizeHex("red")).toBeUndefined()
+    expect(normalizeHex("000000")).toBeUndefined()
+    expect(normalizeHex("#12345")).toBeUndefined()
+    expect(normalizeHex("#gggggg")).toBeUndefined()
+    expect(normalizeHex("")).toBeUndefined()
   })
 })

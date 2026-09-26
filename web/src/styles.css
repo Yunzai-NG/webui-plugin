@@ -2394,6 +2394,127 @@ textarea {
 }
 
 /*
+ * ─────────────── 对象数组 ───────────────
+ *
+ * 外面只留一行摘要（标题 + 「N 项」+「配置」按钮），元素卡片全收进弹窗 —— 一个列表铺开
+ * 会占很高,把下面的字段推走。摘要那一行形制取 `.srow`(与字段行同一道分隔线),右侧一枚
+ * 「配置」按钮点开弹窗。
+ */
+.objlist {
+  border-top: 1px solid var(--border);
+}
+
+.objlist:first-of-type {
+  border-top: none;
+}
+
+.objlist-bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s3) 0;
+}
+
+.objlist-label .hint {
+  margin: var(--s1) 0 0;
+}
+
+.objlist-open {
+  flex: none;
+}
+
+/* 弹窗里那一叠元素卡片 */
+.objlist-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  margin: var(--s3) 0;
+}
+
+/*
+ * 单个元素卡片
+ *
+ * 取 `--raise` 而非页面底色:弹窗本身是 `--panel`,卡片比它高一档才浮得出来。
+ */
+.objlist-item {
+  border: 1px solid var(--border);
+  border-radius: var(--r-ctl);
+  background: var(--raise);
+  padding: 0 var(--s4) var(--s2);
+}
+
+.objlist-item.bad {
+  border-color: var(--err);
+}
+
+/* 元素头一行:「第 N 项」与删除,以分隔线与下方字段隔开 */
+.objlist-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--s2) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+/*
+ * 添加按钮:整行虚线框
+ *
+ * 虚线与实线按钮区分开 ——「添加」是往列表里追加,不是一个普通动作,虚线读作「这里可以再放一个」。
+ */
+.objlist-add {
+  width: 100%;
+  border: 1px dashed var(--border-strong);
+  background: none;
+  color: var(--muted);
+}
+
+.objlist-add:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/*
+ * 颜色控件：取色方块 + 文本框
+ *
+ * 方块是原生 `<input type="color">`，各系统给的取色盘不一。把它的内边距/边框抹平，
+ * 只留一个圆角色块；文本框占余下的宽,收那些取色器表达不了的写法(渐变串、三位简写)。
+ */
+.colorpick {
+  display: flex;
+  gap: var(--s2);
+  align-items: center;
+  width: 100%;
+}
+
+.colorpick-dot {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-ctl);
+  background: none;
+  cursor: pointer;
+}
+
+/* 各浏览器给取色块套的内衬,抹掉才不会露出一圈白边 */
+.colorpick-dot::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.colorpick-dot::-webkit-color-swatch {
+  border: none;
+  border-radius: calc(var(--r-ctl) - 3px);
+}
+
+.colorpick input[type="text"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+}
+
+/*
  * 开关
  *
  * 外观是自绘的，控件仍是原生复选框（透明地压在轨道上）：空格键切换、读屏播报
@@ -4383,6 +4504,10 @@ html:has(dialog[open]) {
  * 三处模态（确认框、目录浏览器、内容模态）共用这一组类名，由各自的 `<Transition name="pop">`
  * 挂上。淡入之外另取 8px 上移与 2% 放大 —— 只淡入的话，一块占去半屏的面板像是「突然亮起来」。
  *
+ * **进场与离场不同曲线、不同时长。** 进场取 `ease-settle`（末端减速），一块面板据此「落定」
+ * 而非匀速滑到位；离场缩到 `--dur-1` 并取 `ease-in`（起步慢、收尾快）—— 点了关就已经知道
+ * 要走，一个赖着不走的模态挡着后面的操作，与筛选面板收起短一档同一个判断。
+ *
  * **离场能播出来，靠的是三件事一起成立**，缺一则元素在离场前就已消失或已退出 top layer：
  * `<Transition>` 等过渡结束才卸载；各组件拦掉了原生 `cancel`（否则按 `Esc` 时浏览器自行
  * `close()`，dialog 立刻 `display: none`）；`open` 转假时组件不再主动调 `close()`。
@@ -4401,23 +4526,32 @@ html:has(dialog[open]) {
   opacity: 0;
 }
 
-.pop-enter-active,
-.pop-leave-active {
+.pop-enter-active {
   transition:
-    opacity var(--dur-2) var(--ease),
-    transform var(--dur-2) var(--ease);
+    opacity var(--dur-2) var(--ease-settle),
+    transform var(--dur-2) var(--ease-settle);
 }
 
-.pop-enter-active::backdrop,
+.pop-leave-active {
+  transition:
+    opacity var(--dur-1) var(--ease-in),
+    transform var(--dur-1) var(--ease-in);
+}
+
+.pop-enter-active::backdrop {
+  transition: opacity var(--dur-2) var(--ease-settle);
+}
+
 .pop-leave-active::backdrop {
-  transition: opacity var(--dur-2) var(--ease);
+  transition: opacity var(--dur-1) var(--ease-in);
 }
 
 /*
  * 窄屏的抽屉改为自底部滑入
  *
  * 抽屉是贴着屏幕下沿的（见下方 `.modal.sheet` 的窄屏规则），其方向感来自「从下面推上来」。
- * 此时不缩放：一块满宽的面板缩放时两侧会露出底色，像是没铺满。
+ * 此时不缩放：一块满宽的面板缩放时两侧会露出底色，像是没铺满。进场同样取 `ease-settle`
+ * 让它推上来后落定，离场缩短并取 `ease-in` 快速退下去。
  */
 @media (max-width: 700px) {
   .pop-enter-from.sheet,
@@ -4425,11 +4559,16 @@ html:has(dialog[open]) {
     transform: translateY(16px);
   }
 
-  .pop-enter-active.sheet,
+  .pop-enter-active.sheet {
+    transition:
+      opacity var(--dur-2) var(--ease-settle),
+      transform var(--dur-3) var(--ease-settle);
+  }
+
   .pop-leave-active.sheet {
     transition:
-      opacity var(--dur-2) var(--ease),
-      transform var(--dur-3) var(--ease);
+      opacity var(--dur-1) var(--ease-in),
+      transform var(--dur-2) var(--ease-in);
   }
 }
 

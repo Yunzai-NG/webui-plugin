@@ -17,7 +17,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import AppIcon from "./AppIcon.vue"
 import { CRON_FIELDS, explodeCron, joinCron, previewCron } from "../cron.js"
 import { DUR_UNITS, joinDuration, splitDuration } from "../duration.js"
-import { describePattern, lengthLimitOf, rangeTextOf } from "../field.js"
+import { describePattern, lengthLimitOf, normalizeHex, rangeTextOf } from "../field.js"
 import { datetime } from "../format.js"
 import { askPath } from "../pathpick.js"
 import type { SchemaDescriptor, SchemaEnumItem } from "../types.js"
@@ -67,7 +67,9 @@ const ICONS = {
   /** 路径：文件夹 */
   path: "M4 7.5A1.5 1.5 0 0 1 5.5 6h3l2 2.5h8A1.5 1.5 0 0 1 20 10v7.5A1.5 1.5 0 0 1 18.5 19h-13A1.5 1.5 0 0 1 4 17.5z",
   /** 时长与 cron：钟面 */
-  time: "M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16M12 8.2v4.1l2.9 1.8"
+  time: "M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16M12 8.2v4.1l2.9 1.8",
+  /** 颜色：一滴颜料 */
+  color: "M12 4c3.2 3.9 5 6.4 5 8.8a5 5 0 0 1-10 0C7 10.4 8.8 7.9 12 4"
 }
 
 /** widget → 图标键 */
@@ -86,7 +88,8 @@ const ICON_OF: Record<string, keyof typeof ICONS> = {
   duration: "time",
   cron: "time",
   file: "path",
-  dir: "path"
+  dir: "path",
+  color: "color"
 }
 
 /**
@@ -357,6 +360,14 @@ const patternHint = computed(() => {
 
 /** 字数或项数计数，随输入实时变化 */
 const limit = computed(() => lengthLimitOf(props.schema, props.value))
+
+/**
+ * 取色器上要显示的颜色
+ *
+ * 原生取色器只认 `#rrggbb`，故读不出六位色时退回黑 —— 那只影响那个方块的显示，
+ * 真实值仍以旁边的文本框为准（渐变串、颜色名都得走文本框）。
+ */
+const hexColor = computed(() => normalizeHex(String(props.value ?? "")) ?? "#000000")
 
 /* ─────────────── 多选 ─────────────── */
 
@@ -993,6 +1004,35 @@ function setDuration(text: string, unit: string): void {
           @keydown.enter.prevent="commitAdd()"
           @keydown.esc.prevent="cancelAdd()"
           @blur="commitAdd()"
+        />
+      </div>
+
+      <!--
+        颜色：一个取色方块 + 一个文本框
+
+        取色方块给的是原生 `<input type="color">`（点开即系统的取色盘/色环）；文本框留着
+        是因为它能表达取色器表达不了的写法 —— 三位简写 `#000`、渐变串 `gradient:...`、
+        颜色名。两者写的是同一个值：动方块即把六位色写进去，动文本框则方块尽力跟随
+        （跟不上就显黑，见 hexColor）。
+      -->
+      <div v-else-if="widget === 'color'" class="colorpick">
+        <input
+          type="color"
+          class="colorpick-dot"
+          :value="hexColor"
+          :disabled="locked"
+          :aria-label="`${label}取色`"
+          @input="set(($event.target as HTMLInputElement).value)"
+        />
+        <input
+          :id="path"
+          type="text"
+          :value="String(value ?? '')"
+          :placeholder="schema.placeholder ?? '#RRGGBB，或 gradient:… 等'"
+          autocomplete="off"
+          spellcheck="false"
+          :disabled="locked"
+          @input="set(($event.target as HTMLInputElement).value)"
         />
       </div>
 
