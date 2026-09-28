@@ -50,7 +50,7 @@ interface DocGroup {
  * 文档入口
  *
  * **分组与顺序照抄文档站的侧边栏**（`docs/.vitepress/config.mts` 的 `sidebar`）：
- * 平铺一列时「官方插件」那七页会把另外十几条挤没，而使用者是按侧边栏的结构记路的。
+ * 平铺一列时「官方插件」那十来页会把另外十几条挤没，而使用者是按侧边栏的结构记路的。
  * 文档站加页时此处一并加 —— 两处不同步的表现是面板里查不到一篇已经存在的文档。
  */
 const DOC_GROUPS: readonly DocGroup[] = [
@@ -59,10 +59,30 @@ const DOC_GROUPS: readonly DocGroup[] = [
     docs: [
       { title: "快速开始", desc: "装 CLI、初始化目录、启动与打开面板", path: "getting-started" },
       { title: "CLI 命令", desc: "逐命令的作用、选项与注意事项", path: "cli" },
+      { title: "部署与长期运行", desc: "开机自启、pm2 / systemd 托管，与 Windows 出图黑框的规避", path: "deploy" },
       { title: "从源码构建", desc: "改框架自身或跑在未发布的提交上", path: "from-source" },
       { title: "配置与面板", desc: "内核配置逐项说明，与本面板的配置页对应", path: "config" }
     ]
   },
+  {
+    title: "官方插件",
+    docs: [
+      { title: "一览与两个市场", desc: "官方插件有哪些、各自装在哪个市场", path: "official-plugins" },
+      { title: "插件商店", desc: "浏览插件索引里的全部插件，与本面板的插件市场同源", path: "store" },
+      { title: "webui（面板）", desc: "本面板自身：十个页面、面板插件的宿主与商店", path: "plugins/webui" },
+      { title: "adapter-napcat（QQ）", desc: "经 NapCat 接入 QQ 的适配器", path: "plugins/adapter-napcat" },
+      { title: "adapter-qqbot（QQ 官方）", desc: "QQ 开放平台机器人：群、私聊与频道", path: "plugins/adapter-qqbot" },
+      { title: "adapter-stdin（终端调试）", desc: "把终端当账号，没有 QQ 环境时调试命令", path: "plugins/adapter-stdin" },
+      { title: "renderer-puppeteer（出图）", desc: "无头浏览器渲染器，模板转图片", path: "plugins/renderer-puppeteer" },
+      { title: "hardware（硬件监控）", desc: "概览页的硬件组件与本包的 node 侧采样", path: "plugins/hardware" },
+      { title: "webui-example（示例）", desc: "面板插件示例包，照抄它比从零拼快", path: "plugins/webui-example" },
+      { title: "mhy-game（米游社）", desc: "米游社相关命令与签到", path: "plugins/mhy-game" },
+      { title: "yenai-state（状态图）", desc: "椰奶风格的机器人状态图：CPU / 内存 / 网络 等", path: "plugins/yenai-state" },
+      { title: "steward（运维）", desc: "指令运维：重启、关机、更新插件与内核", path: "plugins/steward" },
+      { title: "TermZero（远程执行）", desc: "远程执行：跑 JS / Shell、看源码、渲 Markdown", path: "plugins/termzero" }
+    ]
+  },
+  // APPEND-GROUPS
   {
     title: "插件开发",
     docs: [
@@ -70,27 +90,14 @@ const DOC_GROUPS: readonly DocGroup[] = [
       { title: "发消息", desc: "文本、图片、引用、转发、渲染出图与主动推送", path: "plugin/message" },
       { title: "命令与事件", desc: "命令声明、匹配语义、中间件与事件对象", path: "plugin/command" },
       { title: "配置与存储", desc: "配置 schema、KV、SQLite 与进程内缓存", path: "plugin/storage" },
-      { title: "任务与协作", desc: "定时任务、插件间服务、HTTP 路由与生命周期", path: "plugin/service" },
+      { title: "定时任务与协作", desc: "定时任务、插件间服务、HTTP 路由与生命周期", path: "plugin/service" },
       { title: "适配器开发", desc: "接一个聊天平台：事件翻译与 BotDriver 能力面", path: "adapter" },
       { title: "渲染与模板", desc: "出图：两种模板、渲染选项与自写渲染器", path: "renderer" },
       { title: "测试与发布", desc: "无内核测试命令，以及发布进插件市场", path: "plugin/publish" }
     ]
   },
   {
-    title: "官方插件",
-    docs: [
-      { title: "一览与两个市场", desc: "官方插件有哪些、各自装在哪个市场", path: "official-plugins" },
-      { title: "webui（面板）", desc: "本面板自身：十个页面、面板插件的宿主与商店", path: "plugins/webui" },
-      { title: "adapter-napcat（QQ）", desc: "经 NapCat 接入 QQ 的适配器", path: "plugins/adapter-napcat" },
-      { title: "adapter-qqbot（QQ 官方）", desc: "QQ 开放平台机器人：群、私聊与频道", path: "plugins/adapter-qqbot" },
-      { title: "renderer-puppeteer（出图）", desc: "无头浏览器渲染器，模板转图片", path: "plugins/renderer-puppeteer" },
-      { title: "hardware（硬件监控）", desc: "概览页的硬件组件与本包的 node 侧采样", path: "plugins/hardware" },
-      { title: "webui-example（示例）", desc: "面板插件示例包，照抄它比从零拼快", path: "plugins/webui-example" },
-      { title: "mhy-game（米游社）", desc: "米游社相关命令与签到", path: "plugins/mhy-game" }
-    ]
-  },
-  {
-    title: "扩展",
+    title: "扩展面板",
     docs: [
       { title: "面板插件", desc: "往面板加组件与页签：形态、配置、样式与商店", path: "panel-plugin" },
       { title: "扩展页面", desc: "插件在面板里挂一个自己的页面", path: "custom-page" },
