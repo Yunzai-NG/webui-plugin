@@ -27,6 +27,8 @@ const props = defineProps<{
   sub?: string
   /** 是否用宽形制（表单与清单需要横向空间） */
   wide?: boolean
+  /** 是否贴右侧展开为抽屉（宽屏生效，窄屏仍贴底） */
+  side?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -67,7 +69,7 @@ function onClick(event: MouseEvent): void {
       v-if="open"
       ref="el"
       class="modal sheet"
-      :class="{ wide: wide === true }"
+      :class="{ wide: wide === true, side: side === true }"
       @cancel.prevent="emit('close')"
       @close="emit('close')"
       @click="onClick"

@@ -93,10 +93,17 @@ function apply(mode: ThemeMode): void {
  * `auto` 走删键那一支，理由见文件头。
  */
 export function cycleTheme(): void {
-  const next = nextTheme(themeChoice.value)
-  themeChoice.value = next
-  if (next === "auto") localStorage.removeItem(THEME_KEY)
-  else localStorage.setItem(THEME_KEY, next)
+  setTheme(nextTheme(themeChoice.value))
+}
+
+/**
+ * 直接选定一态并落盘
+ * @param choice 选择
+ */
+export function setTheme(choice: ThemeChoice): void {
+  themeChoice.value = choice
+  if (choice === "auto") localStorage.removeItem(THEME_KEY)
+  else localStorage.setItem(THEME_KEY, choice)
 }
 
 /**

@@ -635,3 +635,124 @@ export interface PanelStoreResult {
    */
   setupError?: string
 }
+
+/* ────────────────────────────── 存储检视 ────────────────────────────── */
+
+/** KV 值的大类 */
+export type KvValueType = "string" | "number" | "boolean" | "null" | "array" | "object"
+
+/** 前缀之下的一个子命名空间 */
+export interface KvGroup {
+  /** 名字，含结尾的 `:` */
+  name: string
+  /** 其下未过期的键数 */
+  count: number
+}
+
+/** 列表里的一个键 */
+export interface KvItem {
+  /** 完整键 */
+  key: string
+  /** 值的大类 */
+  type: KvValueType
+  /** JSON 序列化后的字节数 */
+  size: number
+  /** 截断的预览 */
+  preview: string
+  /** 过期时间点；永不过期时不出现 */
+  expireAt?: number
+}
+
+/** `GET /api/storage/kv` */
+export interface KvPage {
+  /** 实际生效的驱动 id */
+  driver: string
+  /** 面板是否只读 */
+  readonly: boolean
+  /** 本次的前缀 */
+  prefix: string
+  /** 子命名空间 */
+  groups: KvGroup[]
+  /** 本页的键 */
+  items: KvItem[]
+  /** 直属于该前缀的键总数 */
+  total: number
+  /** 下一页游标 */
+  next?: string
+  /** 是否因扫描上限而截断 */
+  truncated: boolean
+}
+
+/** `GET /api/storage/kv/entry` */
+export interface KvEntry {
+  /** 完整键 */
+  key: string
+  /** 值 */
+  value: unknown
+  /** 过期时间点；永不过期时不出现 */
+  expireAt?: number
+}
+
+/** 数据目录里的一个库 */
+export interface SqlDatabase {
+  /** 归属插件 */
+  plugin: string
+  /** 库名 */
+  name: string
+  /** 文件字节数 */
+  size: number
+  /** 当前是否已有连接 */
+  open: boolean
+}
+
+/** `GET /api/storage/sql` */
+export interface SqlOverview {
+  /** 配置是否启用 SQLite */
+  enabled: boolean
+  /** 面板是否只读 */
+  readonly: boolean
+  /** 库清单 */
+  databases: SqlDatabase[]
+}
+
+/** 表的一列 */
+export interface SqlColumn {
+  /** 列名 */
+  name: string
+  /** 声明类型 */
+  type: string
+  /** 主键序号，非主键为 0 */
+  pk: number
+  /** 是否 NOT NULL */
+  notnull: boolean
+}
+
+/** 库里的一张表或视图 */
+export interface SqlTable {
+  /** 名字 */
+  name: string
+  /** 表还是视图 */
+  type: "table" | "view"
+  /** 是否带 rowid */
+  rowid: boolean
+  /** 列 */
+  columns: SqlColumn[]
+}
+
+/** `POST /api/storage/sql/:plugin/:name/query` */
+export interface SqlResult {
+  /** 是否为只读语句 */
+  readonly: boolean
+  /** 结果列 */
+  columns?: string[]
+  /** 结果行；二进制单元格为 `{ $blob, head }` */
+  rows?: unknown[][]
+  /** 是否因行数上限而截断 */
+  truncated?: boolean
+  /** 受影响行数 */
+  changes?: number
+  /** 最后插入的 rowid */
+  lastInsertRowid?: number | string
+  /** 耗时毫秒 */
+  cost: number
+}

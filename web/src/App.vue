@@ -21,7 +21,8 @@ import { get, getAt, getToken, post, setToken } from "./api.js"
 import { ApiError } from "./api.js"
 import { errorText } from "./format.js"
 import { ROUTES, currentQuery, currentRoute, hrefOf, type RouteDef } from "./router.js"
-import { THEME_LABEL, cycleTheme, themeChoice, type ThemeChoice } from "./theme.js"
+import { THEME_ICON } from "./icons.js"
+import { THEME_LABEL, cycleTheme, themeChoice } from "./theme.js"
 import type { IconShape, Overview } from "./types.js"
 import AppIcon from "./components/AppIcon.vue"
 import ConfirmDialog from "./components/ConfirmDialog.vue"
@@ -36,6 +37,7 @@ import LogsView from "./views/LogsView.vue"
 import HelpView from "./views/HelpView.vue"
 import AppearanceView from "./views/AppearanceView.vue"
 import CustomPageView from "./views/CustomPageView.vue"
+import DatabaseView from "./views/DatabaseView.vue"
 
 /**
  * 一个插件挂上来的页面，字段与服务端 `custompage.ts` 的 `CustomPage` 对齐
@@ -88,21 +90,6 @@ const CARET_DOWN = "M7 10l5 5 5-5"
 const PAGE_DOT = "M12 13.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3"
 
 /**
- * 主题一项的三个图标，与 `ThemeChoice` 一一对应
- *
- * 三态各有各的图形，不共用一个「主题」图标：共用之后按钮上就只剩文案在变，
- * 而折叠态的侧栏只有 72px、文案是隐去的，那时使用者无从知道当前是哪一态。
- */
-const THEME_ICON: Record<ThemeChoice, string> = {
-  // 半明半暗的圆：跟随系统
-  auto: "M12 3a9 9 0 000 18zM12 3a9 9 0 010 18",
-  // 太阳
-  light: "M12 5.5v-2M12 20.5v-2M5.5 12h-2M20.5 12h-2M7.4 7.4L6 6M18 18l-1.4-1.4M16.6 7.4L18 6M6 18l1.4-1.4M15.5 12a3.5 3.5 0 11-7 0 3.5 3.5 0 017 0",
-  // 月亮
-  dark: "M20 14.5A8.5 8.5 0 019.5 4a8.5 8.5 0 1010.5 10.5z"
-}
-
-/**
  * 路由标识 → 视图组件
  *
  * 一张表加 `<component :is>` 而非一串 `v-if`：后者无法包进 `<Transition>`（过渡要求单一子节点）。
@@ -112,6 +99,7 @@ const VIEWS: Record<string, Component> = {
   overview: OverviewView,
   accounts: AccountsView,
   logs: LogsView,
+  storage: DatabaseView,
   plugins: PluginsView,
   market: MarketView,
   store: StoreView,

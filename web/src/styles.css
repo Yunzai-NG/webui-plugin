@@ -5314,6 +5314,1166 @@ a.button:active {
   transform: translateY(0);
 }
 
+/* ─────────────── 数据库页 ─────────────── */
+
+/* 预览限宽并允许任意位置断行，避免长 JSON 撑出卡片 */
+.kv-preview {
+  max-width: 420px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  overflow-wrap: anywhere;
+}
+
+/* 结果表列数不定，采用横向滚动，窄屏下不摊平为卡片 */
+.sql-grid {
+  overflow-x: auto;
+  margin-bottom: var(--s3);
+}
+
+.sql-grid td,
+.sql-grid th {
+  white-space: nowrap;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.sql-grid td.cell-null {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* 列头的排序按钮是整格可点，故撑满单元格并继承表头的字形 */
+.db-sort {
+  display: inline-flex;
+  gap: var(--s1);
+  font-size: inherit;
+  font-family: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-decoration: none;
+}
+
+.db-sort:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+/* 概览的四个计数块比通用网格宽一档，否则「库中行数」的标题折行 */
+.db-stats {
+  grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr));
+  margin-bottom: var(--s5);
+}
+
+.db-bars {
+  margin-top: var(--s4);
+}
+
+/* 占比条的名字是按钮，基线要与右侧的数字对齐 */
+.db-bar .bar-label {
+  font-size: var(--fs-hint);
+  text-decoration: none;
+}
+
+.db-bar .bar-label:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+/*
+ * 左侧命名空间（或表）清单 + 右侧内容
+ *
+ * 窄屏单列：两栏各有自己的滚动区，叠在 390px 宽里任一栏都读不全。
+ */
+.db-split {
+  display: grid;
+  gap: var(--s5);
+  align-items: start;
+}
+
+@media (min-width: 1000px) {
+  .db-split {
+    grid-template-columns: 260px minmax(0, 1fr);
+  }
+
+  /* 清单随右侧内容一起滚到视口顶端后钉住 —— 翻页时不必把它滚回来 */
+  .db-aside {
+    position: sticky;
+    top: var(--s4);
+    max-height: calc(100dvh - 2 * var(--s6));
+    overflow-y: auto;
+  }
+}
+
+/* 右栏自身可窄：栅格列已给 minmax(0,·)，这一条管住 flex 语境下的溢出 */
+.db-main {
+  min-width: 0;
+}
+
+.ns-list {
+  margin-top: var(--s3);
+}
+
+.ns-list > li {
+  justify-content: space-between;
+}
+
+/* 勾选列只占复选框的宽度 */
+.db-sel {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.db-pager {
+  margin-bottom: var(--s5);
+}
+
+/*
+ * 危险区：描红边框圈出一块，与页面其余部分分开
+ *
+ * 删键与清前缀原先混在工具条里，与「前往」「新建键」并列 —— 一排同形制的按钮读不出
+ * 哪一枚会删数据。单独成块、红边加淡红底，是让它在视线扫过时就与别处不同。
+ */
+.danger-zone {
+  border-color: color-mix(in srgb, var(--err) 35%, transparent);
+  background: color-mix(in srgb, var(--err) 4%, var(--panel));
+}
+
+.danger-zone:hover {
+  border-color: color-mix(in srgb, var(--err) 55%, transparent);
+}
+
+.danger-zone h2 {
+  color: var(--err);
+}
+
+.danger-zone .row {
+  margin-top: var(--s4);
+}
+
+/* 确认框里的警示条与样例清单 */
+.danger-warning {
+  margin-top: var(--s4);
+  margin-bottom: 0;
+}
+
+.danger-list {
+  list-style: none;
+  margin: var(--s2) 0 0;
+  padding: var(--s2) var(--s3);
+  max-height: 160px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-ctl);
+  background: var(--raise);
+  font-size: var(--fs-hint);
+  overflow-wrap: anywhere;
+}
+
+.danger-typed {
+  margin-top: var(--s4);
+  margin-bottom: 0;
+}
+
+.danger-typed code {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--raise);
+}
+
+/* 结构视图里第二个小节标题与上面那张表留出间距 */
+.db-subhead {
+  margin-top: var(--s5);
+}
+
+.db-ddl {
+  margin: var(--s3) 0;
+  padding: var(--s3) var(--s4);
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-ctl);
+  background: var(--raise);
+}
+
+.db-history {
+  margin-top: var(--s3);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.db-history .mono {
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.db-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+
+/* 抽屉里的结构树与差异各自滚动，不把动作栏推出视口 */
+.db-tree,
+.db-diff {
+  max-height: 46dvh;
+  overflow: auto;
+  padding: var(--s3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-ctl);
+  background: var(--raise);
+}
+
+.diff-line {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff-add {
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+  color: var(--ok);
+}
+
+.diff-del {
+  background: color-mix(in srgb, var(--err) 14%, transparent);
+  color: var(--err);
+}
+
+.diff-gap {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.db-ttl .row {
+  margin-bottom: var(--s2);
+}
+
+.db-entry-ops {
+  margin-top: var(--s4);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--border);
+}
+
+/*
+ * JSON 结构树
+ *
+ * 原生 `<details>`：折叠态由浏览器维护，无须为每个节点存一份展开状态。
+ * 逐层缩进靠左侧那条竖线，而非层层加 padding —— 深层对象在窄屏上会被推出视野。
+ */
+.jt {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.jt > summary {
+  cursor: pointer;
+  list-style-position: outside;
+}
+
+.jt-body {
+  margin-left: var(--s3);
+  padding-left: var(--s3);
+  border-left: 1px solid var(--border);
+}
+
+.jt-leaf {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.jt-key {
+  color: var(--accent);
+}
+
+.jt-meta {
+  color: var(--muted);
+}
+
+.jt-str {
+  color: var(--ok);
+}
+
+.jt-num {
+  color: var(--info);
+}
+
+.jt-bool {
+  color: var(--warn);
+}
+
+.jt-null {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/*
+ * 贴右展开的抽屉
+ *
+ * 键的详情与整行编辑要与左边的清单对照着看，居中小窗会把清单整块遮住。只在宽屏生效：
+ * 窄屏仍按 `.modal.sheet` 的规则贴底（见那一节），贴右在 390px 下等于全屏。
+ */
+@media (min-width: 701px) {
+  .modal.sheet.side {
+    width: min(720px, calc(100vw - 2 * var(--s4)));
+    max-width: none;
+    max-height: 100dvh;
+    height: 100dvh;
+    margin: 0 0 0 auto;
+    border-width: 0 0 0 1px;
+    border-radius: var(--r-card) 0 0 var(--r-card);
+  }
+
+  /* 从右侧推入而非自下浮起：方向感要与它停驻的位置一致 */
+  .pop-enter-from.side,
+  .pop-leave-to.side {
+    transform: translateX(24px);
+  }
+}
+
+/* ───── 数据库页：按钮里的图标、刷新转圈、成功回执 ───── */
+
+.btn-ico {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.db-btn {
+  gap: var(--s2);
+}
+
+.spinning {
+  animation: gate-spin 0.8s linear infinite;
+}
+
+/* 回执浮在视口右下角，确实离开了页面平面，故允许投影（规则 3） */
+.db-toast {
+  position: fixed;
+  right: var(--s5);
+  bottom: var(--s5);
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  max-width: min(420px, calc(100vw - 2 * var(--s5)));
+  padding: var(--s3) var(--s4);
+  border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--border));
+  border-radius: var(--r-ctl);
+  background: color-mix(in srgb, var(--ok) 8%, var(--panel));
+  color: var(--ok);
+  font-size: var(--fs-hint);
+  font-weight: 600;
+  box-shadow: var(--shadow-lg);
+}
+
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+.toast-enter-active {
+  transition:
+    opacity var(--dur-2) var(--ease-settle),
+    transform var(--dur-2) var(--ease-settle);
+}
+
+.toast-leave-active {
+  transition:
+    opacity var(--dur-1) var(--ease-in),
+    transform var(--dur-1) var(--ease-in);
+}
+
+/* 三个页签之间的切换，时长与页签过渡同档（见「页签切换过渡」） */
+.pane-enter-from,
+.pane-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.pane-enter-active {
+  transition:
+    opacity var(--dur-2) var(--ease-settle),
+    transform var(--dur-2) var(--ease-settle);
+}
+
+.pane-leave-active {
+  transition:
+    opacity var(--dur-1) var(--ease-in),
+    transform var(--dur-1) var(--ease-in);
+}
+
+/* 执行历史的展开收起 */
+.fold-enter-from,
+.fold-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.fold-enter-active,
+.fold-leave-active {
+  transition:
+    opacity var(--dur-1) var(--ease),
+    transform var(--dur-1) var(--ease);
+}
+
+.db-tabs {
+  width: fit-content;
+  max-width: 100%;
+  margin-bottom: var(--s5);
+}
+
+/* 带图标的小节标题 */
+.db-console h2,
+.danger-zone h2,
+.db-result-head h2,
+.db-ttl h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+/* ───── 概览：计数块与环形图 ───── */
+
+.db-stat {
+  position: relative;
+}
+
+.db-stat-ico {
+  position: absolute;
+  top: var(--s4);
+  right: var(--s4);
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-ctl);
+  background: var(--accent-glow);
+  color: var(--accent);
+}
+
+.db-stat-ico svg {
+  width: 18px;
+  height: 18px;
+}
+
+.count-up {
+  font-variant-numeric: tabular-nums;
+}
+
+.db-charts {
+  display: grid;
+  gap: var(--s5);
+  margin-bottom: var(--s5);
+}
+
+.db-charts > .card {
+  margin-bottom: 0;
+}
+
+@media (min-width: 1000px) {
+  .db-charts {
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  }
+}
+
+.donut {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s5);
+  margin-top: var(--s4);
+}
+
+.donut-ring {
+  position: relative;
+  flex: none;
+  width: 168px;
+  height: 168px;
+}
+
+/* 圆周从三点钟方向起画，转 -90° 让第一段从十二点钟开始 */
+.donut-ring svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.donut-base,
+.donut-seg {
+  fill: none;
+  stroke-width: 14;
+}
+
+.donut-base {
+  stroke: var(--raise);
+}
+
+.donut-seg {
+  cursor: pointer;
+  animation: donut-draw var(--dur-4) var(--ease-settle) backwards;
+  transition: opacity var(--dur-1) var(--ease);
+}
+
+/* 只给起点：终点取 stroke-dasharray 属性本身的值 */
+@keyframes donut-draw {
+  from {
+    stroke-dasharray: 0 var(--circ);
+  }
+}
+
+.donut-seg.dim,
+.donut-legend li.dim {
+  opacity: 0.35;
+}
+
+.donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.donut-center b {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.donut-center span {
+  color: var(--muted);
+  font-size: var(--fs-label);
+}
+
+.donut-legend {
+  flex: 1 1 200px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.donut-legend li {
+  transition: opacity var(--dur-1) var(--ease);
+}
+
+.donut-item {
+  display: flex;
+  width: 100%;
+  justify-content: flex-start;
+  gap: var(--s2);
+  padding: var(--s1) var(--s2);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  font-weight: 400;
+  font-size: var(--fs-hint);
+  text-align: left;
+}
+
+button.donut-item:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--raise);
+  color: var(--text);
+  box-shadow: none;
+}
+
+/* 「其他」一段不可点，但不该显得像坏掉的按钮 */
+button.donut-item:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.donut-item i {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--r-pill);
+}
+
+.donut-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.donut-num {
+  flex: none;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ───── 空状态 ───── */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--s6) var(--s4);
+  text-align: center;
+}
+
+.empty-art {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  margin-bottom: var(--s3);
+}
+
+.empty-orbit {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: var(--border);
+  stroke-dasharray: 3 5;
+  animation: gate-spin 24s linear infinite;
+}
+
+.empty-icon {
+  width: 30px;
+  height: 30px;
+  color: var(--accent);
+}
+
+.empty-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.empty .hint {
+  margin-top: var(--s1);
+}
+
+.empty-actions {
+  justify-content: center;
+  margin-top: var(--s4);
+}
+
+/* ───── 侧栏清单：命名空间与表 ───── */
+
+.db-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  margin-bottom: var(--s2);
+  text-decoration: none;
+}
+
+.ns-list > li {
+  padding: 0;
+  border-bottom: none;
+}
+
+.ns-item {
+  position: relative;
+  display: flex;
+  width: 100%;
+  justify-content: flex-start;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  overflow: hidden;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  font-weight: 400;
+  font-size: var(--fs-hint);
+  text-align: left;
+}
+
+button.ns-item:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--raise);
+  color: var(--text);
+  box-shadow: none;
+}
+
+button.ns-item.on,
+button.ns-item.on:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: var(--accent-glow);
+  color: var(--accent);
+}
+
+.ns-ico {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+}
+
+.ns-item.on .ns-ico {
+  color: var(--accent);
+}
+
+.ns-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ns-count {
+  flex: none;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 键数比例条：贴在行底，用 scaleX 而非 width，免得每次换前缀都触发重排（规则 4） */
+.ns-bar {
+  position: absolute;
+  left: var(--s3);
+  right: var(--s3);
+  bottom: 3px;
+  height: 2px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  transform-origin: left center;
+  transition: transform var(--dur-3) var(--ease-settle);
+}
+
+/* 成排的行与小药丸不跟着抬起，否则指针扫过像走过琴键（压过「可点的东西统一抬一下」） */
+button:is(.ns-item, .kv-key, .donut-item, .icon-btn, .db-chip):hover:not(:disabled):not(.link):not(.log-more):not(.icon) {
+  transform: none;
+}
+
+/* ───── KV 表格 ───── */
+
+.kv-key {
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: 13px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+button.kv-key:hover:not(:disabled) {
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.kv-type {
+  --kt: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: 2px var(--s2);
+  border: 1px solid color-mix(in srgb, var(--kt) 35%, transparent);
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--kt) 10%, transparent);
+  color: var(--kt);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.kv-type i {
+  font-family: var(--font-mono);
+  font-style: normal;
+  opacity: 0.8;
+}
+
+.kv-type-object {
+  --kt: var(--accent);
+}
+
+.kv-type-array {
+  --kt: var(--info);
+}
+
+.kv-type-string {
+  --kt: var(--ok);
+}
+
+.kv-type-number,
+.kv-type-boolean {
+  --kt: var(--warn);
+}
+
+.db-row-ops {
+  flex-wrap: nowrap;
+  gap: var(--s1);
+}
+
+.icon-btn {
+  padding: 6px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+}
+
+.icon-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+button.icon-btn:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--raise);
+  color: var(--accent);
+  box-shadow: none;
+}
+
+button.icon-btn.danger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--err) 40%, transparent);
+  background: color-mix(in srgb, var(--err) 8%, transparent);
+  color: var(--err);
+}
+
+/* ───── SQLite：库的选择 ───── */
+
+.db-dbs {
+  display: grid;
+  gap: var(--s3);
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+  margin-bottom: var(--s5);
+}
+
+.db-db {
+  position: relative;
+  justify-content: flex-start;
+  gap: var(--s2);
+  padding: var(--s3) var(--s4);
+  font-weight: 400;
+  text-align: left;
+}
+
+button.db-db.on,
+button.db-db.on:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-glow);
+  color: var(--text);
+}
+
+.db-db-ico {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--accent);
+}
+
+.db-db-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-db-size {
+  flex: none;
+  color: var(--muted);
+  font-size: var(--fs-label);
+  font-variant-numeric: tabular-nums;
+}
+
+.db-db-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--border-strong);
+}
+
+.db-db-dot.ok {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 20%, transparent);
+}
+
+/* ───── SQLite：结构、建表语句、筛选、控制台 ───── */
+
+.db-struct td:first-child {
+  font-weight: 600;
+}
+
+.db-indexes > li {
+  align-items: center;
+}
+
+.db-ddl {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.sql-kw {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.sql-str {
+  color: var(--ok);
+}
+
+.sql-num {
+  color: var(--warn);
+}
+
+.sql-ident {
+  color: var(--info);
+}
+
+.sql-comment {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* 筛选框左侧嵌一枚图标，框体仍沿用全站输入框 */
+.db-search {
+  position: relative;
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.db-search input {
+  width: 100%;
+  padding-left: 38px;
+}
+
+.db-search-ico {
+  position: absolute;
+  top: 50%;
+  left: 13px;
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.db-console textarea {
+  margin: var(--s3) 0;
+  background: var(--code-bg);
+}
+
+.db-console select {
+  width: auto;
+}
+
+/* ───── 键详情抽屉 ───── */
+
+/* 三个视图的分段控件：比页签小一档，嵌在抽屉内容的顶端 */
+.db-seg {
+  display: inline-flex;
+  gap: 2px;
+  margin-bottom: var(--s4);
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-ctl);
+  background: var(--raise);
+}
+
+.db-seg button {
+  gap: var(--s1);
+  padding: 5px var(--s3);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: var(--fs-hint);
+}
+
+.db-seg button:hover:not(:disabled):not(.subform-head) {
+  border-color: transparent;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: none;
+  transform: none;
+}
+
+.db-seg button.on,
+.db-seg button.on:hover:not(:disabled):not(.subform-head) {
+  border-color: var(--border);
+  background: var(--panel);
+  color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+
+.db-seg-badge {
+  display: inline-flex;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+}
+
+.db-seg-badge i {
+  font-style: normal;
+}
+
+.db-seg-badge .add {
+  color: var(--ok);
+}
+
+.db-seg-badge .del {
+  color: var(--err);
+}
+
+/* 编辑器：工具条、正文、状态栏三段合成一个框，焦点落在正文时整框描亮 */
+.db-editor {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r-ctl);
+  background: var(--code-bg);
+  transition:
+    border-color var(--dur-1) var(--ease),
+    box-shadow var(--dur-1) var(--ease);
+}
+
+.db-editor:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.db-editor.bad {
+  border-color: color-mix(in srgb, var(--err) 60%, var(--border));
+}
+
+.db-editor-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2);
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.db-editor-mode {
+  width: auto;
+  padding: 5px var(--s3);
+  font-size: var(--fs-hint);
+}
+
+.db-editor-text,
+.db-editor-text:focus,
+.db-editor-text:hover:not(:disabled):not(:focus) {
+  display: block;
+  min-height: 280px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  line-height: 1.6;
+  tab-size: 2;
+}
+
+.db-editor-status {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  padding: var(--s2) var(--s3);
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--ok);
+  font-size: var(--fs-label);
+}
+
+.db-editor-status.err {
+  color: var(--err);
+}
+
+.db-ttl {
+  margin-top: var(--s5);
+}
+
+.db-ttl h3 {
+  margin: 0 0 var(--s2);
+}
+
+.db-ttl input {
+  margin-top: var(--s2);
+}
+
+.db-chips,
+.db-entry-ops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.db-chip {
+  gap: var(--s1);
+  padding: 5px var(--s3);
+  border-radius: var(--r-pill);
+  box-shadow: none;
+  font-weight: 500;
+  font-size: var(--fs-hint);
+}
+
+button.db-chip:hover:not(:disabled) {
+  box-shadow: none;
+}
+
+button.db-chip.on,
+button.db-chip.on:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-glow);
+  color: var(--accent);
+}
+
+/* ─────────────── 外观设置落到全站的部分 ─────────────── */
+
+/* 页面背景：纯色去掉渐变，点阵换成一层细点 */
+:root[data-backdrop="plain"] body {
+  background-image: none;
+}
+
+:root[data-backdrop="dots"] body {
+  background-image: radial-gradient(color-mix(in srgb, var(--text) 9%, transparent) 1px, transparent 1.5px);
+  background-size: 18px 18px;
+  background-blend-mode: normal;
+}
+
+/* 玻璃拟态：卡片改用半透明底加背景模糊 */
+:root[data-glass="on"] .card {
+  border-color: var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+}
+
+/* 关闭动效：时长令牌已压到 1ms，这里兜住写死时长的动画（骨架、转圈） */
+:root[data-motion="off"] *,
+:root[data-motion="off"] *::before,
+:root[data-motion="off"] *::after {
+  transition-duration: 1ms !important;
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+}
+
 /*
  * 降低动效偏好：一次性关闭全部过渡
  *
