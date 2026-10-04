@@ -23,6 +23,7 @@ import { computed, onMounted, ref } from "vue"
 import { get } from "../api.js"
 import { errorText } from "../format.js"
 import PageHeader from "../components/PageHeader.vue"
+import TabBar from "../components/TabBar.vue"
 import type { CommandItem } from "../types.js"
 
 /** 文档站点地址，不含末尾斜杠 */
@@ -140,6 +141,12 @@ const countByPlugin = computed(() => {
   return map
 })
 
+/** 标签条的条目：「全部」的标识为空串，其余为插件名 */
+const pluginTabs = computed(() => [
+  { id: "", label: "全部", count: commands.value.length },
+  ...pluginNames.value.map(name => ({ id: name, label: name, count: countByPlugin.value.get(name) ?? 0 }))
+])
+
 /**
  * 按当前标签、关键词与隐藏开关过滤后的命令
  *
@@ -219,19 +226,7 @@ onMounted(() => void load())
     </div>
 
     <!-- 按插件分标签：插件多起来之后竖排要划很久才够到某一个 -->
-    <div v-if="pluginNames.length > 1" class="toolbar tabs">
-      <button :class="{ primary: plugin === '' }" @click="plugin = ''">
-        全部 <span class="tag">{{ commands.length }}</span>
-      </button>
-      <button
-        v-for="name in pluginNames"
-        :key="name"
-        :class="{ primary: plugin === name }"
-        @click="plugin = name"
-      >
-        {{ name }} <span class="tag">{{ countByPlugin.get(name) ?? 0 }}</span>
-      </button>
-    </div>
+    <TabBar v-if="pluginNames.length > 1" v-model="plugin" :items="pluginTabs" label="按插件筛选命令" />
 
     <Transition name="tab" mode="out-in">
     <div :key="plugin">

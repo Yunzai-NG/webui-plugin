@@ -3468,12 +3468,16 @@ textarea {
 /*
  * 药丸形分段标签
  *
- * 项数随插件增长，窄屏下横向滚动而不换行堆高。底色用「面·浮起」把一组按钮圈成
- * 一件控件，激活项填充主色 —— 描边式的激活态在一排按钮里读不出哪个是当前项。
+ * 项数随插件增长，窄屏下横向滚动而不换行堆高。底色是「面·浮起」兑 6% 前景色（单用
+ * `--raise` 压在卡片上几乎看不出），把一组按钮圈成一件控件；激活项填充主色 —— 描边式的
+ * 激活态在一排按钮里读不出哪个是当前项。
  *
- * 用在两处：帮助页按插件筛命令、插件页「查看」模态里的四个标签。
+ * 只由 TabBar.vue 渲染。`position: relative` 让页签的 offsetLeft 以本条为参照，滚进视野靠它量。
  */
 .toolbar.tabs {
+  --tabs-bg: color-mix(in oklab, var(--text) 6%, var(--raise));
+
+  position: relative;
   flex-wrap: nowrap;
   overflow-x: auto;
   gap: var(--s1);
@@ -3494,10 +3498,10 @@ textarea {
    *
    * 盖片必须比渐隐宽（28 > 20），否则滚到尽头时渐隐会露出一条边。
    */
-  background-color: var(--raise);
+  background-color: var(--tabs-bg);
   background-image:
-    linear-gradient(to right, var(--raise), transparent),
-    linear-gradient(to left, var(--raise), transparent),
+    linear-gradient(to right, var(--tabs-bg), transparent),
+    linear-gradient(to left, var(--tabs-bg), transparent),
     linear-gradient(to right, color-mix(in oklab, var(--text) 12%, transparent), transparent),
     linear-gradient(to left, color-mix(in oklab, var(--text) 12%, transparent), transparent);
   background-position:

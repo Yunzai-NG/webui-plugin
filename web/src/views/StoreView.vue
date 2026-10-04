@@ -30,6 +30,7 @@ import { hrefOf } from "../router.js"
 import MarketFilter from "../components/MarketFilter.vue"
 import Modal from "../components/Modal.vue"
 import PageHeader from "../components/PageHeader.vue"
+import TabBar from "../components/TabBar.vue"
 import type { PanelStoreItem, PanelStoreResult, PanelStoreSnapshot } from "../types.js"
 
 const snapshot = ref<PanelStoreSnapshot | undefined>(undefined)
@@ -58,6 +59,9 @@ const badSources = computed(() => snapshot.value?.sources.filter(source => !sour
 
 /** 逐页签的条目数，供角标 */
 const counts = computed(() => tabCounts(items.value))
+
+/** 页签条的条目 */
+const storeTabs = computed(() => MARKET_TABS.map(tab => ({ ...tab, count: counts.value[tab.id] })))
 
 /** 索引里声明过的最低 webui 版本，升序去重 */
 const gates = computed(() => gatesOf(items.value, item => item.minWebui))
@@ -247,18 +251,12 @@ onMounted(() => void load())
       </ul>
     </div>
 
-    <!-- 横向页签，形制取 `.toolbar.tabs`（插件页与帮助页已在用），不新画一种 -->
-    <div class="toolbar tabs">
-      <button
-        v-for="item in MARKET_TABS"
-        :key="item.id"
-        :class="{ primary: (criteria.tab ?? 'all') === item.id }"
-        @click="criteria = { ...criteria, tab: item.id }"
-      >
-        {{ item.label }}
-        <span class="tag">{{ counts[item.id] }}</span>
-      </button>
-    </div>
+    <TabBar
+      :items="storeTabs"
+      :model-value="criteria.tab ?? 'all'"
+      label="按安装状态筛选"
+      @update:model-value="criteria = { ...criteria, tab: $event }"
+    />
 
     <Transition name="tab" mode="out-in">
     <div :key="criteria.tab ?? 'all'">

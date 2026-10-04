@@ -10,7 +10,7 @@
  *          且都验到「刚好在尽头」与「还差一点」两侧。
  */
 import { describe, expect, it } from "vitest"
-import { wheelShift } from "./tabscroll.js"
+import { revealLeft, wheelShift } from "./tabscroll.js"
 
 /** 一个溢出 120px 的页签条 */
 const OVER = { scrollWidth: 800, clientWidth: 680, scrollLeft: 0 }
@@ -53,5 +53,39 @@ describe("滚轮转横滚", () => {
 
   it("竖向分量为零时不接手：纯横扫或缩放，没有可换算的量", () => {
     expect(wheelShift(OVER, { deltaX: 0, deltaY: 0 })).toBeUndefined()
+  })
+})
+
+describe("选中项滚进视野", () => {
+  /** 可见 400、溢出 400 的页签条，渐隐按缺省 28px */
+  const BAR = { scrollWidth: 800, clientWidth: 400, scrollLeft: 0 }
+
+  it("已完整露出且不压在渐隐下时不动", () => {
+    expect(revealLeft(BAR, { left: 100, width: 80 })).toBeUndefined()
+  })
+
+  it("在右侧溢出区里：滚到它右缘再让出一道渐隐", () => {
+    expect(revealLeft(BAR, { left: 500, width: 80 })).toBe(500 + 80 + 28 - 400)
+  })
+
+  it("**只压在右侧渐隐下也要挪** —— 那一截看着像被裁掉", () => {
+    expect(revealLeft(BAR, { left: 320, width: 80 })).toBe(28)
+  })
+
+  it("在左侧溢出区里：滚到它左缘前让出一道渐隐", () => {
+    expect(revealLeft({ ...BAR, scrollLeft: 300 }, { left: 250, width: 80 })).toBe(222)
+  })
+
+  it("目标夹在 0 与最大滚动量之间", () => {
+    expect(revealLeft({ ...BAR, scrollLeft: 20 }, { left: 4, width: 80 })).toBe(0)
+  })
+
+  it("**夹到边界后无须移动时不动** —— 两端的渐隐在尽头不画，此时它已可见", () => {
+    // 第一枚，已在最左
+    expect(revealLeft(BAR, { left: 4, width: 80 })).toBeUndefined()
+    // 最后一枚，已在最右
+    expect(revealLeft({ ...BAR, scrollLeft: 400 }, { left: 716, width: 80 })).toBeUndefined()
+    // 没溢出：贴着右缘的那枚也不动
+    expect(revealLeft({ scrollWidth: 400, clientWidth: 400, scrollLeft: 0 }, { left: 330, width: 66 })).toBeUndefined()
   })
 })

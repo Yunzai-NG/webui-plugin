@@ -65,6 +65,7 @@ import EmptyState from "../components/EmptyState.vue"
 import JsonTree from "../components/JsonTree.vue"
 import Modal from "../components/Modal.vue"
 import PageHeader from "../components/PageHeader.vue"
+import TabBar from "../components/TabBar.vue"
 import type { KvEntry, KvGroup, KvItem, KvPage, SqlOverview, SqlResult, SqlTable, KvValueType } from "../types.js"
 
 /** 三个页签，概览居首 */
@@ -72,6 +73,13 @@ const TABS = [
   { id: "home", label: "概览", icon: ICONS.gauge },
   { id: "kv", label: "KV", icon: ICONS.key },
   { id: "sql", label: "SQLite", icon: ICONS.database }
+] as const
+
+/** 浏览一张表时的三个视图 */
+const TABLE_TABS = [
+  { id: "data", label: "数据", icon: ICONS.table },
+  { id: "struct", label: "结构", icon: ICONS.columns },
+  { id: "ddl", label: "建表语句", icon: ICONS.code }
 ] as const
 
 /** 值大类的角标 */
@@ -876,6 +884,16 @@ async function loadDdl(): Promise<void> {
   }
 }
 
+/**
+ * 切换表的视图；每次切入都重新取数
+ * @param view 视图
+ */
+function pickTableView(view: (typeof TABLE_TABS)[number]["id"]): void {
+  if (view === "data") showData()
+  else if (view === "struct") void loadStruct()
+  else void loadDdl()
+}
+
 /* ───── 整行编辑 ───── */
 
 /** 编辑框里的一个单元格 */
@@ -1080,18 +1098,7 @@ onMounted(() => void loadHome())
       </div>
     </Transition>
 
-    <div class="toolbar tabs db-tabs" role="tablist">
-      <button
-        v-for="item in TABS"
-        :key="item.id"
-        role="tab"
-        :aria-selected="tab === item.id"
-        :class="{ primary: tab === item.id }"
-        @click="switchTab(item.id)"
-      >
-        <AppIcon class="btn-ico" :path="item.icon" />{{ item.label }}
-      </button>
-    </div>
+    <TabBar class="db-tabs" :items="TABS" :model-value="tab" label="数据库" @update:model-value="switchTab" />
 
     <Transition name="pane" mode="out-in">
     <!-- ───── 概览 ───── -->
@@ -1398,17 +1405,13 @@ onMounted(() => void loadHome())
 
         <section class="db-main">
           <template v-if="browsing">
-            <div class="toolbar tabs db-tabs" role="tablist">
-              <button role="tab" :aria-selected="tableView === 'data'" :class="{ primary: tableView === 'data' }" @click="showData()">
-                <AppIcon class="btn-ico" :path="ICONS.table" />数据
-              </button>
-              <button role="tab" :aria-selected="tableView === 'struct'" :class="{ primary: tableView === 'struct' }" @click="void loadStruct()">
-                <AppIcon class="btn-ico" :path="ICONS.columns" />结构
-              </button>
-              <button role="tab" :aria-selected="tableView === 'ddl'" :class="{ primary: tableView === 'ddl' }" @click="void loadDdl()">
-                <AppIcon class="btn-ico" :path="ICONS.code" />建表语句
-              </button>
-            </div>
+            <TabBar
+              class="db-tabs"
+              :items="TABLE_TABS"
+              :model-value="tableView"
+              :label="`表 ${browsing.name}`"
+              @update:model-value="pickTableView"
+            />
 
             <!-- 结构 -->
             <div v-if="tableView === 'struct'" class="card">

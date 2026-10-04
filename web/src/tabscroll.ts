@@ -1,25 +1,17 @@
 /**
- * 模块职责：让横向页签条能被鼠标滚轮滚动，并把激活项带进视野
- * 依赖方向：算量那半是纯函数，不碰任何浏览器 API（故可在 node 环境下跑用例）；
- *          装监听那半只碰 `document`
+ * 模块职责：横向页签条的滚动 —— 滚轮转横滚，选中项滚进视野
+ * 依赖方向：算量是纯函数（可在 node 下跑用例）；装监听只碰 `document`
  * 生命周期：`installTabScroll()` 由 main.ts 在挂载前调一次，此后一直生效
- * 注意事项：**页签条溢出时滑不动，是本模块要消灭的那个缺陷。** `.toolbar.tabs` 已是
- *          `overflow-x: auto`，程序上滚得动，但两条合起来让人滚不动：滚动条被全站隐去
- *          （见 styles.css 的「滚动条一律不显形」），故看不出还有内容；而桌面鼠标只有
- *          竖滚轮，横向容器不响应它。于是八个分区里第八个就此够不着 —— 那一栏的配置项
- *          等于不存在。
- *
- *          **用事件委托装在 document 上，不逐处给组件加监听。** `.toolbar.tabs` 现有七处
- *          （配置分区、帮助页、插件页两处模态与页级、面板商店、插件市场），逐处装等于
- *          日后每加一处都要记得补，而漏掉的那处表现为「这里的页签滑不动」——
- *          与此刻的缺陷一模一样。
- *
- *          **滚到尽头就把事件交回页面。** 不交的话，指针停在页签条上时整页都滚不动了：
- *          使用者会以为页面卡住，而他只是把鼠标放在了那一条上。
+ * 注意事项：滚动条全站隐去、桌面鼠标只有竖滚轮，不接手的话溢出的页签够不着。
+ *          监听用委托装在 document 上，新加的页签条无须各自补。
+ *          滚到尽头就把事件交回页面，否则指针停在页签条上时整页滚不动。
  */
 
 /** 页签条的选择器，与 styles.css 里那一处形制同名 */
 export const TABS_SELECTOR = ".toolbar.tabs"
+
+/** 两端渐隐盖片的宽度，与 styles.css 里 `.toolbar.tabs` 的 background-size 一致 */
+export const TAB_FADE_PX = 28
 
 /** 一个滚动容器的当前状况，只取算量要用的三个数 */
 export interface ScrollBox {
@@ -39,16 +31,19 @@ export interface WheelDelta {
   deltaY: number
 }
 
+/** 一枚页签在页签条滚动坐标里的位置 */
+export interface TabSpan {
+  /** 左缘 */
+  left: number
+  /** 宽度 */
+  width: number
+}
+
 /**
  * 这一次滚轮该把页签条横向滚多少
  *
- * 返回 undefined 意为**不接手**，调用方须放任浏览器照原样处理（页面照常竖滚）。四种情形
- * 不接手，每一种都有它必须存在的理由：
- *
- * - **容器没溢出**：一排页签全在眼前，横滚无从发生，接手只会让页面在这一条上滚不动。
- * - **横向分量已占主导**：触控板横扫由浏览器原生处理，再叠一次就是双倍速。
- * - **已到该方向的尽头**：滚到最右还接手，指针停在页签条上时整页都动不了。
- * - **竖向分量为零**：纯横扫或纯缩放，没有可换算的量。
+ * 不接手的四种情形：容器没溢出；横向分量占主导（触控板横扫由浏览器处理，再叠就是双倍速）；
+ * 已到该方向的尽头；竖向分量为零。
  * @param box 容器当前状况
  * @param delta 滚轮的两个分量
  * @returns 要横向滚过的像素；不接手时 undefined
@@ -67,10 +62,32 @@ export function wheelShift(box: ScrollBox, delta: WheelDelta): number | undefine
 }
 
 /**
+ * 要让一枚页签完整露出、不压在两端渐隐下，页签条该滚到哪里
+ *
+ * 只算横向：`scrollIntoView` 即便给了 `block: "nearest"`，祖先里另有滚动容器时仍会带动它们。
+ * @param box 页签条当前状况
+ * @param tab 该页签的位置
+ * @param fade 两端各让出的宽度
+ * @returns 目标 scrollLeft；已完整可见、或夹到边界后无须移动时 undefined
+ */
+export function revealLeft(box: ScrollBox, tab: TabSpan, fade = TAB_FADE_PX): number | undefined {
+  const start = box.scrollLeft + fade
+  const end = box.scrollLeft + box.clientWidth - fade
+  let next: number
+  if (tab.left < start) next = tab.left - fade
+  else if (tab.left + tab.width > end) next = tab.left + tab.width + fade - box.clientWidth
+  else return undefined
+
+  const max = Math.max(0, box.scrollWidth - box.clientWidth)
+  const target = Math.min(max, Math.max(0, next))
+  // 滚到两端时那一侧的渐隐不画（见 styles.css），夹到边界后不动即已可见
+  return Math.abs(target - box.scrollLeft) < 1 ? undefined : target
+}
+
+/**
  * 装上滚轮转横滚
  *
- * `passive: false` 是必须的：接手时要 `preventDefault()` 拦下页面的竖滚，而被动监听里
- * 那一句无效（浏览器只给一条控制台警告，症状是页签条与页面同时在滚）。
+ * `passive: false` 是必须的：被动监听里 `preventDefault()` 无效，页签条与页面会同时在滚。
  * @returns 卸掉监听的函数，供用例与热更新收尾
  */
 export function installTabScroll(): () => void {
@@ -92,25 +109,4 @@ export function installTabScroll(): () => void {
 
   document.addEventListener("wheel", onWheel, { passive: false })
   return () => document.removeEventListener("wheel", onWheel)
-}
-
-/**
- * 把某个页签滚进视野
- *
- * **为「自动跳到有错的那一栏」而设。** 那一栏可能正在溢出区里，跳过去却看不见它被选中，
- * 使用者看到的是「它说跳了，可高亮的还是刚才那个」。
- *
- * `block: "nearest"` 一并给上：默认的 `start` 会连带把整页竖向滚一段，把页签条顶到视口
- * 上沿 —— 而此处只想横向挪一点。
- * @param box 页签条元素；不在文档里时什么都不做
- * @param title 该页签的文案，按它在子元素里找
- */
-export function revealTab(box: HTMLElement | undefined, title: string): void {
-  if (box === undefined) return
-  for (const item of box.children) {
-    if (!(item instanceof HTMLElement)) continue
-    if (item.textContent?.trim().startsWith(title) !== true) continue
-    item.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" })
-    return
-  }
 }

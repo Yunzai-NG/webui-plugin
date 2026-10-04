@@ -24,6 +24,7 @@ import ConfigEditor from "../components/ConfigEditor.vue"
 import Modal from "../components/Modal.vue"
 import PageHeader from "../components/PageHeader.vue"
 import PanelConfigEditor from "../components/PanelConfigEditor.vue"
+import TabBar from "../components/TabBar.vue"
 import { panelConfigOf } from "../panelconfig.js"
 import { panelPackages, panelTabs } from "../registry.js"
 import type {
@@ -159,6 +160,16 @@ const packages = panelPackages()
 
 /** 插件贡献的页签，接在内置三个之后 */
 const pluginTabs = panelTabs()
+
+/** 页级页签：内置三类带条目数，其后接插件贡献的页签 */
+const pageTabs = computed(() => [
+  ...PAGE_TABS.map(item => ({
+    ...item,
+    count:
+      item.id === "all" ? plugins.value.length + packages.length : item.id === "core" ? plugins.value.length : packages.length
+  })),
+  ...pluginTabs.map(item => ({ id: item.id, label: item.title }))
+])
 
 /**
  * 包键 → 它在配置这件事上的状况（声明、当前值、声明写错了的原因）
@@ -603,28 +614,7 @@ onMounted(() => void load())
     -->
     <p v-if="notice" class="banner ok">{{ notice }}</p>
 
-    <!-- 页级页签：形制取 `.toolbar.tabs`（帮助页与「查看」模态已在用），角标是「这一类有几个」 -->
-    <div class="toolbar tabs">
-      <button
-        v-for="item in PAGE_TABS"
-        :key="item.id"
-        :class="{ primary: pageTab === item.id }"
-        @click="pageTab = item.id"
-      >
-        {{ item.label }}
-        <span class="tag">{{
-          item.id === "all" ? plugins.length + packages.length : item.id === "core" ? plugins.length : packages.length
-        }}</span>
-      </button>
-      <button
-        v-for="item in pluginTabs"
-        :key="item.id"
-        :class="{ primary: pageTab === item.id }"
-        @click="pageTab = item.id"
-      >
-        {{ item.title }}
-      </button>
-    </div>
+    <TabBar v-model="pageTab" :items="pageTabs" label="插件分类" />
 
     <!--
       插件贡献的页签：整块内容区交给它，与内置三类互斥（`v-else` 那一路）
@@ -865,16 +855,7 @@ onMounted(() => void load())
       :sub="viewed?.description"
       @close="viewing = ''"
     >
-      <div class="toolbar tabs">
-        <button
-          v-for="item in DETAIL_TABS"
-          :key="item.id"
-          :class="{ primary: item.id === tab }"
-          @click="tab = item.id"
-        >
-          {{ item.label }}
-        </button>
-      </div>
+      <TabBar v-model="tab" :items="DETAIL_TABS" label="插件详情" />
 
       <template v-if="viewed">
         <dl v-if="tab === 'basic'" class="facts">
@@ -955,16 +936,7 @@ onMounted(() => void load())
       :sub="pkgViewed?.meta?.description"
       @close="pkgViewing = ''"
     >
-      <div class="toolbar tabs">
-        <button
-          v-for="item in PKG_TABS"
-          :key="item.id"
-          :class="{ primary: item.id === pkgTab }"
-          @click="pkgTab = item.id"
-        >
-          {{ item.label }}
-        </button>
-      </div>
+      <TabBar v-model="pkgTab" :items="PKG_TABS" label="面板插件详情" />
 
       <template v-if="pkgViewed">
         <dl v-if="pkgTab === 'basic'" class="facts">

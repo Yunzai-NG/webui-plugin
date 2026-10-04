@@ -15,12 +15,12 @@
  *          渲染成带标题的可折叠区块（判据在 subform.ts）。顶层对象仍摊平 —— 它的标题
  *          就是分区页签上那个名字，再套一层分组等于同一个名字出现两遍。
  */
-import { computed, nextTick, ref, watch } from "vue"
+import { computed, ref, watch } from "vue"
 import SchemaField from "./SchemaField.vue"
 import SubForm from "./SubForm.vue"
 import ObjectList from "./ObjectList.vue"
+import TabBar from "./TabBar.vue"
 import { sectionNodes, type FormNode } from "../subform.js"
-import { revealTab } from "../tabscroll.js"
 import type { SchemaDescriptor, SchemaIssue } from "../types.js"
 
 const props = defineProps<{
@@ -100,14 +100,14 @@ const sections = computed<Section[]>(() => {
  */
 const picked = ref("")
 
-/** 页签条本身，供「把要跳去的那一栏滚进视野」用 */
-const bar = ref<HTMLElement | undefined>(undefined)
-
 /** 实际生效的分区：选中的那个不在了就退回第一个 */
 const active = computed(() => {
   const found = sections.value.find(item => item.title === picked.value)
   return found ?? sections.value[0]
 })
+
+/** 页签条的条目，标识即分区标题 */
+const tabs = computed(() => sections.value.map(section => ({ id: section.title, label: section.title })))
 
 /**
  * 一个路径属于哪个分区
@@ -168,15 +168,8 @@ watch(
     if (here !== undefined && (badges.value.get(here)?.bad ?? 0) > 0) return
     const first = list.map(issue => sectionOf(issue.path)).find(title => title !== undefined)
     if (first === undefined) return
+    // 跳去的那一栏可能在溢出区里，TabBar 会随选中项把它滚进视野
     picked.value = first
-    /*
-     * 选中之后还要把它滚进视野
-     *
-     * 页签多起来时那一条是横向滚动的（八个分区在模态里就已经装不下），而要跳去的那一栏
-     * 可能正在溢出区里 —— 只改选中项的话，使用者看到的是「它说跳了，可高亮的还是刚才那个」。
-     * `nextTick` 之后 `.primary` 才落到新的那一枚上。
-     */
-    void nextTick(() => revealTab(bar.value, first))
   }
 )
 
@@ -206,31 +199,19 @@ function nodesIn(section: Section): FormNode[] {
 <template>
   <div>
     <!--
-      分区改横向页签，形制取 `.toolbar.tabs`（插件页、帮助页、面板商店已在用），不新画一种
-
-      **一次只渲染一个分区。** 内核配置有八组、三十余项，全铺开时「保存」被推到几屏之下，
-      而使用者改的往往只是其中一项。角标里两个数各有分工：改动数说「这一栏我动过几处」，
-      错误数说「这一栏有几处存不进去」—— 后者取错误色，因为它挡着保存。
-
-      只有一个分区时整排不画：一个孤零零的页签点了也没有别处可去。
+      一次只渲染一个分区：全铺开时「保存」被推到几屏之下。角标：改动数，以及取错误色的错误数（它挡着保存）。
+      只有一个分区时整排不画。
     -->
-    <div v-if="sections.length > 1" ref="bar" class="toolbar tabs">
-      <button
-        v-for="section in sections"
-        :key="section.title"
-        type="button"
-        :class="{ primary: section.title === active?.title }"
-        @click="picked = section.title"
-      >
-        {{ section.title }}
-        <span v-if="(badges.get(section.title)?.dirty ?? 0) > 0" class="tag">
-          {{ badges.get(section.title)?.dirty }}
+    <TabBar v-if="sections.length > 1" :items="tabs" :model-value="active?.title ?? ''" label="配置分区" @update:model-value="picked = $event">
+      <template #default="{ item }">
+        <span v-if="(badges.get(item.id)?.dirty ?? 0) > 0" class="tag">
+          {{ badges.get(item.id)?.dirty }}
         </span>
-        <span v-if="(badges.get(section.title)?.bad ?? 0) > 0" class="tag err">
-          {{ badges.get(section.title)?.bad }}
+        <span v-if="(badges.get(item.id)?.bad ?? 0) > 0" class="tag err">
+          {{ badges.get(item.id)?.bad }}
         </span>
-      </button>
-    </div>
+      </template>
+    </TabBar>
 
     <Transition name="tab" mode="out-in">
     <section v-if="active" :key="active.title" class="card">
