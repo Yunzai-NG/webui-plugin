@@ -23,8 +23,10 @@ import { installDirOf, resultText, setupResultText } from "../market.js"
 import { hrefOf } from "../router.js"
 import ConfigEditor from "../components/ConfigEditor.vue"
 import Modal from "../components/Modal.vue"
+import PackageDetail from "../components/PackageDetail.vue"
 import PageHeader from "../components/PageHeader.vue"
 import PanelConfigEditor from "../components/PanelConfigEditor.vue"
+import PluginDetail from "../components/PluginDetail.vue"
 import TabBar from "../components/TabBar.vue"
 import { panelConfigOf } from "../panelconfig.js"
 import { panelPackages, panelTabs } from "../registry.js"
@@ -48,24 +50,6 @@ import type {
  */
 const MENU_GAP = 4
 
-/** 「查看」模态里的四个标签 */
-const DETAIL_TABS = [
-  { id: "basic", label: "基础信息" },
-  { id: "commands", label: "命令" },
-  { id: "tasks", label: "任务" },
-  { id: "middlewares", label: "中间件" }
-] as const
-
-/**
- * 包详情模态里的两个标签
- *
- * 与 `DETAIL_TABS` 分开：面板插件包没有命令/任务/中间件，共用一套会摆出三个恒为空的标签页。
- */
-const PKG_TABS = [
-  { id: "basic", label: "基础信息" },
-  { id: "widgets", label: "组件" }
-] as const
-
 /**
  * 三个内置页签
  *
@@ -76,14 +60,6 @@ const PAGE_TABS = [
   { id: "core", label: "核心插件" },
   { id: "panel", label: "面板插件" }
 ] as const
-
-/** 事件大类的中文说法；中间件清单里逐条列出适用范围 */
-const KIND_LABEL: Record<string, string> = {
-  message: "消息",
-  notice: "通知",
-  request: "请求",
-  meta: "元事件"
-}
 
 const plugins = ref<PluginItem[]>([])
 const tasks = ref<TaskItem[]>([])
@@ -99,8 +75,6 @@ const registriesLoaded = ref(false)
 const configuring = ref("")
 /** 正在查看哪个插件；空串意为查看模态未开 */
 const viewing = ref("")
-/** 查看模态里的当前标签 */
-const tab = ref<(typeof DETAIL_TABS)[number]["id"]>("basic")
 /** 哪张卡片的「更多」菜单是展开的 */
 const menuOpen = ref("")
 /**
@@ -185,35 +159,8 @@ const pkgConfiguring = ref("")
 /** 正在看哪个包的详情；空串意为包详情模态未开 */
 const pkgViewing = ref("")
 
-/** 包详情模态里的当前标签 */
-const pkgTab = ref<"basic" | "widgets">("basic")
-
-/** 正在看的那个包 */
-const pkgViewed = computed(() => packages.find(p => p.key === pkgViewing.value))
-
 /** 当前页签对应的插件贡献页签定义；内置页签时为 undefined */
 const activePluginTab = computed(() => pluginTabs.find(t => t.id === pageTab.value))
-
-/**
- * 打开一个包的详情
- * @param key 包键
- */
-function viewPackage(key: string): void {
-  pkgViewing.value = key
-  pkgTab.value = "basic"
-}
-
-/** 正在查看的那个插件 */
-const viewed = computed(() => plugins.value.find(p => p.name === viewing.value))
-
-/** 正在查看的插件所注册的命令 */
-const viewedCommands = computed(() => commands.value.filter(c => c.plugin === viewing.value))
-
-/** 正在查看的插件所注册的定时任务 */
-const viewedTasks = computed(() => tasks.value.filter(t => t.plugin === viewing.value))
-
-/** 正在查看的插件所注册的中间件，顺序即执行顺序 */
-const viewedMiddlewares = computed(() => middlewares.value.filter(m => m.plugin === viewing.value))
 
 /** 读取插件与定时任务清单 */
 async function load(): Promise<void> {
@@ -553,7 +500,6 @@ async function remove(p: PluginItem): Promise<void> {
 async function view(name: string): Promise<void> {
   menuOpen.value = ""
   viewing.value = name
-  tab.value = "basic"
   await loadRegistries()
 }
 
@@ -766,7 +712,7 @@ onMounted(() => void load())
             <button v-if="configs.get(pkg.key)?.schema" class="primary" @click="pkgConfiguring = pkg.key">
               配置
             </button>
-            <button :class="{ primary: !configs.get(pkg.key)?.schema }" @click="viewPackage(pkg.key)">查看</button>
+            <button :class="{ primary: !configs.get(pkg.key)?.schema }" @click="pkgViewing = pkg.key">查看</button>
             <a
               v-if="pkg.meta?.repository"
               class="button"
@@ -836,169 +782,17 @@ onMounted(() => void load())
     </Modal>
 
     <!-- 查看：四个标签 -->
-    <Modal
-      :open="viewing !== ''"
-      wide
-      :title="`插件「${viewing}」`"
-      :sub="viewed?.description"
+    <PluginDetail
+      :name="viewing"
+      :plugins="plugins"
+      :commands="commands"
+      :tasks="tasks"
+      :middlewares="middlewares"
       @close="viewing = ''"
-    >
-      <TabBar v-model="tab" :items="DETAIL_TABS" label="插件详情" />
+    />
 
-      <template v-if="viewed">
-        <dl v-if="tab === 'basic'" class="facts">
-          <dt>版本</dt>
-          <dd class="mono">{{ viewed.version }}</dd>
-          <dt>状态</dt>
-          <dd><span class="tag" :class="statusClass(viewed.status)">{{ statusText(viewed.status) }}</span></dd>
-          <dt v-if="viewed.author">作者</dt>
-          <dd v-if="viewed.author">{{ viewed.author }}</dd>
-          <dt>安装目录</dt>
-          <dd class="mono">{{ viewed.root }}</dd>
-          <dt>加载耗时</dt>
-          <dd>{{ viewed.loadCost }}ms</dd>
-          <dt>配置文件</dt>
-          <dd>{{ viewed.configured ? "已声明" : "未声明 —— 该插件没有可改的配置项" }}</dd>
-          <dt v-if="viewed.homepage">仓库</dt>
-          <dd v-if="viewed.homepage">
-            <a :href="viewed.homepage" target="_blank" rel="noreferrer noopener">{{ viewed.homepage }}</a>
-          </dd>
-          <dt v-if="viewed.error">错误</dt>
-          <dd v-if="viewed.error" class="err">{{ viewed.error }}</dd>
-        </dl>
-
-        <template v-if="tab === 'commands'">
-          <ul v-if="viewedCommands.length > 0" class="plain">
-            <li v-for="cmd in viewedCommands" :key="cmd.name">
-              <span class="mono">{{ cmd.name }}</span>
-              <span v-if="cmd.master" class="tag warn">仅主人</span>
-              <span v-if="cmd.admin" class="tag warn">仅群管</span>
-              <span v-if="cmd.disabled" class="tag err">已禁用</span>
-              <span v-if="cmd.hidden" class="tag">隐藏</span>
-              <span v-if="cmd.desc">{{ cmd.desc }}</span>
-              <span v-if="cmd.patterns.length > 1" class="hint mono">触发：{{ cmd.patterns.join(" / ") }}</span>
-              <span v-if="cmd.usage" class="hint mono">用法：{{ cmd.usage }}</span>
-            </li>
-          </ul>
-          <p v-else class="hint">该插件未注册命令。</p>
-        </template>
-
-        <template v-if="tab === 'tasks'">
-          <ul v-if="viewedTasks.length > 0" class="plain">
-            <li v-for="t in viewedTasks" :key="t.name">
-              <span>{{ t.name }}</span>
-              <span class="hint mono">{{ t.schedule }}</span>
-              <span class="tag" :class="t.running ? 'warn' : ''">{{ t.running ? "执行中" : "空闲" }}</span>
-              <span v-if="t.skipped > 0" class="tag warn">跳过 {{ t.skipped }} 次</span>
-            </li>
-          </ul>
-          <p v-else class="hint">该插件未注册定时任务。</p>
-        </template>
-
-        <template v-if="tab === 'middlewares'">
-          <ul v-if="viewedMiddlewares.length > 0" class="plain">
-            <li v-for="(m, i) in viewedMiddlewares" :key="`${m.priority}:${i}`">
-              <span class="hint mono">优先级 {{ m.priority }}</span>
-              <span>{{ m.kinds.map(k => KIND_LABEL[k] ?? k).join(" / ") }}</span>
-            </li>
-          </ul>
-          <p v-else class="hint">该插件未注册中间件。</p>
-          <p class="hint">
-            中间件没有名字（注册时只给函数），故此处以优先级与适用范围标识。数值小者靠外层，
-            即更早拿到事件。全部插件的中间件顺序见下方说明。
-          </p>
-        </template>
-      </template>
-    </Modal>
-
-    <!--
-      包详情：两个标签
-
-      **失败的组件列在同一张表里，不另设一节** —— 使用者找的是「我装的那枚组件在哪」，
-      按成败分两处列，他得先知道自己该去哪一处找。
-    -->
-    <Modal
-      :open="pkgViewing !== ''"
-      wide
-      :title="`面板插件「${pkgViewed?.name ?? ''}」`"
-      :sub="pkgViewed?.meta?.description"
-      @close="pkgViewing = ''"
-    >
-      <TabBar v-model="pkgTab" :items="PKG_TABS" label="面板插件详情" />
-
-      <template v-if="pkgViewed">
-        <dl v-if="pkgTab === 'basic'" class="facts">
-          <dt>版本</dt>
-          <dd class="mono">{{ pkgViewed.meta?.version ?? "—" }}</dd>
-          <dt>形态</dt>
-          <dd>{{ pkgViewed.kind === "multi" ? "多文件（一个目录，入口 index.js）" : "单文件（一个 .js）" }}</dd>
-          <dt>作者</dt>
-          <dd>{{ pkgViewed.meta?.author ?? "—" }}</dd>
-          <dt>组件</dt>
-          <dd>
-            {{ pkgViewed.widgets.length }} 枚<span v-if="pkgViewed.failures.length > 0" class="err">
-              （其中 {{ pkgViewed.failures.length }} 枚未装上）</span>
-          </dd>
-          <dt>本页页签</dt>
-          <dd>{{ pkgViewed.tabs.length === 0 ? "未贡献" : pkgViewed.tabs.map(t => t.title).join("、") }}</dd>
-          <dt>配置项</dt>
-          <dd>
-            <template v-if="configs.get(pkgViewed.key)?.schema">
-              {{ Object.keys(configs.get(pkgViewed.key)?.schema?.properties ?? {}).length }} 项，可在卡片上点「配置」修改；
-              值存在 <span class="mono">data/plugin/webui/panelconfig/{{ pkgViewed.key }}.json</span>
-            </template>
-            <template v-else>未声明 —— 这个包没有可改的配置项</template>
-          </dd>
-          <!--
-            声明写坏了或写错了地方：这一行是它唯一的去处
-
-            两种情形都只表现为「配置按钮没出现」，而作者刚刚明明写下了它。
-          -->
-          <dt v-if="configs.get(pkgViewed.key)?.problem">配置声明</dt>
-          <dd v-if="configs.get(pkgViewed.key)?.problem" class="err">
-            {{ configs.get(pkgViewed.key)?.problem }}
-          </dd>
-          <dt>包键</dt>
-          <dd class="mono">{{ pkgViewed.key }}</dd>
-          <dt v-if="pkgViewed.meta?.repository">仓库</dt>
-          <dd v-if="pkgViewed.meta?.repository">
-            <a :href="pkgViewed.meta.repository" target="_blank" rel="noreferrer noopener">
-              {{ pkgViewed.meta.repository }}
-            </a>
-          </dd>
-        </dl>
-
-        <template v-if="pkgTab === 'widgets'">
-          <table v-if="pkgViewed.widgets.length > 0" class="rows panelrows">
-            <thead>
-              <tr>
-                <th>组件</th>
-                <th>标识</th>
-                <th>所在页</th>
-                <th>默认尺寸</th>
-                <th>可调</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="w in pkgViewed.widgets" :key="w.id">
-                <td data-label="组件">
-                  {{ w.title }}
-                  <span v-if="w.failure" class="tag err">未装上</span>
-                </td>
-                <td data-label="标识" class="mono">{{ w.id }}</td>
-                <td data-label="所在页">{{ w.page }}</td>
-                <td data-label="默认尺寸" class="mono">{{ w.layout.w }} × {{ w.layout.h }}</td>
-                <td data-label="可调">{{ w.layout.resizable === true ? "可" : "固定" }}</td>
-              </tr>
-              <tr v-for="w in pkgViewed.failures" :key="`${w.id}:why`">
-                <td colspan="5" class="err">{{ w.title }}：{{ w.failure }}</td>
-              </tr>
-            </tbody>
-          </table>
-          <p v-else class="hint">该包一枚组件都没有，只贡献了页签。</p>
-        </template>
-      </template>
-    </Modal>
+    <!-- 包详情：两个标签 -->
+    <PackageDetail :pkg="pkgViewing" :packages="packages" @close="pkgViewing = ''" />
 
     <!--
       面板插件包的配置：另一个模态，不并进上面那张详情
