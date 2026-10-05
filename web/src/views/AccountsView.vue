@@ -11,6 +11,7 @@
  *          端点与一套重连逻辑。轮询只在存在进行中的会话时启用（见 `syncLogins`），空闲时无定时器。
  */
 import { computed, onMounted, onUnmounted, ref, watch } from "vue"
+import { useAction } from "../action.js"
 import { del, get, patch, post } from "../api.js"
 import { defaultsOf, snapshot } from "../configedit.js"
 import { errorText, statusClass, statusText } from "../format.js"
@@ -33,8 +34,7 @@ const CORE_CONFIG = "yunzai"
 const adapters = ref<AdapterSummary[]>([])
 const accounts = ref<AccountItem[]>([])
 const logins = ref<LoginSnapshot[]>([])
-const error = ref("")
-const busy = ref("")
+const { error, busy, run } = useAction()
 
 /** 正在新建的账号：所选适配器 */
 const draftAdapter = ref("")
@@ -198,17 +198,11 @@ async function refreshAccounts(): Promise<void> {
  * @param action 动作
  */
 async function act(id: string, action: "connect" | "disconnect" | "reconnect"): Promise<void> {
-  busy.value = id
-  try {
+  await run(id, async () => {
     // 端点返回动作执行后的状态，就地替换该行即可，无须重新拉取整张表
     const next = await post<AccountItem | undefined>(`accounts/${encodeURIComponent(id)}/${action}`)
     if (next !== undefined) accounts.value = accounts.value.map(a => (a.record.id === id ? next : a))
-    error.value = ""
-  } catch (err) {
-    error.value = errorText(err)
-  } finally {
-    busy.value = ""
-  }
+  })
 }
 
 /**
@@ -224,16 +218,10 @@ async function remove(id: string, label: string): Promise<void> {
     danger: true
   })
   if (!ok) return
-  busy.value = id
-  try {
+  await run(id, async () => {
     await del(`accounts/${encodeURIComponent(id)}`)
     accounts.value = accounts.value.filter(a => a.record.id !== id)
-    error.value = ""
-  } catch (err) {
-    error.value = errorText(err)
-  } finally {
-    busy.value = ""
-  }
+  })
 }
 
 /**
@@ -241,18 +229,12 @@ async function remove(id: string, label: string): Promise<void> {
  * @param item 账号
  */
 async function toggleEnabled(item: AccountItem): Promise<void> {
-  busy.value = item.record.id
-  try {
+  await run(item.record.id, async () => {
     const next = await patch<AccountItem>(`accounts/${encodeURIComponent(item.record.id)}`, {
       enabled: !item.record.enabled
     })
     accounts.value = accounts.value.map(a => (a.record.id === item.record.id ? next : a))
-    error.value = ""
-  } catch (err) {
-    error.value = errorText(err)
-  } finally {
-    busy.value = ""
-  }
+  })
 }
 
 /**
@@ -393,20 +375,14 @@ async function saveEdit(): Promise<void> {
  * @param mode 登录方式 id
  */
 async function startLogin(adapterId: string, mode: string): Promise<void> {
-  busy.value = "login"
-  try {
+  await run("login", async () => {
     await post<LoginSnapshot>("logins", {
       adapterId,
       mode,
       ...(draftLabel.value === "" ? {} : { label: draftLabel.value })
     })
-    error.value = ""
     await syncLogins()
-  } catch (err) {
-    error.value = errorText(err)
-  } finally {
-    busy.value = ""
-  }
+  })
 }
 
 /**
@@ -417,17 +393,11 @@ async function startLogin(adapterId: string, mode: string): Promise<void> {
 async function answer(session: LoginSnapshot, value: unknown): Promise<void> {
   const pending = session.pending
   if (pending === undefined) return
-  busy.value = session.id
-  try {
+  await run(session.id, async () => {
     await post(`logins/${encodeURIComponent(session.id)}/answer`, { seq: pending.seq, value })
     delete answers.value[session.id]
-    error.value = ""
     await syncLogins()
-  } catch (err) {
-    error.value = errorText(err)
-  } finally {
-    busy.value = ""
-  }
+  })
 }
 
 /**

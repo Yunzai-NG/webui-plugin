@@ -21,6 +21,7 @@
  *          内核的 `market.mirror`，后者是索引本身没有条目。合成一句会让排查方向完全偏离。
  */
 import { computed, onMounted, ref } from "vue"
+import { useAction } from "../action.js"
 import { delAt, getAt, postAt } from "../api.js"
 import { askConfirm } from "../confirm.js"
 import { datetime, errorText } from "../format.js"
@@ -34,9 +35,8 @@ import TabBar from "../components/TabBar.vue"
 import type { PanelStoreItem, PanelStoreResult, PanelStoreSnapshot } from "../types.js"
 
 const snapshot = ref<PanelStoreSnapshot | undefined>(undefined)
-const error = ref("")
+const { error, busy, run } = useAction()
 const notice = ref("")
-const busy = ref("")
 const loading = ref(false)
 /**
  * 六维筛选判据，整份交给 `MarketFilter`
@@ -138,18 +138,12 @@ async function askDeps(item: PanelStoreItem, action: string): Promise<{ go: bool
 async function install(item: PanelStoreItem): Promise<void> {
   const { go, deps } = await askDeps(item, "安装")
   if (!go) return
-  busy.value = item.name
   notice.value = ""
-  try {
+  await run(item.name, async () => {
     const result = await postAt<PanelStoreResult>(storeUrlOf("install"), { name: item.name, dependencies: deps })
     notice.value = storeResultText(result)
-    error.value = ""
     await load()
-  } catch (err) {
-    error.value = errorText(err)
-  } finally {
-    busy.value = ""
-  }
+  })
 }
 
 /**
@@ -170,22 +164,16 @@ async function update(item: PanelStoreItem): Promise<void> {
     ]
   })
   if (!ok) return
-  busy.value = item.name
   notice.value = ""
-  try {
+  await run(item.name, async () => {
     // 判据与安装那条路同一个 `willRunPm`：两处各写一遍迟早对不上，而症状是
     // 「装的时候编译了、更新之后没编译」—— 产物停在旧版本，且毫无迹象
     const result = await postAt<PanelStoreResult>(storeUrlOf(`${encodeURIComponent(item.name)}/update`), {
       dependencies: willRunPm(item)
     })
     notice.value = storeResultText(result)
-    error.value = ""
     await load()
-  } catch (err) {
-    error.value = errorText(err)
-  } finally {
-    busy.value = ""
-  }
+  })
 }
 
 /**
@@ -202,17 +190,11 @@ async function remove(item: PanelStoreItem): Promise<void> {
     details: ["这个包的配置不会被删除，重装同名包后原有配置仍然有效", "已摆好的版面里，它那几格会变成空位"]
   })
   if (!ok) return
-  busy.value = item.name
-  try {
+  await run(item.name, async () => {
     await delAt(storeUrlOf(encodeURIComponent(item.name)))
     notice.value = `${item.name} 已删除。刷新页面后它的组件不再出现。`
-    error.value = ""
     await load()
-  } catch (err) {
-    error.value = errorText(err)
-  } finally {
-    busy.value = ""
-  }
+  })
 }
 
 onMounted(() => void load())

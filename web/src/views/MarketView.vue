@@ -22,6 +22,7 @@
  *          「查看」里 —— 那个模态同时是「作者、版本、来源索引」这些卡片上摆不下的事实的去处。
  */
 import { computed, onMounted, ref } from "vue"
+import { useAction } from "../action.js"
 import { del, get, post } from "../api.js"
 import { datetime, errorText } from "../format.js"
 import { askConfirm } from "../confirm.js"
@@ -35,9 +36,8 @@ import TabBar from "../components/TabBar.vue"
 import type { MarketInstallResult, MarketItem, MarketSnapshot, Overview } from "../types.js"
 
 const snapshot = ref<MarketSnapshot | undefined>(undefined)
-const error = ref("")
+const { error, busy, run } = useAction()
 const notice = ref("")
-const busy = ref("")
 const loading = ref(false)
 /**
  * 六维筛选判据，整份交给 `MarketFilter`
@@ -145,18 +145,12 @@ async function install(item: MarketItem): Promise<void> {
     details: [`落点：plugins/${item.name}/`, ...setupNotes(item)]
   })
   if (!ok) return
-  busy.value = item.name
   notice.value = ""
-  try {
+  await run(item.name, async () => {
     const result = await post<MarketInstallResult>("market/install", { name: item.name })
     notice.value = resultText(result)
-    error.value = ""
     await load()
-  } catch (err) {
-    error.value = errorText(err)
-  } finally {
-    busy.value = ""
-  }
+  })
 }
 
 /**
@@ -286,18 +280,12 @@ async function dropCustom(item: MarketItem): Promise<void> {
     ]
   })
   if (!ok) return
-  busy.value = item.name
   notice.value = ""
-  try {
+  await run(item.name, async () => {
     await del(`market/custom/${encodeURIComponent(item.name)}`)
     notice.value = `已撤掉 ${item.name} 的登记，插件目录未动。`
-    error.value = ""
     await load()
-  } catch (err) {
-    error.value = errorText(err)
-  } finally {
-    busy.value = ""
-  }
+  })
 }
 
 onMounted(() => {

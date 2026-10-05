@@ -15,6 +15,7 @@
  *          注册点）。「定时任务」一节留在页签之外：跟着页签隐去会在切到「面板插件」时无端消失。
  */
 import { computed, nextTick, onMounted, ref } from "vue"
+import { useAction } from "../action.js"
 import { del, get, post } from "../api.js"
 import { errorText, statusClass, statusText } from "../format.js"
 import { askConfirm, askConfirm3 } from "../confirm.js"
@@ -88,8 +89,7 @@ const plugins = ref<PluginItem[]>([])
 const tasks = ref<TaskItem[]>([])
 const commands = ref<CommandItem[]>([])
 const middlewares = ref<MiddlewareItem[]>([])
-const error = ref("")
-const busy = ref("")
+const { error, busy, run } = useAction()
 /** 一次管理动作之后要说的那句话；空串意为无话可说 */
 const notice = ref("")
 /** 三份清单是否已拉过；「查看」首次打开时拉一次 */
@@ -282,18 +282,12 @@ async function act(name: string, action: "reload" | "unload"): Promise<void> {
       })
       if (!ok) return
     }
-    busy.value = name
-    try {
+    await run(name, async () => {
       await post(`plugins/${encodeURIComponent(name)}/${action}`)
-      error.value = ""
       // 重载会改变命令与中间件的登记，故一并作废重取
       registriesLoaded.value = false
       await load()
-    } catch (err) {
-      error.value = errorText(err)
-    } finally {
-      busy.value = ""
-    }
+    })
   })
 }
 
@@ -384,19 +378,13 @@ async function flowOf(name: string, steps: () => Promise<void>): Promise<void> {
  */
 async function manage(name: string, task: () => Promise<string>): Promise<void> {
   menuOpen.value = ""
-  busy.value = name
   notice.value = ""
-  try {
+  await run(name, async () => {
     notice.value = await task()
-    error.value = ""
     // 这些动作都会换掉磁盘上的代码并重载，命令与中间件的登记随之改变
     registriesLoaded.value = false
     await load()
-  } catch (err) {
-    error.value = errorText(err)
-  } finally {
-    busy.value = ""
-  }
+  })
 }
 
 /**
