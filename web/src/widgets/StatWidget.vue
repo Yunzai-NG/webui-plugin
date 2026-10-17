@@ -8,6 +8,7 @@
  *          快照未到达时显示破折号而非 0：0 会被读成「确实是零个」。
  */
 import { computed, inject } from "vue"
+import AppIcon from "../components/AppIcon.vue"
 import { OVERVIEW } from "./context.js"
 import { STATS } from "./stats.js"
 
@@ -39,6 +40,13 @@ const label = computed(() => {
   return now === undefined ? item.title : (item.label?.(now) ?? item.title)
 })
 
+/** 跟在大字后的分母；快照未到或本块没有分母时为空串 */
+const total = computed(() => {
+  const now = snapshot.value
+  const item = def.value
+  return now === undefined || item?.total === undefined ? "" : item.total(now)
+})
+
 /** 大字是否转错误色 */
 const bad = computed(() => {
   const now = snapshot.value
@@ -48,8 +56,12 @@ const bad = computed(() => {
 </script>
 
 <template>
-  <div class="card stat">
-    <h2 style="margin-top: 0; margin-bottom: var(--s2)">{{ label }}</h2>
-    <b :class="bad ? 'tag err' : ''">{{ text }}</b>
+  <!-- 小字在上、大字在下：一排六块要读的是数，说明只是给数定性 -->
+  <div class="card stat" :class="{ bad }">
+    <span class="stat-label">{{ label }}</span>
+    <span class="stat-value">
+      <b>{{ text }}</b><small v-if="total !== ''">{{ total }}</small>
+    </span>
+    <AppIcon v-if="def?.icon" class="stat-ico" :path="def.icon" />
   </div>
 </template>

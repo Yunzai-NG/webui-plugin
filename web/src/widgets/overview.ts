@@ -5,7 +5,9 @@
  * 注意事项：**登记与页面分开。** 概览页只说「这里有一块组件板」，板上有什么由本文件决定 ——
  *          面板插件往概览页塞组件走的也是同一个 `registerWidget`，页面代码不必改一行。
  *
- *          **默认尺寸使六个计数块恰好排满一行（6 × 2 = 12 列）**，运行时表占满次行。计数块的
+ *          **默认版面是两条竖栏**：计数块排满首行（6 × 2 = 12 列），其下左 8 列是消息、磁盘、告警，
+ *          右 4 列是账号、运行时。这五格高度都随内容（见 `grid.ts` 的 `fitBoard`），同一栏里各自
+ *          往上收拢，故两栏长短不一只在页底露出来，中间不留空。计数块的
  *          下限取 2 列：1 列约 90px，装不下「已处理事件（排队 12）」那行小字。
  *
  *          **注册顺序即默认版面顺序**，故新增的项插在计数块与运行时表之间 —— 追加到末尾会让
@@ -19,8 +21,11 @@
  *          整机总量」是两个不同的比值，不构成重名。
  */
 import { registerWidget } from "../registry.js"
+import AccountsWidget from "./AccountsWidget.vue"
+import AlertsWidget from "./AlertsWidget.vue"
 import DiskWidget from "./DiskWidget.vue"
 import GaugeWidget from "./GaugeWidget.vue"
+import MessagesWidget from "./MessagesWidget.vue"
 import RuntimeWidget from "./RuntimeWidget.vue"
 import StatWidget from "./StatWidget.vue"
 import { GAUGES } from "./gauges.js"
@@ -39,11 +44,11 @@ for (const stat of STATS) {
 }
 
 /*
- * 环与磁盘一律 h=3，下限同为 3
+ * 环一律 h=3，下限同为 3
  *
- * 行高 80px、间隙 16px，故 h 只能取 80 / 176 / 272 / 368 这几档。这三格的内容实测
+ * 行高 80px、间隙 16px，故 h 只能取 80 / 176 / 272 / 368 这几档。环的内容实测
  * 190–199px，h=2（176px）装不下会长出滚动条，h=3 的 272px 余出的部分靠居中吃掉
- * （见 styles.css 的 `.gauge-card` / `.bars-wrap`）。
+ * （见 styles.css 的 `.gauge-card`）。
  *
  * `minH` 同为 3 而非 2：缩回 176px 就回到那条滚动条，且居中在溢出时失效
  * （`margin: auto` 算作 0），表现为「默认好看，拖过一次就坏」。
@@ -63,14 +68,34 @@ for (const gauge of GAUGES) {
   })
 }
 
-// 磁盘取 6 列：一条进度上要放「C:\」与「62% · 剩 8.4 GB / 200.1 GB」两端文字，
-// 3 列（约 340px）时后者会与挂载点挤在一处
+// 消息：24 根柱子在 4 列宽时每根不到 10px，读不出起伏，故下限 5 列
+registerWidget({
+  id: "overview.messages",
+  page: "overview",
+  title: "消息",
+  source: "builtin",
+  layout: { w: 8, h: 3, minW: 5, minH: 1, resizable: true, fit: true },
+  component: MessagesWidget
+})
+
+// 账号：一行要放名字、接入方式与「在线 · 3小时前」，3 列（约 260px）时名字被挤成一两个字
+registerWidget({
+  id: "overview.accounts-list",
+  page: "overview",
+  title: "账号",
+  source: "builtin",
+  layout: { w: 4, h: 2, minW: 3, minH: 1, resizable: true, fit: true },
+  component: AccountsWidget
+})
+
+// 磁盘：一条进度上要放「C:\」与「62% · 剩 8.4 GB / 200.1 GB」两端文字，
+// 3 列（约 340px）时后者会与挂载点挤在一处。高度随分区数，`h` 只是量到之前的占位
 registerWidget({
   id: "overview.disk",
   page: "overview",
   title: "磁盘",
   source: "builtin",
-  layout: { ...TALL, w: 6, minW: 3 },
+  layout: { w: 8, h: 3, minW: 3, minH: 1, resizable: true, fit: true },
   component: DiskWidget
 })
 
@@ -85,20 +110,22 @@ registerWidget({
  * 而那个组件是它唯一的示例用法。
  */
 
-/*
- * 运行时表 h=3
- *
- * 20px 内边距下这张五行表是 277px，比 h=3 的 272px 多五像素。板内卡片的内边距因此
- * 降到 16px（见 styles.css 中 `.board .card`），表变成 269px，恰好落进 h=3。
- *
- * **下限同为 3**：缩到 176px 是五行表少掉近两行，而表格没有「缩小一点」的样子 ——
- * 行高由字号定，缩格只会把后几行推到滚动条以下。
- */
+// 运行时：高度随内容 —— 宽时两栏、窄了折成一栏，行数跟着变，写死哪一档都总有一种宽度不对
 registerWidget({
   id: "overview.runtime",
   page: "overview",
   title: "运行时",
   source: "builtin",
-  layout: { w: 12, h: 3, minW: 4, minH: 3, resizable: true },
+  layout: { w: 4, h: 3, minW: 4, minH: 1, resizable: true, fit: true },
   component: RuntimeWidget
+})
+
+// 告警：排在磁盘之下，与左栏同宽 —— 默认落位按注册顺序找第一个空位，排在这里它才进得了左栏
+registerWidget({
+  id: "overview.alerts",
+  page: "overview",
+  title: "近期告警",
+  source: "builtin",
+  layout: { w: 8, h: 3, minW: 4, minH: 1, resizable: true, fit: true },
+  component: AlertsWidget
 })

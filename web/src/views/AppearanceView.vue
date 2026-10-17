@@ -29,6 +29,7 @@ import { copyText, downloadText } from "../download.js"
 import { errorText } from "../format.js"
 import { ICONS, THEME_ICON } from "../icons.js"
 import { THEME_LABEL, setTheme, themeChoice, type ThemeChoice } from "../theme.js"
+import { showToast } from "../toast.js"
 
 /** 以分段按钮选择的几项 */
 type SegKey = "radius" | "density" | "fontScale" | "width" | "motion" | "backdrop"
@@ -100,7 +101,6 @@ const MOTION_SEGMENT = seg("motion", "动效", "过渡与入场动画；系统�
 
 const THEMES: readonly ThemeChoice[] = ["auto", "light", "dark"]
 
-const notice = ref("")
 const error = ref("")
 const fileInput = ref<HTMLInputElement | null>(null)
 
@@ -191,17 +191,17 @@ function reset(): void {
   flash("已恢复默认外观")
 }
 
-let timer: ReturnType<typeof setTimeout> | undefined
-
 /**
- * 显示一条片刻后自行收起的回执
+ * 显示一条回执，并清掉上一次的错误
+ *
+ * 仍留一层函数而非三处各自 `showToast`：这三件事（复制、导入、恢复默认）都要连带清掉
+ * 错误横幅 —— 上一次「文件不是合法的 JSON」不该停在一次成功的复制之后。计时与收起
+ * 归提示条自己（见 `toast.ts`），故这里不再留计时器。
  * @param text 文案
  */
 function flash(text: string): void {
   error.value = ""
-  notice.value = text
-  clearTimeout(timer)
-  timer = setTimeout(() => (notice.value = ""), 2400)
+  showToast(text)
 }
 </script>
 
@@ -217,7 +217,6 @@ function flash(text: string): void {
     </PageHeader>
 
     <p v-if="error" class="banner">{{ error }}</p>
-    <p v-if="notice" class="banner ok" role="status">{{ notice }}</p>
 
     <div class="ap-layout">
       <div class="ap-main">

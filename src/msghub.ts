@@ -10,7 +10,7 @@
  *          **不把 `StatsBuckets` 实例放进来，只放一个取快照的函数**：放实例的话接口那侧就能
  *          `add()`，等于开了一条从 HTTP 往统计里写数的路。函数只能读。
  */
-import { HOUR_KEEP_DAYS, KEEP_DAYS, dayKey, type StatsDoc } from "./msgstats.js"
+import { HOUR_KEEP_DAYS, KEEP_DAYS, aggregate, aggregateHours, dayKey, type StatsDoc, type Tally } from "./msgstats.js"
 
 /** 取快照的函数，采集器启动时置入 */
 type Reader = () => StatsDoc
@@ -82,4 +82,49 @@ export function readStats(): StatsPayload {
   const base = { today, now, keepDays: KEEP_DAYS, hourKeepDays: HOUR_KEEP_DAYS }
   if (reader === undefined) return { doc: { version: 2, days: {} }, running: false, ...base }
   return { doc: reader(), running: true, ...base }
+}
+
+/** 概览页那一格要的摘要：只有总数、24 格逐时与今日最活跃的几个会话 */
+export interface StatsBrief {
+  /** 采集器是否已在运行；为假时各数皆 0，页面应说明「统计尚未开始」 */
+  readonly running: boolean
+  /** 近 24 小时逐时，时间升序，末格是当前那个不完整的小时 */
+  readonly hours: readonly { readonly at: string; readonly label: string; readonly recv: number; readonly sent: number }[]
+  /** 近 24 小时合计 */
+  readonly last24: { readonly recv: Tally; readonly sent: Tally }
+  /** 今日（服务端本地 00:00 起）合计 */
+  readonly today: { readonly recv: Tally; readonly sent: Tally }
+  /** 今日收发条数最多的会话，至多 {@link BRIEF_PEERS} 个 */
+  readonly peers: readonly { readonly name: string; readonly scene: string; readonly messages: number }[]
+}
+
+/** 摘要里列几个会话 */
+export const BRIEF_PEERS = 3
+
+/**
+ * 取一份概览摘要
+ *
+ * **不复用 `readStats` 把整份文档送给概览页**：文档是 40 天乘以会话数，概览每半分钟拉一次，
+ * 而那一格只画 24 根柱子。聚合在服务端做，口径与统计页同一组纯函数（`aggregate` / `aggregateHours`）。
+ *
+ * 会话只取今日：小时槽不带会话维度，近 24 小时的会话榜只能按跨到的两天算，与上面那 24 格的
+ * 口径对不上；今日这一档是两边都算得准的。
+ * @returns 摘要
+ */
+export function readBrief(): StatsBrief {
+  const now = Date.now()
+  const doc: StatsDoc = reader === undefined ? { version: 2, days: {} } : reader()
+  const last = aggregateHours(doc, now, 24)
+  const today = aggregate(doc, dayKey(now), dayKey(now))
+  return {
+    running: reader !== undefined,
+    hours: last.series.map(slot => ({ at: slot.at, label: slot.label, recv: slot.recv.messages, sent: slot.sent.messages })),
+    last24: last.total,
+    today: today.total,
+    peers: today.peers.slice(0, BRIEF_PEERS).map(peer => ({
+      name: peer.name,
+      scene: peer.scene,
+      messages: peer.recv.messages + peer.sent.messages
+    }))
+  }
 }

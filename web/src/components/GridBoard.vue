@@ -20,18 +20,21 @@
  *          跳过 FLIP），让开仍是瞬时的；松手时 `drag` 已为 undefined，FLIP 恢复，那一格
  *          从手离开的地方滑进格位而非先跳回原处。
  */
-import { computed, nextTick, onMounted, onUnmounted, ref, type CSSProperties } from "vue"
+import { computed, nextTick, onMounted, onUnmounted, ref, watch, type CSSProperties } from "vue"
 import WidgetCell from "./WidgetCell.vue"
 import { askConfirm } from "../confirm.js"
 import {
   COLUMNS,
+  SUB_ROWS,
   applyMove,
+  fitBoard,
   hideWidget,
   layoutKey,
   parseBoard,
   rowsOf,
   serializeBoard,
   showWidget,
+  toSubRows,
   visibleOf,
   type Board,
   type Slot
@@ -116,13 +119,28 @@ interface Drag {
   scrollHost: Element | Window
   /** 一列宽，起手时量一次 —— 拖动期间不会有人改窗口宽度 */
   colW: number
-  /** 一行高 */
-  rowH: number
-  /** 格间间隙 */
+  /** 一细格的纵向步距：细格高加一道间隙 */
+  rowPitch: number
+  /** 列间间隙 */
   gap: number
 }
 
-const specs = computed(() => specsOf(props.page))
+/**
+ * 一细格多高
+ *
+ * 一整行是 `--grid-row` 加一道 `--grid-gap`，均分成 {@link SUB_ROWS} 格。两者都随密度变，
+ * 故每次现读而不缓存。
+ * @param style 板的计算样式
+ * @returns 像素
+ */
+function subRowOf(style: CSSStyleDeclaration): number {
+  const row = Number.parseFloat(style.getPropertyValue("--grid-row")) || ROW_FALLBACK
+  const gap = Number.parseFloat(style.getPropertyValue("--grid-gap")) || 0
+  return (row + gap) / SUB_ROWS
+}
+
+/** 本页组件的栅格约束，`h` / `minH` 已换成细格 —— 板内一律按细格算 */
+const specs = computed(() => specsOf(props.page).map(toSubRows))
 const defs = computed(() => new Map(widgetsOf(props.page).map(def => [def.id, def])))
 
 const host = ref<HTMLElement | undefined>(undefined)
@@ -154,22 +172,35 @@ function save(): void {
   }
 }
 
+/** 高度随内容的组件 */
+const fitIds = computed(() => new Set(specs.value.filter(spec => spec.fit === true).map(spec => spec.id)))
+
+/** 随内容组件实测所需的行数，由 `measure` 写入 */
+const measured = ref<ReadonlyMap<string, number>>(new Map())
+
+/** 计入实测高度的布局；窄屏行高本就按内容，不必改写 */
+const fitted = computed<Board>(() =>
+  stacked.value ? board.value : fitBoard(board.value, specs.value, measured.value)
+)
+
 /** 拖到此刻，被拖的组件会落在哪个格子；无拖动时 undefined */
 const ghost = computed<Slot | undefined>(() => {
   const now = drag.value
   if (now === undefined) return undefined
   const dc = Math.round(now.dx / (now.colW + now.gap))
-  const dr = Math.round(now.dy / (now.rowH + now.gap))
+  const dr = Math.round(now.dy / now.rowPitch)
   if (now.mode === "move") {
     return { ...now.origin, x: now.origin.x + dc, y: Math.max(0, now.origin.y + dr) }
   }
-  return { ...now.origin, w: now.origin.w + dc, h: now.origin.h + dr }
+  // 随内容的组件只改宽：高度由内容定，拖了也会被下一次实测改回去
+  const dh = fitIds.value.has(now.id) ? 0 : dr
+  return { ...now.origin, w: now.origin.w + dc, h: now.origin.h + dh }
 })
 
 /** 计入拖动的布局：其余组件据此实时让开 */
 const preview = computed<Board>(() => {
   const target = ghost.value
-  return target === undefined ? board.value : applyMove(board.value, specs.value, target)
+  return target === undefined ? fitted.value : applyMove(fitted.value, specs.value, target)
 })
 
 /** 要渲染的格子，顺序即先上后左 */
@@ -196,7 +227,8 @@ const removed = computed(() => widgetsOf(props.page).filter(def => board.value.h
  * 多给两行以示意「往下还能放」。拖动期间按 `preview` 算，故往下拖时网格随之长出来。
  */
 const gridCells = computed<CSSProperties[]>(() => {
-  const rows = rowsOf(visibleOf(preview.value, specs.value)) + 2
+  // 底网按细格画：卡片的上下沿都落在细格边上，底网画粗了两者就对不上
+  const rows = rowsOf(visibleOf(preview.value, specs.value)) + 2 * SUB_ROWS
   const out: CSSProperties[] = []
   for (let y = 0; y < rows; y += 1) {
     for (let x = 0; x < COLUMNS; x += 1) out.push({ gridColumn: `${x + 1}`, gridRow: `${y + 1}` })
@@ -252,7 +284,7 @@ function begin(event: PointerEvent, slot: Slot, mode: "move" | "size"): void {
     pointerY: event.clientY,
     scrollHost: scrollHostOf(box),
     gap,
-    rowH: Number.parseFloat(style.getPropertyValue("--grid-row")) || ROW_FALLBACK,
+    rowPitch: subRowOf(style),
     colW: (box.clientWidth - gap * (COLUMNS - 1)) / COLUMNS
   }
   // 捕获指针：拖出格子外、拖到窗口外再松手，事件仍回到这里，不会漏掉落位
@@ -381,7 +413,7 @@ function settle(): void {
   const target = ghost.value
   drag.value = undefined
   if (target === undefined) return
-  board.value = applyMove(board.value, specs.value, target)
+  board.value = applyMove(fitted.value, specs.value, target)
   save()
 }
 
@@ -410,11 +442,14 @@ function onKey(event: KeyboardEvent, slot: Slot, free: boolean): void {
   const delta = step[event.key]
   if (delta === undefined) return
   if (event.shiftKey && !free) return
+  // 随内容的组件改不了高，Shift + 上下在它身上同样不受理
+  if (event.shiftKey && delta[1] !== 0 && fitIds.value.has(slot.id)) return
   event.preventDefault()
+  // 上下一次走一细格，与编辑态底网的一格同高
   const next = event.shiftKey
     ? { ...slot, w: slot.w + delta[0], h: slot.h + delta[1] }
     : { ...slot, x: slot.x + delta[0], y: slot.y + delta[1] }
-  board.value = applyMove(board.value, specs.value, next)
+  board.value = applyMove(fitted.value, specs.value, next)
   save()
   void nextTick(() => {
     host.value?.querySelector<HTMLElement>(`.witem[data-widget="${slot.id}"] .whandle`)?.focus()
@@ -426,7 +461,7 @@ function onKey(event: KeyboardEvent, slot: Slot, free: boolean): void {
  * @param id 组件标识
  */
 function remove(id: string): void {
-  board.value = hideWidget(board.value, specs.value, id)
+  board.value = hideWidget(fitted.value, specs.value, id)
   save()
 }
 
@@ -435,7 +470,7 @@ function remove(id: string): void {
  * @param id 组件标识
  */
 function add(id: string): void {
-  board.value = showWidget(board.value, specs.value, id)
+  board.value = showWidget(fitted.value, specs.value, id)
   save()
 }
 
@@ -456,6 +491,87 @@ async function reset(): Promise<void> {
   board.value = parseBoard(null, specs.value)
 }
 
+/**
+ * 一张卡片的内容本身有多高
+ *
+ * **不取卡片的 `scrollHeight`**：卡片撑满格子，格子比内容高时它报的是格子高，量不出「可以再矮」。
+ * 改按子元素的下沿算，与格子当前多高无关，故缩放格子不会反过来改变量得的数。
+ * @param card 格内卡片
+ * @returns 含内边距与边框的像素高度
+ */
+function naturalHeight(card: HTMLElement): number {
+  const style = getComputedStyle(card)
+  const padTop = Number.parseFloat(style.paddingTop) || 0
+  const padBottom = Number.parseFloat(style.paddingBottom) || 0
+  const borderTop = Number.parseFloat(style.borderTopWidth) || 0
+  const borderBottom = Number.parseFloat(style.borderBottomWidth) || 0
+  let bottom = 0
+  for (const child of card.children) {
+    if (!(child instanceof HTMLElement) || child.offsetParent === null) continue
+    const position = getComputedStyle(child).position
+    if (position === "absolute" || position === "fixed") continue
+    const marginBottom = Number.parseFloat(getComputedStyle(child).marginBottom) || 0
+    // 卡片是 static，子元素的 offsetParent 是外面的 `.witem`，故两者的 offsetTop 同一个原点
+    const top = child.offsetParent === card ? child.offsetTop + borderTop : child.offsetTop - card.offsetTop
+    bottom = Math.max(bottom, top + child.offsetHeight + marginBottom)
+  }
+  if (bottom === 0) return 0
+  return Math.max(bottom, borderTop + padTop) + padBottom + borderBottom
+}
+
+/** 已在观察的元素；对同一元素再 `observe` 一次会补发一次回调，于是每帧都量、永不停 */
+const watched = new WeakSet<Element>()
+let measureFrame: number | undefined
+
+/** 尺寸或内容一变就下一帧重量；量的是整板，合并成一次 */
+function scheduleMeasure(): void {
+  if (measureFrame !== undefined) return
+  measureFrame = requestAnimationFrame(() => {
+    measureFrame = undefined
+    measure()
+  })
+}
+
+const resizeWatch = new ResizeObserver(scheduleMeasure)
+const mutationWatch = new MutationObserver(scheduleMeasure)
+
+/**
+ * 量一遍随内容的组件，并把行数写回 `measured`
+ *
+ * 行数取上整：差一像素也要多给一行，否则末行被裁、长出滚动条。
+ */
+function measure(): void {
+  const box = host.value
+  if (box === undefined || stacked.value || fitIds.value.size === 0) return
+  const style = getComputedStyle(box)
+  const pitch = subRowOf(style)
+  // 跨 k 细格的格子高 k × 步距 − 一道间隙，故内容高加一道间隙再折成细格
+  const gap = Number.parseFloat(style.getPropertyValue("--grid-gap")) || 0
+  const next = new Map<string, number>()
+  for (const item of box.querySelectorAll<HTMLElement>(".witem[data-widget]")) {
+    const id = item.dataset.widget ?? ""
+    const card = item.firstElementChild
+    if (!fitIds.value.has(id) || !(card instanceof HTMLElement)) continue
+    for (const el of [card, ...card.children]) {
+      if (watched.has(el)) continue
+      watched.add(el)
+      resizeWatch.observe(el)
+    }
+    if (!watched.has(item)) {
+      watched.add(item)
+      mutationWatch.observe(item, { childList: true, subtree: true, characterData: true })
+    }
+    const height = naturalHeight(card)
+    // 0.5px 的余量吃掉子像素取整：恰好装下的内容不该因此多占一格
+    if (height > 0) next.set(id, Math.max(1, Math.ceil((height + gap - 0.5) / pitch)))
+  }
+  const same = next.size === measured.value.size && [...next].every(([id, n]) => measured.value.get(id) === n)
+  if (!same) measured.value = next
+}
+
+// 组件进出、窄宽切换之后格子换了一批，要重新挂观察并量一次
+watch([() => cells.value.length, stacked], () => void nextTick(scheduleMeasure))
+
 /** 记下窄屏与否；转入窄屏时退出编辑态 —— 窄屏下呈现的坐标不是落盘的那一套 */
 function onMedia(): void {
   stacked.value = media.matches
@@ -464,12 +580,18 @@ function onMedia(): void {
 
 onMounted(() => {
   media.addEventListener("change", onMedia)
+  // 板宽一变，表格与长路径就可能折行，内容高度跟着变
+  if (host.value !== undefined) resizeWatch.observe(host.value)
+  scheduleMeasure()
 })
 
 onUnmounted(() => {
   media.removeEventListener("change", onMedia)
   // 拖动中换页：rAF 循环不会自己停，留着就是一个每帧都在跑、却没人看的滚动
   edgeStop()
+  resizeWatch.disconnect()
+  mutationWatch.disconnect()
+  if (measureFrame !== undefined) cancelAnimationFrame(measureFrame)
 })
 </script>
 
@@ -477,7 +599,7 @@ onUnmounted(() => {
   <!-- 工具条整条只在宽屏出现：窄屏没有编辑态，一枚点不出结果的按钮比没有按钮更糟 -->
   <div v-if="!stacked && defs.size > 0" class="board-bar">
     <p v-if="editModel" class="hint">
-      拖动组件调整位置，拖右下角调整大小。把手上按方向键可逐格微调，按住 Shift 则改大小。
+      拖动组件调整位置，拖右下角调整大小（高度随内容的组件只能拖右缘改宽）。把手上按方向键可逐格微调，按住 Shift 则改大小。
     </p>
     <button v-if="editModel" type="button" @click="void reset()">恢复默认布局</button>
   </div>
@@ -558,8 +680,9 @@ onUnmounted(() => {
           <button
             v-if="cell.def.layout.resizable === true"
             class="wsize"
+            :class="{ 'wsize-x': cell.def.layout.fit === true }"
             type="button"
-            :aria-label="`调整 ${cell.def.title} 的大小`"
+            :aria-label="cell.def.layout.fit === true ? `调整 ${cell.def.title} 的宽度` : `调整 ${cell.def.title} 的大小`"
             @pointerdown="begin($event, cell.slot, 'size')"
             @pointermove="follow"
             @pointerup="settle"

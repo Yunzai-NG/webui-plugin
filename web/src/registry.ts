@@ -36,6 +36,8 @@ export interface WidgetDef {
     minH?: number
     /** 使用者是否可改这一格的大小，缺省为假；详见 `grid.ts` 的 `WidgetSpec.resizable` */
     resizable?: boolean
+    /** 高度是否随内容，缺省为假；详见 `grid.ts` 的 `WidgetSpec.fit`。暂只供内置组件用 */
+    fit?: boolean
   }
   /** 渲染它的 vue 组件 */
   component: Component
@@ -245,6 +247,7 @@ export function specsOf(page: string): WidgetSpec[] {
     minW: item.layout.minW ?? 1,
     minH: item.layout.minH ?? 1,
     ...(item.layout.resizable === true ? { resizable: true } : {}),
+    ...(item.layout.fit === true ? { fit: true } : {}),
     ...(item.defaultHidden === true ? { defaultHidden: true } : {})
   }))
 }

@@ -1437,18 +1437,83 @@ h3 {
  * 计数块的悬停与投影都由 `.card` 给，此处不再重复一套 —— 原先那两行还写了字面 rgba，
  * 与规则 1「颜色一律经令牌」相悖。概览页六个计数块并列，各自抬升时整排会依次浮动。
  */
+/*
+ * 计数块：左列小字在上、大字在下，右列一枚图标跨两行
+ *
+ * 图标借侧栏同一套线稿，底色只兑一成主色 —— 它是「这块在数什么」的速认记号，不是装饰色块，
+ * 六块并排时颜色一浓整排就成了一条彩带。
+ */
 .stat {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-content: center;
+  column-gap: var(--s3);
+  row-gap: 2px;
   border: 1px solid var(--border);
 }
 
-.stat b {
-  display: block;
+/* 小字退后：与 `h2` 同号同重时六块读起来全是标题，数反倒不显 */
+.stat-label {
+  grid-column: 1;
+  grid-row: 1;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--fs-hint);
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 行列写明：只给图标定位时，自动排布会把数挤进图标那一列 */
+.stat-value {
+  grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  align-items: baseline;
+  gap: var(--s1);
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.stat-value b {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 18px;
-  line-height: 24px;
+  font-size: var(--fs-h1);
+  line-height: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* 分母只作参照：同号同重时「2 / 2」两个数抢眼神 */
+.stat-value small {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-body);
   font-weight: 500;
-  letter-spacing: -0.01em;
+}
+
+.stat-ico {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  box-sizing: content-box;
+  width: 18px;
+  height: 18px;
+  padding: 9px;
+  border-radius: var(--r-ctl);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+  color: var(--accent-solid);
+}
+
+.stat.bad .stat-value b {
+  color: var(--err);
+}
+
+.stat.bad .stat-ico {
+  background: color-mix(in oklab, var(--err) 12%, transparent);
+  color: var(--err);
 }
 
 /*
@@ -1508,6 +1573,351 @@ h3 {
 .board .card.fill {
   display: flex;
   flex-direction: column;
+}
+
+/*
+ * 带标题的板内卡片：标题与一枚状态标签同排
+ *
+ * 磁盘与运行时共用。标签把「几个分区」「运行中」这类一眼要看的事实提到标题旁，
+ * 下面的正文就只剩查阅用的部分。
+ */
+.wcard-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  margin-bottom: var(--s4);
+}
+
+.wcard-head h2 {
+  margin: 0;
+}
+
+.disk .bars {
+  gap: var(--s4);
+}
+
+/* 运行时：时长是这一格的主语，其余是查阅用的事实 */
+.runtime-up {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s1) var(--s3);
+  margin: 0 0 var(--s4);
+}
+
+.runtime-up b {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-h1);
+  line-height: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.runtime-up span {
+  color: var(--muted);
+  font-size: var(--fs-hint);
+}
+
+/*
+ * 事实网格：两栏，窄了自行折成一栏
+ *
+ * 栏宽取 `auto-fit` 而非媒体查询：这一格的宽度由使用者拖出来，与视口无关。
+ * 上沿一道分隔线把它与时长那一行分开，各项之间只靠留白，不再一行一线。
+ */
+.runtime-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: var(--s3) var(--s5);
+  margin: 0;
+  padding-top: var(--s4);
+  border-top: 1px solid var(--border);
+}
+
+.runtime-facts > div {
+  min-width: 0;
+}
+
+.runtime-facts .wide {
+  grid-column: 1 / -1;
+}
+
+.runtime-facts dt {
+  margin-bottom: 2px;
+  color: var(--muted);
+  font-size: var(--fs-label);
+  letter-spacing: 0.04em;
+}
+
+.runtime-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-hint);
+}
+
+.runtime-facts .tag {
+  margin-left: var(--s1);
+}
+
+/*
+ * 消息：三个数在上、24 根柱在下
+ *
+ * 收到取淡一档的主色、发出取实色：两段叠在同一根柱里，深浅一分就读得出各占多少，
+ * 不必再加第二种色相。
+ */
+.msgs-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s6);
+  margin: 0 0 var(--s4);
+}
+
+.msgs-figures dt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: var(--fs-hint);
+}
+
+.msgs-figures dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-h1);
+  line-height: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* 今日那一组是参照，不与近 24 小时的两个主数抢 */
+.msgs-figures .msgs-today {
+  margin-left: auto;
+  text-align: right;
+}
+
+.msgs-figures .msgs-today dt {
+  justify-content: flex-end;
+}
+
+.msgs-figures .msgs-today dd {
+  color: var(--muted);
+  font-size: var(--fs-body);
+  font-weight: 500;
+}
+
+.msgs-figures small {
+  font-family: var(--font-ui);
+  font-size: var(--fs-label);
+}
+
+.swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.swatch.recv,
+.msgs-col .msgs-bar.recv {
+  background: color-mix(in oklab, var(--accent) 38%, var(--raise));
+}
+
+.swatch.sent,
+.msgs-col .msgs-bar.sent {
+  background: var(--accent-solid);
+}
+
+.msgs-chart {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  align-items: end;
+  gap: 3px;
+  height: 96px;
+  padding-bottom: 1px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* 底下发出、上面收到；`column-reverse` 让先写的那段落在底部 */
+.msgs-col {
+  display: flex;
+  flex-direction: column-reverse;
+  height: 100%;
+  min-width: 0;
+  border-radius: 3px 3px 0 0;
+  overflow: hidden;
+}
+
+.msgs-col .msgs-bar {
+  flex: none;
+}
+
+/* 有数但矮到一像素不到时也露出一道，免得读成「这一小时是 0」；是否有数由组件挂 `.some` */
+.msgs-col .msgs-bar.some {
+  min-height: 2px;
+}
+
+.msgs-col:hover {
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+}
+
+.msgs-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-hint);
+}
+
+.msgs-axis {
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  gap: 3px;
+  margin-top: var(--s1);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  white-space: nowrap;
+}
+
+/* 刻度字比一根柱宽：让它越过右邻的空格子，末格「现在」反过来往左越，不支出卡片右沿 */
+.msgs-axis span {
+  min-width: 0;
+  overflow: visible;
+}
+
+.msgs-axis span:last-child {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.msgs-peers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  margin: var(--s4) 0 0;
+  font-size: var(--fs-hint);
+}
+
+.msgs-peers-label {
+  color: var(--muted);
+}
+
+.msgs-peer {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 100%;
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.msgs-peer b {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/*
+ * 账号与告警共用的行列表：左一枚记号、中间两行字、右一段时间
+ *
+ * 行间只一道 1px 线，不再套卡中卡：这两格列的是同一类东西，框起来每一行都成了一张小卡片。
+ */
+.wlist {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wlist > li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--s3);
+  padding: var(--s2) 0;
+  border-top: 1px solid var(--border);
+}
+
+.wlist > li:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.wlist-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.wlist-main > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wlist-main b {
+  font-weight: 600;
+}
+
+.wlist-main .mono,
+.wlist-side {
+  color: var(--muted);
+  font-size: var(--fs-label);
+}
+
+.wlist-side {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.wlist-err {
+  color: var(--err);
+  font-size: var(--fs-label);
+}
+
+/* 告警的首行是消息原文，比账号名长得多，字号收一档 */
+.alerts .wlist-msg {
+  font-size: var(--fs-hint);
+  font-weight: 500;
+}
+
+.wlist-link,
+.wlist-more {
+  font-size: var(--fs-hint);
+}
+
+.wlist-more {
+  display: inline-block;
+  margin-top: var(--s3);
+}
+
+/* 状态点：与计数块、标签同一套语义色 */
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+.dot.ok {
+  background: var(--ok);
+}
+
+.dot.warn {
+  background: var(--warn);
+}
+
+.dot.err {
+  background: var(--err);
 }
 
 /*
@@ -1708,14 +2118,19 @@ h3 {
  * （`--fs-hint` 12.5px 乘 body 的 1.65 行高），加两道 1px 边框，合 78.6px，取整到 4px
  * 刻度即 80px。**算末行须取行高而非字号** —— 少算几个像素会让每个计数块都比格子高出
  * 一点，各自长出一条滚动条。改动 `--fs-hint`、body 行高或 `.stat` 的内边距都须回来重算。
+ *
+ * **纵向一行分两细格（`SUB_ROWS`，见 grid.ts）**：一细格 32px、格间 16px，两格加中间那道
+ * 间隙恰是 80px，故按整行声明的组件高度不变。高度随内容的组件按 48px 步距取整，卡片的上下沿
+ * 都落在编辑态底网的格线上。细格高由 `--grid-row` 与 `--grid-gap` 算出，密度变了跟着变。
  */
 .board {
   --grid-row: 80px;
+  --grid-gap: var(--s4);
   display: grid;
-  gap: var(--s4);
+  gap: var(--grid-gap);
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  grid-auto-rows: var(--grid-row);
-  margin-bottom: var(--s4);
+  grid-auto-rows: calc((var(--grid-row) - var(--grid-gap)) / 2);
+  margin-bottom: var(--grid-gap);
 }
 
 /* 窄屏：忽略 x/y/w 一律单列顺排（顺序由 grid.ts 的 visibleOf 给出），行高改为按内容 */
@@ -1770,11 +2185,27 @@ h3 {
 /*
  * 板内的卡片比页内的紧凑 4px
  *
- * 为的是让运行时那张五行表落进 h=3：20px 内边距下它是 277px，比 272px 多五像素，
- * 降到 16px 后是 269px 恰好装下。只对板内生效 —— 页内的卡片不受栅格行高约束。
+ * 格子按 48px 一档跳变，省下的边距就是内容的余量。只对板内生效 —— 页内的卡片不受栅格行高约束。
  */
 .board .card {
   padding: var(--s4);
+}
+
+/*
+ * 随内容的格子也撑满格子，与其余各格一样
+ *
+ * 行数取上整，卡内底部会多出不到一细格（48px）；不撑满则卡片的下沿落在两条格线之间，
+ * 编辑态里看着就是「没贴着格子」，并排的两格下沿也无从对齐。
+ */
+
+/* `.sub` 自带 20px 下外边距，作末行时就成了卡片底部的一截空白 */
+.board .card > .sub:last-child {
+  margin-bottom: 0;
+}
+
+/* 计数块再收 4px：12 + 20 + 2 + 30 + 12 加两道边框为 78px，落进 h=1 的 80px；右列图标 36px 不撑高 */
+.board .card.stat {
+  padding: var(--s3) var(--s4);
 }
 
 /*
@@ -1872,12 +2303,20 @@ h3 {
     font-size: var(--fs-body);
   }
 
-  .stat b {
-    font-size: var(--fs-h2);
-    /* 行高随字号降一档，否则 30px 的行高在 16px 的字下方留出一道空带 */
-    line-height: 24px;
+  /* 两列宽约 190px 时「100.7 MB」在 22px 下已贴边；行高不降，好让整块高度不随宽度变 */
+  .stat-value b {
+    font-size: 19px;
   }
+}
 
+/* 再窄就让出图标那一列：数比记号要紧。1536px 视口下两列约 190px，那时图标须仍在 */
+@container (max-width: 150px) {
+  .stat-ico {
+    display: none;
+  }
+}
+
+@container (max-width: 260px) {
   /*
    * 进度条两端的字改为上下两行
    *
@@ -1959,10 +2398,19 @@ h3 {
  * 只改边框色不够：使用者的指针多半停在格子中央，而那里离边框有一两百像素 ——
  * 「这一整块都能拖」这件事得由这一整块自己应答。压到 6% 是因为它盖在卡片内容之上，
  * 再浓就把底下的数字读成了另一种状态色。
+ *
+ * **选择器前缀 `.board` 不是为了限定范围，是为了压过通用的 `button:hover`。** 那一条是
+ * `button:hover:not(:disabled):not(.subform-head)` —— 同为三个类级部件，却多一个元素名，
+ * 权重反而高于 `.whandle:hover:not(:disabled)`。于是它那句不透明的 `background: var(--raise)`
+ * 胜出，而把手铺满整格，表现为「编辑组件时鼠标放上去整格变白」，连底下的数字一并盖掉。
+ * 下面的 `.wsize` 与 `.wdrop` 同理。
  */
-.whandle:hover:not(:disabled) {
+.board .whandle:hover:not(:disabled) {
   background: color-mix(in oklab, var(--accent) 6%, transparent);
   border-color: var(--accent);
+  /* 整格大小的把手不浮起、不抬 1px：那会带着格内的内容一起跳 */
+  box-shadow: none;
+  transform: none;
 }
 
 .whandle:active:not(:disabled) {
@@ -1983,7 +2431,7 @@ h3 {
   line-height: 1;
 }
 
-.wdrop:hover:not(:disabled) {
+.board .wdrop:hover:not(:disabled) {
   border-color: var(--err);
   color: var(--err);
 }
@@ -2006,14 +2454,35 @@ h3 {
   touch-action: none;
 }
 
-.wsize:hover:not(:disabled) {
+/* 随内容的组件只能改宽：斜角换成竖边，指针也只给左右 */
+.wsize.wsize-x {
+  top: 50%;
+  bottom: auto;
+  width: 10px;
+  height: 36px;
+  border-bottom: none;
+  border-radius: 0 var(--r-pill) var(--r-pill) 0;
+  transform: translateY(-50%);
+  cursor: ew-resize;
+}
+
+.board .wsize:hover:not(:disabled) {
   background: none;
   border-right-color: var(--accent);
   border-bottom-color: var(--accent);
+  /* 这枚只有两道边，底色与投影一律不要：通用那条会在格子右下角画出一个白方块 */
+  box-shadow: none;
+  transform: none;
 }
 
 .wsize:active:not(:disabled) {
   transform: none;
+}
+
+/* 上面两条把位移清成 none，竖边那枚靠这次位移居中，故须补回 */
+.board .wsize.wsize-x:hover:not(:disabled),
+.wsize.wsize-x:active:not(:disabled) {
+  transform: translateY(-50%);
 }
 
 /* 工具条与「已移除」一排：两者都只在编辑态或宽屏出现，由组件决定 */
@@ -3463,6 +3932,17 @@ textarea {
   flex: 1 1 180px;
   width: auto;
   max-width: 420px;
+}
+
+/*
+ * 下拉按自身内容收宽
+ *
+ * 表单里的 select 默认 `width: 100%`，在 flex 工具条里这个百分比照整条宽度算，于是每个
+ * 下拉独占一行、把后面的控件全挤到下一行去。
+ */
+.toolbar select {
+  flex: none;
+  width: auto;
 }
 
 /*
@@ -5640,7 +6120,230 @@ a.button:active {
   }
 }
 
-/* ───── 数据库页：按钮里的图标、刷新转圈、成功回执 ───── */
+/*
+ * ─────────────── 成功回执（顶部提示条） ───────────────
+ *
+ * 全站的成功回执都落在这一摞里（状态见 `toast.ts`）：顶端居中、浮在内容之上、下沿一条
+ * 走尽即关的进度条。此前是两套 —— 数据库页一个右下角的浮层，其余各页一条页内常驻的
+ * `.banner.ok`。后者**推动版面**（页头与内容之间凭空多出一条，且读完也不会消失），
+ * 而同一句「已保存」在两处长得还不一样。
+ *
+ * 位置取顶端而非右下角：这类回执说的是「刚才那下成了」，而动作的发起处（页头的按钮、
+ * 模态底部的保存钮）都在上方 —— 落在视线已经在的地方，不必再去扫屏幕角落。
+ *
+ * 条子确实离开了页面平面（浮在内容之上），故允许投影（规则 3）。
+ */
+.toast-host {
+  /*
+   * `inset` 四边写全，不只写 `top` 与 `left`
+   *
+   * 带 `popover` 的元素有一份 UA 版面（`inset: 0` + `margin: auto` + `width: fit-content`，
+   * 即居中铺满），只覆盖两边会剩下 `right: 0` / `bottom: 0` 与下面写定的宽度打架。
+   * 同理下面几行把 UA 的边框、底色、内边距与 `overflow` 一并清掉 —— 这摞条子的外观
+   * 全在 `.toast` 上，容器只负责摆位置。
+   */
+  position: fixed;
+  inset: var(--s4) auto auto 50%;
+  transform: translateX(-50%);
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  /*
+   * 宽度随视口伸缩，不取 `max-content`
+   *
+   * 按内容撑开的话，「已复制值」这类五个字的回执在 2K 屏上就是一粒小药丸 —— 条子的尺度
+   * 该随页面走，而非随这一条的字数走。下限保证短回执也是一条像样的横条，上限挡住长回执
+   * 铺成一行读不回来的长句。窄屏另有一档（见下方 700px 媒体查询）。
+   */
+  width: clamp(400px, 46vw, 680px);
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  overflow: visible;
+  /* 外壳随整页常驻且铺着宽度，不能替下面的内容挡指针；逐条再放开（见 `.toast`） */
+  pointer-events: none;
+}
+
+/*
+ * 一条回执：左侧色条 + 淡底，与 `.banner` 同一手法
+ *
+ * 文字取 `--text` 而非语义绿：插件页那几条回执要说清「依赖装成了没有、下一步该做什么」，
+ * 上百字的绿字读起来费劲。绿留给图标、左色条与进度条 —— 三处足以说明这是一条「成了」。
+ *
+ * `overflow: hidden` 为的是让下沿那条进度条跟着圆角裁切，否则它的两端会支出圆角之外。
+ */
+.toast {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4) calc(var(--s3) + 3px);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--ok);
+  border-radius: var(--r-ctl);
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  /* 外壳让开了指针，条子自己收回来：悬停暂停与那枚关闭钮都要点得到 */
+  pointer-events: auto;
+}
+
+.toast-ico {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  color: var(--ok);
+}
+
+/* 长回执要能换行；`anywhere` 是为文案里那些插件名与路径准备的 */
+.toast-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * 关闭钮压扁成一个字符
+ *
+ * 逐条列出要清掉的属性（边框、底色、投影、位移）而非只改内边距：通用的 `button` 规则
+ * 连 hover 带位移一起给，而一条回执里的 ✕ 跟着浮起一像素会带得整条抖一下。
+ */
+.toast button.toast-x {
+  flex: none;
+  margin-left: var(--s1);
+  padding: 0 2px;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.toast button.toast-x:hover:not(:disabled) {
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--text);
+  transform: none;
+}
+
+.toast button.toast-x:active:not(:disabled) {
+  transform: none;
+}
+
+/*
+ * 下沿的进度条：满到空走完即关
+ *
+ * **它只是计时的显形，关闭的权威在 `ToastItem` 的 `setTimeout`。** 两处时长同取
+ * `--toast-ms`（由那条回执的文案长度算出，见 `toast.ts` 的 `toastDurationOf`），
+ * 故走尽的那一刻正是计时到点。
+ *
+ * 动的是 `transform` 而非 `width`：后者每帧都要重排这条回执，而缩放只过合成器。
+ * 故 `transform-origin` 取左侧 —— 默认的中心会让它从两头同时收。
+ */
+.toast-bar {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  transform-origin: left center;
+  background: var(--ok);
+  animation: toast-drain var(--toast-ms, 2600ms) linear forwards;
+}
+
+/* 悬停或键盘聚焦时停住，与 `ToastItem` 那一侧的停表同步 */
+.toast.paused .toast-bar {
+  animation-play-state: paused;
+}
+
+@keyframes toast-drain {
+  from {
+    transform: scaleX(1);
+  }
+
+  to {
+    transform: scaleX(0);
+  }
+}
+
+/*
+ * 自上方压进来、原路收回
+ *
+ * 方向与它停驻的位置一致（同 `.banner` 的 `rise-in` 取反）：条子在页面顶端，
+ * 从下方浮上来会读成「从内容里长出来的」。
+ */
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateY(-14px) scale(0.98);
+}
+
+/* 进场比离场慢一档：来的时候要看清是什么，走的时候不必再占眼神 */
+.toast-enter-active {
+  transition:
+    opacity var(--dur-3) var(--ease-settle),
+    transform var(--dur-3) var(--ease-settle);
+}
+
+/*
+ * 离场的那条脱离布局流，好让它下面的条子立刻合拢
+ *
+ * 不写 `position: absolute` 的话，一摞里收起中间那条时，下面几条要等它的离场过渡
+ * 播完才上移 —— 看起来像卡了一下。这是 `<TransitionGroup>` 的既定手法。
+ */
+.toast-leave-active {
+  position: absolute;
+  /* 脱流之后宽度就按内容算了，两边钉住才不会在渐出的半程里先缩一下 */
+  inset-inline: 0;
+  transition:
+    opacity var(--dur-2) var(--ease-in),
+    transform var(--dur-2) var(--ease-in);
+}
+
+/* 合拢那一下也要过渡，否则上移是硬切 */
+.toast-move {
+  transition: transform var(--dur-2) var(--ease-settle);
+}
+
+/*
+ * 窄屏：两侧留边、余下铺满
+ *
+ * 上面那条 `clamp` 的下限是 400px，而手机视口常是 390px —— 不接管的话条子要支出屏幕之外。
+ * 这一档干脆不要宽度，拿左右两个 `inset` 定住，于是「宽屏上显小」的由来在这里本就不存在。
+ * 定了两边就不再需要居中的那次位移，故 `transform` 要清掉。
+ */
+@media (max-width: 700px) {
+  .toast-host {
+    inset: var(--s3) var(--s3) auto;
+    width: auto;
+    transform: none;
+  }
+
+  .toast {
+    gap: var(--s2);
+    padding: var(--s2) var(--s3) calc(var(--s2) + 3px);
+    font-size: var(--fs-hint);
+  }
+
+  /* 触摸目标撑到能点准；多出的内边距用负 `margin` 吃掉，不借此撑高整条 */
+  .toast button.toast-x {
+    margin: calc(-1 * var(--s2)) calc(-1 * var(--s1)) calc(-1 * var(--s2)) 0;
+    padding: var(--s2);
+  }
+}
+
+/* ───── 数据库页：按钮里的图标与刷新转圈 ───── */
 
 .btn-ico {
   flex: none;
@@ -5654,44 +6357,6 @@ a.button:active {
 
 .spinning {
   animation: gate-spin 0.8s linear infinite;
-}
-
-/* 回执浮在视口右下角，确实离开了页面平面，故允许投影（规则 3） */
-.db-toast {
-  position: fixed;
-  right: var(--s5);
-  bottom: var(--s5);
-  z-index: 60;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s2);
-  max-width: min(420px, calc(100vw - 2 * var(--s5)));
-  padding: var(--s3) var(--s4);
-  border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--border));
-  border-radius: var(--r-ctl);
-  background: color-mix(in srgb, var(--ok) 8%, var(--panel));
-  color: var(--ok);
-  font-size: var(--fs-hint);
-  font-weight: 600;
-  box-shadow: var(--shadow-lg);
-}
-
-.toast-enter-from,
-.toast-leave-to {
-  opacity: 0;
-  transform: translateY(12px);
-}
-
-.toast-enter-active {
-  transition:
-    opacity var(--dur-2) var(--ease-settle),
-    transform var(--dur-2) var(--ease-settle);
-}
-
-.toast-leave-active {
-  transition:
-    opacity var(--dur-1) var(--ease-in),
-    transform var(--dur-1) var(--ease-in);
 }
 
 /* 三个页签之间的切换，时长与页签过渡同档（见「页签切换过渡」） */
@@ -6498,4 +7163,20 @@ button.db-chip.on:hover:not(:disabled) {
   a.button:active {
     transform: none;
   }
+}
+
+/*
+ * 例外：回执下沿那条进度条的时长不被上面两个块压掉
+ *
+ * 它不是装饰，而是「这条提示还剩多久」的唯一显形 —— 时长被压到 1ms 的话，条子仍会按
+ * `ToastItem` 的 `setTimeout` 正常停留数秒，而进度条早已走到尽头，读起来是「进度条走完了
+ * 却不关」。那两个块的本意是「别动来动去」，不是「把计时器的刻度拿掉」。
+ *
+ * 一条规则同时压住两处：两边都带 `!important`，而 `.toast-bar`（0,1,0）的特异性高于
+ * 通配选择器（0,0,0），故无须分别写进那两个块里，也不受媒体查询的先后影响。
+ *
+ * `--toast-ms` 由 `ToastItem.vue` 逐条下发（停留时长按文案长度算，见 `toast.ts`）。
+ */
+.toast-bar {
+  animation-duration: var(--toast-ms, 2600ms) !important;
 }

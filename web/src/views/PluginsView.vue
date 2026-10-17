@@ -30,6 +30,7 @@ import PluginDetail from "../components/PluginDetail.vue"
 import TabBar from "../components/TabBar.vue"
 import { panelConfigOf } from "../panelconfig.js"
 import { panelPackages, panelTabs } from "../registry.js"
+import { showToast } from "../toast.js"
 import type {
   CommandItem,
   MarketInstallResult,
@@ -66,8 +67,6 @@ const tasks = ref<TaskItem[]>([])
 const commands = ref<CommandItem[]>([])
 const middlewares = ref<MiddlewareItem[]>([])
 const { error, busy, run } = useAction()
-/** 一次管理动作之后要说的那句话；空串意为无话可说 */
-const notice = ref("")
 /** 三份清单是否已拉过；「查看」首次打开时拉一次 */
 const registriesLoaded = ref(false)
 
@@ -320,14 +319,16 @@ async function flowOf(name: string, steps: () => Promise<void>): Promise<void> {
  * 四个动作（更新、重装、装依赖并编译、删除）的收尾完全一样：写提示、清错误、重取清单、
  * 作废命令与中间件那两份缓存。抽出来是因为**漏掉最后那一项不会立刻出错** —— 页面上
  * 的命令数照旧是对的，直到某次重载之后它悄悄停在旧值上。
+ *
+ * 这四条回执是全站最长的几句（要说清依赖装成了没有、下一步该做什么），故走顶部提示条
+ * 时须留足读完的时间 —— 那由 `toastDurationOf` 按字数算，并可悬停暂停，见 `toast.ts`。
  * @param name 插件名
  * @param task 真正发请求的那一步，返回要显示的提示
  */
 async function manage(name: string, task: () => Promise<string>): Promise<void> {
   menuOpen.value = ""
-  notice.value = ""
   await run(name, async () => {
-    notice.value = await task()
+    showToast(await task())
     // 这些动作都会换掉磁盘上的代码并重载，命令与中间件的登记随之改变
     registriesLoaded.value = false
     await load()
@@ -540,13 +541,6 @@ onMounted(() => void load())
     <PageHeader route="plugins" sub="内核之外的全部能力均由插件提供：适配器、渲染器与业务功能" />
 
     <p v-if="error" class="banner">{{ error }}</p>
-    <!--
-      管理动作的结果条
-
-      四个动作（更新、重装、装依赖并编译、删除）的结果都落在这里，而不是各自弹一次 ——
-      那几句话要说的是「装依赖成了没有、下一步该做什么」，一闪而过的提示读不完。
-    -->
-    <p v-if="notice" class="banner ok">{{ notice }}</p>
 
     <TabBar v-model="pageTab" :items="pageTabs" label="插件分类" />
 

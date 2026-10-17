@@ -23,7 +23,7 @@ import { PanelStore, STORE_CACHE_FILE, type PanelStoreSettings } from "./panelst
 import { DEFAULT_STORE_INDEX, webuiConfigSchema, type WebuiConfig } from "./storeconfig.js"
 import { mountCustomPages } from "./custompage.js"
 import { startCollector } from "./msgcollect.js"
-import { clearStatsReader, setStatsReader } from "./msghub.js"
+import { clearStatsReader, readBrief, setStatsReader } from "./msghub.js"
 
 /** 前端产物目录名，与 `web/vite.config.ts` 的 outDir 末段一致 */
 const WEB_DIR = "web"
@@ -54,6 +54,9 @@ export const PANEL_CONFIG_ENDPOINT = "panelconfig"
  * 之下，内核只读模式拦不到，故四条写路由各自读一次 `server.readonly` 自行拒绝。
  */
 export const PANEL_STORE_ENDPOINT = "panelstore"
+
+/** 概览页消息那一格的摘要，见 `msghub.ts` 的 `readBrief` */
+export const STATS_BRIEF_ENDPOINT = "stats/brief"
 
 /**
  * 一条路由收到的请求里，本插件用得到的那两项（结构类型，使测试无须构造完整请求）
@@ -497,6 +500,8 @@ const plugin: PluginDefinition<WebuiConfig> = definePlugin({
     } catch (err) {
       ctx.logger.error(`消息统计启动失败，面板本身不受影响：${err instanceof Error ? err.message : String(err)}`)
     }
+    // 摘要在采集器之外注册：采集器没起来时它照样答，答的是「没在跑」而不是 404
+    ctx.route("GET", `/${STATS_BRIEF_ENDPOINT}`, () => readBrief())
 
     // 自定义页面属于各业务插件，不放进 webui/plugins 面板组件目录。
     try {

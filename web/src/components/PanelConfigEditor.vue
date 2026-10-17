@@ -26,6 +26,7 @@ import { assignPath, snapshot } from "../configedit.js"
 import { errorText } from "../format.js"
 import { askConfirm } from "../confirm.js"
 import { configUrlOf, panelConfigOf, setPanelConfigValue } from "../panelconfig.js"
+import { showToast } from "../toast.js"
 import SchemaForm from "./SchemaForm.vue"
 import type { SchemaIssue } from "../types.js"
 
@@ -36,7 +37,6 @@ const props = defineProps<{
 
 const issues = ref<readonly SchemaIssue[]>([])
 const error = ref("")
-const notice = ref("")
 const saving = ref(false)
 /**
  * 改动过的路径，供按钮计数与分区页签的角标
@@ -61,7 +61,6 @@ function restart(): void {
   draft.value = snapshot(entry.value?.value.value ?? {})
   touched.value = []
   issues.value = []
-  notice.value = ""
   error.value = ""
 }
 
@@ -76,7 +75,6 @@ function restart(): void {
 function onChange(path: string, next: unknown): void {
   if (!assignPath(draft.value, path, next)) return
   if (!touched.value.includes(path)) touched.value = [...touched.value, path]
-  notice.value = ""
 }
 
 /** 保存整份值 */
@@ -93,10 +91,11 @@ async function save(): Promise<void> {
     draft.value = snapshot(res.value)
     touched.value = []
     const dropped = (res.issues ?? []).filter(item => item.severity === "warn")
-    notice.value =
+    showToast(
       dropped.length === 0
         ? "已保存并立即生效，无须刷新页面。"
         : `已保存并立即生效。其中 ${dropped.length} 个字段不在这个包的声明里，已丢弃 —— 多半是这个包更新后删掉了它们。`
+    )
   } catch (err) {
     if (err instanceof ApiError && err.issues.length > 0) issues.value = err.issues
     error.value = errorText(err)
@@ -122,7 +121,7 @@ async function reset(): Promise<void> {
     draft.value = snapshot(res.value)
     touched.value = []
     issues.value = []
-    notice.value = "已恢复默认值"
+    showToast("已恢复默认值")
     error.value = ""
   } catch (err) {
     error.value = errorText(err)
@@ -137,7 +136,6 @@ watch(() => props.pkg, restart, { immediate: true })
 <template>
   <div>
     <p v-if="error" class="banner">{{ error }}</p>
-    <p v-if="notice" class="banner ok">{{ notice }}</p>
 
     <template v-if="entry?.schema">
       <SchemaForm

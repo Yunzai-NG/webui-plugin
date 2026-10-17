@@ -25,6 +25,7 @@ import { ApiError, get, patch, post, put } from "../api.js"
 import { assignPath, buildPatch, needsReplace, snapshot } from "../configedit.js"
 import { errorText } from "../format.js"
 import { askConfirm } from "../confirm.js"
+import { showToast } from "../toast.js"
 import SchemaForm from "./SchemaForm.vue"
 import type { ConfigDetail, SchemaIssue } from "../types.js"
 
@@ -41,7 +42,6 @@ const emit = defineEmits<{
 const current = ref<ConfigDetail | undefined>(undefined)
 const issues = ref<readonly SchemaIssue[]>([])
 const error = ref("")
-const notice = ref("")
 const saving = ref(false)
 /** 改动过的路径 → 新值 */
 const dirty = ref<Record<string, unknown>>({})
@@ -64,7 +64,6 @@ let pristine: Record<string, unknown> = {}
 async function load(): Promise<void> {
   dirty.value = {}
   issues.value = []
-  notice.value = ""
   try {
     current.value = await get<ConfigDetail>(`config/${encodeURIComponent(props.name)}`)
     pristine = snapshot(current.value.value)
@@ -82,7 +81,6 @@ async function load(): Promise<void> {
  */
 function onChange(path: string, value: unknown): void {
   dirty.value = { ...dirty.value, [path]: value }
-  notice.value = ""
   const detail = current.value
   if (detail !== undefined) assignPath(detail.value, path, value)
 }
@@ -103,9 +101,11 @@ async function save(): Promise<void> {
     current.value = { ...detail, value: res.value }
     pristine = snapshot(res.value)
     dirty.value = {}
-    notice.value = whole
-      ? "已保存并立即生效。本次改动删除了字典中的条目，因此提交的是整份配置 —— 若保存期间有人手改过该文件，其改动会被覆盖。"
-      : "已保存并立即生效。修改监听端口需重启进程后方可应用。"
+    showToast(
+      whole
+        ? "已保存并立即生效。本次改动删除了字典中的条目，因此提交的是整份配置 —— 若保存期间有人手改过该文件，其改动会被覆盖。"
+        : "已保存并立即生效。修改监听端口需重启进程后方可应用。"
+    )
     emit("saved")
   } catch (err) {
     if (err instanceof ApiError && err.issues.length > 0) issues.value = err.issues
@@ -134,7 +134,7 @@ async function reset(): Promise<void> {
     pristine = snapshot(res.value)
     dirty.value = {}
     issues.value = []
-    notice.value = "已恢复默认值"
+    showToast("已恢复默认值")
     error.value = ""
     emit("saved")
   } catch (err) {
@@ -150,7 +150,6 @@ watch(() => props.name, () => void load(), { immediate: true })
 <template>
   <div>
     <p v-if="error" class="banner">{{ error }}</p>
-    <p v-if="notice" class="banner ok">{{ notice }}</p>
 
     <template v-if="current">
       <p class="hint mono">{{ current.file }}</p>

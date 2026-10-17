@@ -27,6 +27,7 @@ import type { IconShape, Overview } from "./types.js"
 import AppIcon from "./components/AppIcon.vue"
 import ConfirmDialog from "./components/ConfirmDialog.vue"
 import PathPicker from "./components/PathPicker.vue"
+import ToastHost from "./components/ToastHost.vue"
 import OverviewView from "./views/OverviewView.vue"
 import AccountsView from "./views/AccountsView.vue"
 import PluginsView from "./views/PluginsView.vue"
@@ -514,4 +515,12 @@ onUnmounted(() => {
     焦点被原生 `<dialog>` 锁住，表单不可操作。
   -->
   <PathPicker />
+
+  <!--
+    成功回执：全站一摞，摆在页面顶端居中
+
+    挂在最后一个，与前两者同样在闸门与外壳之外 —— 闸门那几态也用得上它（将来若有），
+    且它压根不该随着页面切换而消失：一次保存的回执常常紧接着一次跳转。
+  -->
+  <ToastHost />
 </template>

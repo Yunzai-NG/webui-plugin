@@ -141,6 +141,30 @@ export interface SystemInfo {
   gpus?: GpuInfo[]
 }
 
+/** 一侧的分项计数，同 `src/msgstats.ts` 的 `Tally` */
+export interface MessageTally {
+  /** 消息条数 */
+  messages: number
+  /** 图片段数 */
+  images: number
+  /** 表情包段数 */
+  stickers: number
+}
+
+/** `GET /plugin/webui/stats/brief`，同 `src/msghub.ts` 的 `StatsBrief` */
+export interface StatsBrief {
+  /** 采集器是否已在运行 */
+  running: boolean
+  /** 近 24 小时逐时，时间升序，末格是当前那个不完整的小时 */
+  hours: { at: string; label: string; recv: number; sent: number }[]
+  /** 近 24 小时合计 */
+  last24: { recv: MessageTally; sent: MessageTally }
+  /** 今日合计 */
+  today: { recv: MessageTally; sent: MessageTally }
+  /** 今日最活跃的几个会话 */
+  peers: { name: string; scene: string; messages: number }[]
+}
+
 /** `GET /api/config` 的元素 */
 export interface ConfigSummary {
   /** 配置名，同时用作 URL 中的 `:name` */

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
   COLUMNS,
+  SUB_ROWS,
   applyMove,
   clampSlot,
   compact,
+  fitBoard,
   hideWidget,
   layoutKey,
   normalize,
@@ -12,6 +14,7 @@ import {
   rowsOf,
   serializeBoard,
   showWidget,
+  toSubRows,
   visibleOf,
   type Board,
   type Slot,
@@ -289,6 +292,57 @@ describe("默认不上板的组件", () => {
   })
 })
 
+describe("高度随内容", () => {
+  /** 计数块一行占满，其下两枚随内容的组件并排，再下一枚普通组件 */
+  const FIT_SPECS: readonly WidgetSpec[] = [
+    { id: "s", w: 12, h: 1, minW: 2, minH: 1, resizable: true },
+    { id: "disk", w: 6, h: 3, minW: 3, minH: 1, resizable: true, fit: true },
+    { id: "run", w: 6, h: 3, minW: 4, minH: 1, resizable: true, fit: true },
+    { id: "tail", w: 12, h: 2, minW: 2, minH: 1, resizable: true }
+  ]
+  const BASE = normalize({ slots: [], hidden: [] }, FIT_SPECS)
+  /**
+   * 按标识取可见位置
+   * @param board 布局
+   * @param id 组件标识
+   * @returns 位置
+   */
+  const at = (board: Board, id: string) => visibleOf(board, FIT_SPECS).find(slot => slot.id === id)
+
+  it("**并排的两枚各取各的** —— 拉成一般高就是让矮的那张卡内空出一截", () => {
+    const fitted = fitBoard(BASE, FIT_SPECS, new Map([["disk", 2], ["run", 4]]))
+    expect(at(fitted, "disk")?.h).toBe(2)
+    expect(at(fitted, "run")?.h).toBe(4)
+    // 下面那枚让到较高者之下，不压住它
+    expect(at(fitted, "tail")?.y).toBe(5)
+  })
+
+  it("**变矮时下面的组件跟着补上来** —— 这正是卡片里不再留一大截空白的那一半", () => {
+    const fitted = fitBoard(BASE, FIT_SPECS, new Map([["disk", 2], ["run", 2]]))
+    expect(at(fitted, "tail")?.y).toBe(3)
+  })
+
+  it("变高时下面的组件让开，不被压住", () => {
+    const fitted = fitBoard(BASE, FIT_SPECS, new Map([["disk", 5], ["run", 5]]))
+    expect(at(fitted, "tail")?.y).toBe(6)
+  })
+
+  it("普通组件不受量得的数影响", () => {
+    const fitted = fitBoard(BASE, FIT_SPECS, new Map([["tail", 9], ["disk", 2], ["run", 2]]))
+    expect(at(fitted, "tail")?.h).toBe(2)
+  })
+
+  it("还没量到的沿用原值", () => {
+    expect(fitBoard(BASE, FIT_SPECS, new Map())).toBe(BASE)
+  })
+
+  it("**行数不变时原样返回** —— 否则刻意拖下去的空带每次渲染都会被收走", () => {
+    const gap = applyMove(BASE, FIT_SPECS, { id: "tail", x: 0, y: 8, w: 12, h: 2 })
+    expect(at(gap, "tail")?.y).toBe(8)
+    expect(fitBoard(gap, FIT_SPECS, new Map([["disk", 3], ["run", 3]]))).toBe(gap)
+  })
+})
+
 describe("落盘", () => {
   it("键按页分开", () => {
     expect(layoutKey("overview")).toBe("yunzai-ng.layout.overview")
@@ -309,6 +363,49 @@ describe("落盘", () => {
       ]
     })
     expect(parseBoard(raw, SPECS).slots.filter(slot => slot.id === "a")).toHaveLength(1)
+  })
+
+  it("**版本 1 的整行单位按细分数换算** —— 升级面板后摆好的版面原样保留，不退回默认", () => {
+    // 两块上下相叠：收拢不会挪动它们，换算是否生效只看下面那块落在第几格
+    const raw = JSON.stringify({
+      v: 1,
+      slots: [
+        { id: "a", x: 0, y: 0, w: 4, h: 1 },
+        { id: "b", x: 0, y: 1, w: 4, h: 1 }
+      ],
+      hidden: []
+    })
+    const board = parseBoard(raw, SPECS)
+    expect(board.slots.find(slot => slot.id === "a")).toEqual({ id: "a", x: 0, y: 0, w: 4, h: SUB_ROWS })
+    expect(board.slots.find(slot => slot.id === "b")).toEqual({ id: "b", x: 0, y: SUB_ROWS, w: 4, h: SUB_ROWS })
+  })
+
+  it("版本 2 的一行 12 细格折回当前细格，四舍五入", () => {
+    const raw = JSON.stringify({
+      v: 2,
+      slots: [
+        { id: "a", x: 0, y: 0, w: 4, h: 12 },
+        { id: "b", x: 0, y: 12, w: 4, h: 13 }
+      ]
+    })
+    const board = parseBoard(raw, SPECS)
+    expect(board.slots.find(slot => slot.id === "a")).toEqual({ id: "a", x: 0, y: 0, w: 4, h: SUB_ROWS })
+    expect(board.slots.find(slot => slot.id === "b")).toEqual({ id: "b", x: 0, y: SUB_ROWS, w: 4, h: SUB_ROWS })
+  })
+
+  it("版本 1 里缺的字段按缺省补，不把缺省也乘上去", () => {
+    const raw = JSON.stringify({ v: 1, slots: [{ id: "a", x: 0, w: 4 }] })
+    expect(parseBoard(raw, SPECS).slots.find(slot => slot.id === "a")?.y).toBe(0)
+  })
+
+  it("落盘写的是当前版本，读回时不再换算", () => {
+    const board = parseBoard(JSON.stringify({ v: 1, slots: [{ id: "a", x: 0, y: 1, w: 4, h: 1 }] }), SPECS)
+    const again = parseBoard(serializeBoard(board), SPECS)
+    expect(again.slots.find(slot => slot.id === "a")).toEqual(board.slots.find(slot => slot.id === "a"))
+  })
+
+  it("toSubRows 只换算高度与高度下限", () => {
+    expect(toSubRows(A)).toEqual({ ...A, h: A.h * SUB_ROWS, minH: A.minH * SUB_ROWS })
   })
 
   it("缺字段与非整数的条目按默认补齐，不整份丢弃", () => {

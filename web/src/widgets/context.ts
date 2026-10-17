@@ -9,7 +9,29 @@
  *          `GET /api/overview`，每 5 秒就是七个请求，且七份分别到达的快照会互相矛盾。
  */
 import type { InjectionKey, Ref } from "vue"
-import type { Overview, SystemInfo } from "../types.js"
+import type { AccountItem, LogRecord, Overview, StatsBrief, SystemInfo } from "../types.js"
+
+/**
+ * 一路由页面拉来、交给组件的数据
+ *
+ * 数据与错误并存而非二选一：一次超时不该让已经画出来的列表整片消失，故失败时保留上一次的
+ * `data`、只补一条 `error`；组件有数就画数，一次都没拿到过才说明为什么。
+ */
+export interface Feed<T> {
+  /** 最近一次拿到的数据；一次都没拿到过时为 undefined */
+  data?: T
+  /** 最近一次失败的原因；最近一次成功时为 undefined */
+  error?: string
+}
+
+/** 概览页拉到的账号列表 */
+export const ACCOUNTS: InjectionKey<Ref<Feed<AccountItem[]>>> = Symbol("accounts")
+
+/** 概览页拉到的近期警告与错误，时间升序 */
+export const ALERTS: InjectionKey<Ref<Feed<LogRecord[]>>> = Symbol("alerts")
+
+/** 概览页拉到的消息摘要 */
+export const MESSAGES: InjectionKey<Ref<Feed<StatsBrief>>> = Symbol("messages")
 
 /** 概览页拉到的快照；尚未拉到时其值为 undefined */
 export const OVERVIEW: InjectionKey<Ref<Overview | undefined>> = Symbol("overview")

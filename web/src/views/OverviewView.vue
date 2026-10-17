@@ -13,13 +13,13 @@
  *          「还没有任何账号」那条提示留在板外：它是特定条件下才出现的指引，不是可摆放的组件，
  *          被移除或拖到角落都会使它失去作用。
  */
-import { onMounted, onUnmounted, provide, ref } from "vue"
+import { onMounted, onUnmounted, provide, ref, type Ref } from "vue"
 import GridBoard from "../components/GridBoard.vue"
 import PageHeader from "../components/PageHeader.vue"
-import { get } from "../api.js"
+import { get, getAt } from "../api.js"
 import { errorText } from "../format.js"
-import { OVERVIEW, SYSTEM } from "../widgets/context.js"
-import type { Overview, SystemInfo } from "../types.js"
+import { ACCOUNTS, ALERTS, MESSAGES, OVERVIEW, SYSTEM, type Feed } from "../widgets/context.js"
+import type { AccountItem, LogPage, LogRecord, Overview, StatsBrief, SystemInfo } from "../types.js"
 
 /** 编辑态 */
 const edit = ref(false)
@@ -32,8 +32,49 @@ const system = ref<SystemInfo | undefined>(undefined)
 const error = ref("")
 let timer: number | undefined
 
+const accounts = ref<Feed<AccountItem[]>>({})
+const alerts = ref<Feed<LogRecord[]>>({})
+const messages = ref<Feed<StatsBrief>>({})
+
 provide(OVERVIEW, data)
 provide(SYSTEM, system)
+provide(ACCOUNTS, accounts)
+provide(ALERTS, alerts)
+provide(MESSAGES, messages)
+
+/** 近期警告列几条；多了这一格就成了日志页 */
+const ALERT_LIMIT = 6
+
+/**
+ * 慢一档的两路：每隔几拍才拉一次
+ *
+ * 警告要翻日志环形缓冲，消息摘要要在服务端聚合 —— 两者都不是 5 秒就会变的东西。
+ */
+const ALERT_EVERY = 3
+const MESSAGE_EVERY = 6
+let tick = 0
+
+/**
+ * 拉一路数据进一个 Feed；失败时保留上一次的数据
+ * @param target 目标
+ * @param fetch 取数
+ */
+async function fill<T>(target: Ref<Feed<T>>, fetch: () => Promise<T>): Promise<void> {
+  try {
+    target.value = { data: await fetch() }
+  } catch (err) {
+    target.value = { ...target.value, error: errorText(err) }
+  }
+}
+
+/** 拉组件用的三路；`all` 为真时不论节拍一并拉 */
+function loadFeeds(all: boolean): void {
+  void fill(accounts, () => get<AccountItem[]>("accounts"))
+  if (all || tick % ALERT_EVERY === 0) {
+    void fill(alerts, async () => (await get<LogPage>(`logs?level=warn&limit=${ALERT_LIMIT}`)).records)
+  }
+  if (all || tick % MESSAGE_EVERY === 0) void fill(messages, () => getAt<StatsBrief>("/plugin/webui/stats/brief"))
+}
 
 /** 拉取一次概览 */
 async function load(): Promise<void> {
@@ -63,9 +104,12 @@ async function loadSystem(): Promise<void> {
 onMounted(() => {
   void load()
   void loadSystem()
+  loadFeeds(true)
   timer = window.setInterval(() => {
+    tick += 1
     void load()
     void loadSystem()
+    loadFeeds(false)
   }, REFRESH_MS)
 })
 

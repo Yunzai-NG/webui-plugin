@@ -29,15 +29,16 @@ import { askConfirm } from "../confirm.js"
 import { MARKET_TABS, emptyCriteria, gatesOf, visibleItems, tabCounts, type Criteria } from "../filter.js"
 import { resultText } from "../market.js"
 import { hrefOf } from "../router.js"
+import { showToast } from "../toast.js"
 import MarketFilter from "../components/MarketFilter.vue"
 import Modal from "../components/Modal.vue"
 import PageHeader from "../components/PageHeader.vue"
+import SkeletonCards from "../components/SkeletonCards.vue"
 import TabBar from "../components/TabBar.vue"
 import type { MarketInstallResult, MarketItem, MarketSnapshot, Overview } from "../types.js"
 
 const snapshot = ref<MarketSnapshot | undefined>(undefined)
 const { error, busy, run } = useAction()
-const notice = ref("")
 const loading = ref(false)
 /**
  * 六维筛选判据，整份交给 `MarketFilter`
@@ -145,10 +146,9 @@ async function install(item: MarketItem): Promise<void> {
     details: [`落点：plugins/${item.name}/`, ...setupNotes(item)]
   })
   if (!ok) return
-  notice.value = ""
   await run(item.name, async () => {
     const result = await post<MarketInstallResult>("market/install", { name: item.name })
-    notice.value = resultText(result)
+    showToast(resultText(result))
     await load()
   })
 }
@@ -238,7 +238,6 @@ async function submitCustom(): Promise<void> {
   if (!ok) return
 
   installing.value = true
-  notice.value = ""
   try {
     const result = await post<MarketInstallResult>("market/custom", {
       url,
@@ -250,7 +249,7 @@ async function submitCustom(): Promise<void> {
       build: form.value.build,
       scripts: extraScripts.value
     })
-    notice.value = resultText(result)
+    showToast(resultText(result))
     error.value = ""
     adding.value = false
     await load()
@@ -280,10 +279,9 @@ async function dropCustom(item: MarketItem): Promise<void> {
     ]
   })
   if (!ok) return
-  notice.value = ""
   await run(item.name, async () => {
     await del(`market/custom/${encodeURIComponent(item.name)}`)
-    notice.value = `已撤掉 ${item.name} 的登记，插件目录未动。`
+    showToast(`已撤掉 ${item.name} 的登记，插件目录未动。`)
     await load()
   })
 }
@@ -313,7 +311,6 @@ onMounted(() => {
     </PageHeader>
 
     <p v-if="error" class="banner">{{ error }}</p>
-    <p v-if="notice" class="banner ok">{{ notice }}</p>
 
     <div v-if="badSources.length > 0" class="card">
       <h2>索引获取失败</h2>
@@ -364,15 +361,7 @@ onMounted(() => {
       只在**首次**出现（`snapshot` 还没到），刷新索引时不出：那时旧内容还在，拿骨架盖掉
       已经读得到的东西是倒退。
     -->
-    <div v-if="snapshot === undefined && loading" class="grid market" aria-hidden="true">
-      <div v-for="n in 6" :key="n" class="card item skeleton-card">
-        <div class="skeleton" style="height: 20px; width: 55%"></div>
-        <div class="skeleton" style="height: 13px; width: 35%"></div>
-        <div class="skeleton" style="height: 13px; width: 100%"></div>
-        <div class="skeleton" style="height: 13px; width: 80%"></div>
-        <div class="skeleton" style="margin-top: auto; height: 32px; width: 60%"></div>
-      </div>
-    </div>
+    <SkeletonCards v-if="snapshot === undefined && loading" />
 
     <div class="grid market">
       <article v-for="item in visible" :key="item.name" class="card item">

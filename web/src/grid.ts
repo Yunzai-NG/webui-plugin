@@ -17,8 +17,23 @@
 /** 栅格列数 */
 export const COLUMNS = 12
 
-/** 落盘格式版本；不认识的版本一律退回默认布局，不做迁移 */
-const VERSION = 1
+/**
+ * 每一行再细分为几格
+ *
+ * 组件声明与插件接口里的 `h` 仍按「一行 = 80px」计；板内的 `y` / `h` 一律按细格计。
+ * 取 2：一细格 32px、格间 16px，步距 48px。高度随内容的组件按 48px 取整，空白比整行（96px）少一半。
+ * **不再往细里切**：切到 8px 时拖动的落点差几像素就差一格，并排的两格总对不齐，编辑态的底网
+ * 也画不了那么密，卡片的边于是不落在任何一条格线上。改这个数须同步 styles.css 的 `.board`。
+ */
+export const SUB_ROWS = 2
+
+/**
+ * 落盘格式版本，及旧版本的 `y` / `h` 换算到当前细格要乘的数
+ *
+ * 1 是整行单位，2 是一行 12 细格；换算后四舍五入。更早的不认。
+ */
+const VERSION = 3
+const RATIO: Readonly<Record<number, number>> = { 1: SUB_ROWS, 2: SUB_ROWS / 12, [VERSION]: 1 }
 
 /** 一个组件在栅格上的位置 */
 export interface Slot {
@@ -67,6 +82,13 @@ export interface WidgetSpec {
    * 为 GPU 而设：多数机器上探不到（AMD、Intel、Termux 一概没有 nvidia-smi）。
    */
   defaultHidden?: boolean
+  /**
+   * 高度是否随内容
+   *
+   * 为真时渲染所用的行数由实测内容高度给出（见 {@link fitBoard}），`h` 只是量到之前的占位；
+   * 使用者仍可改宽，改不了高。为行数随数据与窗口宽度变化的组件而设（磁盘的分区数、会折行的表）。
+   */
+  fit?: boolean
 }
 
 /** 一页的布局 */
@@ -330,6 +352,28 @@ export function showWidget(board: Board, specs: readonly WidgetSpec[], id: strin
 }
 
 /**
+ * 按实测内容改写随内容组件的行数，其余组件随之让开或补位
+ *
+ * 结果只供渲染、不必落盘：内容高度随数据、窗口宽度与字号而变，存下的数下次多半不对。
+ * **并排的几枚各取各的，不拉成一般高**：拉齐下沿就是让矮的那张在卡内空出一截，
+ * 而那正是改成随内容要去掉的东西。
+ *
+ * **行数不变时原样返回、不做收拢**：否则使用者刻意拖下去留出的纵向空带会在每次渲染时被收走。
+ * @param board 布局
+ * @param specs 注册表给出的组件
+ * @param rows 各组件实测所需的行数；还没量到的不在其中，沿用原值
+ * @returns 改写后的布局；无一变化时为原对象
+ */
+export function fitBoard(board: Board, specs: readonly WidgetSpec[], rows: ReadonlyMap<string, number>): Board {
+  const fit = new Set(specs.filter(spec => spec.fit === true).map(spec => spec.id))
+  const visible = visibleOf(board, specs)
+  const sized = visible.map(slot => (fit.has(slot.id) ? { ...slot, h: Math.max(1, rows.get(slot.id) ?? slot.h) } : slot))
+
+  if (sized.every((slot, i) => slot.h === visible[i]?.h)) return board
+  return writeBack(board, compact(sized))
+}
+
+/**
  * 序列化为落盘字符串
  * @param board 布局
  * @returns JSON 字符串
@@ -348,12 +392,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * 把组件声明的行数换成细格
+ *
+ * 声明（含插件接口）按整行写，板内按细格算；换算只在这一处。
+ * @param spec 组件声明，`h` / `minH` 按整行
+ * @returns 同一声明，`h` / `minH` 按细格
+ */
+export function toSubRows(spec: WidgetSpec): WidgetSpec {
+  return { ...spec, h: spec.h * SUB_ROWS, minH: spec.minH * SUB_ROWS }
+}
+
+/**
  * 解析落盘字符串
  *
  * 任何一处不合期望即整份退回默认布局：版本不认、JSON 坏了、`slots` 不是数组。
- * **不做迁移** —— 布局是半分钟就能重摆的东西，而一份迁移了一半的布局比默认布局更难解释。
+ * 版本 1、2 的 `y` / `h` 按 {@link RATIO} 换算，摆好的版面原样保留；更早的不迁移 ——
+ * 布局是半分钟就能重摆的东西，而一份迁移了一半的布局比默认布局更难解释。
  * @param raw localStorage 里的原文；未存过时为 null
- * @param specs 注册表给出的组件
+ * @param specs 注册表给出的组件，`h` / `minH` 已按细格（见 {@link toSubRows}）
  * @returns 布局
  */
 export function parseBoard(raw: string | null, specs: readonly WidgetSpec[]): Board {
@@ -365,7 +421,13 @@ export function parseBoard(raw: string | null, specs: readonly WidgetSpec[]): Bo
   } catch {
     return normalize(fresh, specs)
   }
-  if (!isRecord(data) || data.v !== VERSION || !Array.isArray(data.slots)) return normalize(fresh, specs)
+  const ratio = isRecord(data) && typeof data.v === "number" ? RATIO[data.v] : undefined
+  if (!isRecord(data) || ratio === undefined || !Array.isArray(data.slots)) return normalize(fresh, specs)
+  // 只换算读得出的整数：缺字段与坏值仍按缺省补齐，换算过之后再补会把缺省也缩放
+  const scaled = (value: unknown, fallback: number, min: number): number => {
+    const n = intOf(value, Number.NaN)
+    return Number.isNaN(n) ? fallback : Math.max(min, Math.round(n * ratio))
+  }
   const slots: Slot[] = []
   const seen = new Set<string>()
   for (const item of data.slots) {
@@ -374,9 +436,9 @@ export function parseBoard(raw: string | null, specs: readonly WidgetSpec[]): Bo
     slots.push({
       id: item.id,
       x: intOf(item.x, 0),
-      y: intOf(item.y, 0),
+      y: scaled(item.y, 0, 0),
       w: intOf(item.w, 1),
-      h: intOf(item.h, 1)
+      h: scaled(item.h, 1, 1)
     })
   }
   const hidden = Array.isArray(data.hidden)

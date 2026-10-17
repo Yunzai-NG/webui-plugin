@@ -3,8 +3,8 @@
  * 模块职责：概览页的磁盘组件 —— 每个分区一条线性进度
  * 依赖方向：依赖 BarGauge（画槽）、gauge（算比例）、format（字节）、context（页面注入的快照）
  * 生命周期：随所在格子
- * 注意事项：**分区数由内核给，本组件不猜也不截断**；装不下时格子自行滚动（见 styles.css 里
- *          `.board .card` 的 overflow）。由前端挑「显示哪几个」必然挑错 —— 使用者盯着的往往
+ * 注意事项：**分区数由内核给，本组件不猜也不截断**；高度随内容（注册时声明 `fit`），几个分区
+ *          就几条，格子跟着长短。由前端挑「显示哪几个」必然挑错 —— 使用者盯着的往往
  *          正是那个快满的移动硬盘。
  *
  *          **可用量取内核给的 `free`，不由 `total - used` 反推**：两者在 ext4 上不相等（内核取
@@ -39,8 +39,11 @@ const loaded = computed(() => data?.value !== undefined)
 </script>
 
 <template>
-  <div class="card fill">
-    <h2 style="margin-top: 0">磁盘</h2>
+  <div class="card disk">
+    <header class="wcard-head">
+      <h2>磁盘</h2>
+      <span v-if="rows.length > 0" class="tag">{{ rows.length }} 个分区</span>
+    </header>
     <div v-if="rows.length > 0" class="bars">
       <BarGauge v-for="row in rows" :key="row.mount" :ratio="row.ratio" :label="row.mount" :text="row.text" />
     </div>

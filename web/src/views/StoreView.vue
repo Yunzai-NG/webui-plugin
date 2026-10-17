@@ -28,15 +28,16 @@ import { datetime, errorText } from "../format.js"
 import { MARKET_TABS, emptyCriteria, gatesOf, tabCounts, visibleItems, type Criteria } from "../filter.js"
 import { setupNotes, storeResultText, storeUrlOf, versionText, willRunPm } from "../panelstore.js"
 import { hrefOf } from "../router.js"
+import { showToast } from "../toast.js"
 import MarketFilter from "../components/MarketFilter.vue"
 import Modal from "../components/Modal.vue"
 import PageHeader from "../components/PageHeader.vue"
+import SkeletonCards from "../components/SkeletonCards.vue"
 import TabBar from "../components/TabBar.vue"
 import type { PanelStoreItem, PanelStoreResult, PanelStoreSnapshot } from "../types.js"
 
 const snapshot = ref<PanelStoreSnapshot | undefined>(undefined)
 const { error, busy, run } = useAction()
-const notice = ref("")
 const loading = ref(false)
 /**
  * 六维筛选判据，整份交给 `MarketFilter`
@@ -138,10 +139,9 @@ async function askDeps(item: PanelStoreItem, action: string): Promise<{ go: bool
 async function install(item: PanelStoreItem): Promise<void> {
   const { go, deps } = await askDeps(item, "安装")
   if (!go) return
-  notice.value = ""
   await run(item.name, async () => {
     const result = await postAt<PanelStoreResult>(storeUrlOf("install"), { name: item.name, dependencies: deps })
-    notice.value = storeResultText(result)
+    showToast(storeResultText(result))
     await load()
   })
 }
@@ -164,14 +164,13 @@ async function update(item: PanelStoreItem): Promise<void> {
     ]
   })
   if (!ok) return
-  notice.value = ""
   await run(item.name, async () => {
     // 判据与安装那条路同一个 `willRunPm`：两处各写一遍迟早对不上，而症状是
     // 「装的时候编译了、更新之后没编译」—— 产物停在旧版本，且毫无迹象
     const result = await postAt<PanelStoreResult>(storeUrlOf(`${encodeURIComponent(item.name)}/update`), {
       dependencies: willRunPm(item)
     })
-    notice.value = storeResultText(result)
+    showToast(storeResultText(result))
     await load()
   })
 }
@@ -192,7 +191,7 @@ async function remove(item: PanelStoreItem): Promise<void> {
   if (!ok) return
   await run(item.name, async () => {
     await delAt(storeUrlOf(encodeURIComponent(item.name)))
-    notice.value = `${item.name} 已删除。刷新页面后它的组件不再出现。`
+    showToast(`${item.name} 已删除。刷新页面后它的组件不再出现。`)
     await load()
   })
 }
@@ -212,7 +211,6 @@ onMounted(() => void load())
     </PageHeader>
 
     <p v-if="error" class="banner">{{ error }}</p>
-    <p v-if="notice" class="banner ok">{{ notice }}</p>
 
     <p v-if="readonly" class="banner">
       面板处于只读模式（配置项 server.readonly 为 true），装 / 更 / 删一律不可用。此页仍可浏览。
@@ -262,6 +260,12 @@ onMounted(() => void load())
       索引取自 {{ datetime(snapshot.fetchedAt) }}<span v-if="snapshot.cached">（缓存）</span>，共
       {{ items.length }} 个条目，当前显示 {{ visible.length }} 个。
     </p>
+
+    <!--
+      首次加载摆骨架，与插件市场同一枚组件；只在 `snapshot` 还没到时出，刷新时旧内容还在，不盖掉它。
+      摆三块：面板插件索引本就只有寥寥几个包，六块骨架换成两三张卡片时版面会缩一大截
+    -->
+    <SkeletonCards v-if="snapshot === undefined && loading" :count="3" />
 
     <div class="grid market">
       <article v-for="item in visible" :key="item.name" class="card item">

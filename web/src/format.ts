@@ -30,6 +30,17 @@ export function datetime(time: number): string {
 }
 
 /**
+ * 毫秒时间戳 → 距此刻多久之前
+ * @param time 毫秒时间戳
+ * @param now 此刻，缺省取本机时钟
+ * @returns 如 `刚刚`、`3分12秒前`、`2天4小时前`
+ */
+export function ago(time: number, now = Date.now()): string {
+  const gap = now - time
+  return gap < 60_000 ? "刚刚" : `${duration(gap)}前`
+}
+
+/**
  * 毫秒数 → 可读时长
  * @param ms 毫秒
  * @returns 如 `3天4小时`、`12分`、`8秒`
