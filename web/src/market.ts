@@ -29,9 +29,8 @@ import type { MarketInstallResult, MarketSetupResult, SetupOutcome } from "./typ
  * 两种分隔符都切：`root` 由服务端给出，而服务端可能是 Windows。末尾的分隔符一并滤掉，
  * 否则取到的是空串。
  *
- * **单文件插件（`plugins/我的小功能.js`）的 `root` 就是 `plugins/` 本身**，没有属于自己的
- * 安装目录，这里会给出 `plugins` —— 那几个市场动作对它本就无从生效（安装单位是目录），
- * 照旧失败，只是话说得不同。
+ * **单文件插件的 `root` 是它所在的目录**（`plugins/` 或 `plugins/example/`），不归它一个所有。
+ * 插件页凭 `file` 字段认出它们，不对它们发市场请求，见 PluginsView 的 `entryOf`。
  * @param root 安装目录的绝对路径，取自插件列表的 `root`
  * @param fallback `root` 为空（加载失败且连目录都没认出来）时的退路，通常是插件声明名
  * @returns 安装目录名

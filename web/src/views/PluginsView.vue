@@ -115,6 +115,18 @@ function dirOf(p: PluginItem): string {
 }
 
 /**
+ * 一个插件在索引里的条目；单文件插件一律没有
+ *
+ * 单文件插件的 `root` 是它所在的目录（`plugins/` 或 `plugins/example/`），拿目录名去查索引会
+ * 撞上同名条目，给一个不属于它的「可更新」。
+ * @param p 插件
+ * @returns 条目；单文件插件、或索引里没有时 undefined
+ */
+function entryOf(p: PluginItem): MarketItem | undefined {
+  return p.file === undefined ? marketOf(dirOf(p)) : undefined
+}
+
+/**
  * 当前页签标识：内置三个取 `PAGE_TABS` 的 id，插件贡献的取其 `TabDef.id`
  *
  * **不落盘、不进哈希**：这是「此刻在看哪一类」而非一处位置。
@@ -566,14 +578,14 @@ onMounted(() => void load())
           <header>
             <h3>{{ p.name }}</h3>
             <span class="tag" :class="statusClass(p.status)">{{ statusText(p.status) }}</span>
-            <span v-if="marketOf(dirOf(p))?.updatable" class="tag warn">可更新</span>
+            <span v-if="entryOf(p)?.updatable" class="tag warn">可更新</span>
           </header>
 
           <!-- 可更新时给「旧 → 新」：只给一个数看不出该不该更新 -->
           <p class="mono hint">
             {{ p.version
-            }}<span v-if="marketOf(dirOf(p))?.updatable"> → {{ marketOf(dirOf(p))?.version }}</span
-            ><span v-if="p.builtin"> · 随发行版预置</span>
+            }}<span v-if="entryOf(p)?.updatable"> → {{ entryOf(p)?.version }}</span
+            ><span v-if="p.file"> · 单文件</span><span v-if="p.builtin"> · 随发行版预置</span>
           </p>
           <p v-if="p.description" class="plugin-desc">{{ p.description }}</p>
           <p v-else class="plugin-desc hint">该插件未声明说明</p>
@@ -599,7 +611,7 @@ onMounted(() => void load())
           <footer class="row">
             <button v-if="p.configured" class="primary" @click="configuring = p.name">配置</button>
             <button
-              v-if="marketOf(dirOf(p))?.updatable"
+              v-if="entryOf(p)?.updatable"
               :class="{ primary: !p.configured }"
               :disabled="locked"
               @click="void update(p)"
@@ -619,14 +631,18 @@ onMounted(() => void load())
                     索引没拉到、或这个插件压根不在索引里时，同样只在菜单里 —— 那时判不出
                     该不该更新，而按钮点下去内核会照旧试一次。
                   -->
+                  <!--
+                    单文件插件只留查看、重载、卸载：更新、重装、装依赖、删除目录都按安装目录动手，
+                    而它没有自己的目录（`plugins/example/` 里装着好几个）。增删改直接动那个 js
+                  -->
                   <button
-                    v-if="!marketOf(dirOf(p))?.updatable"
+                    v-if="p.file === undefined && !entryOf(p)?.updatable"
                     :disabled="locked"
                     @click="void update(p)"
                   >
                     更新
                   </button>
-                  <button :disabled="locked" @click="void setup(p)">装依赖并编译</button>
+                  <button v-if="p.file === undefined" :disabled="locked" @click="void setup(p)">装依赖并编译</button>
                   <a
                     v-if="p.homepage"
                     class="button"
@@ -644,8 +660,10 @@ onMounted(() => void load())
                   >
                     卸载
                   </button>
-                  <button class="danger" :disabled="locked" @click="void reinstall(p)">重装</button>
-                  <button class="danger" :disabled="locked" @click="void remove(p)">删除目录</button>
+                  <template v-if="p.file === undefined">
+                    <button class="danger" :disabled="locked" @click="void reinstall(p)">重装</button>
+                    <button class="danger" :disabled="locked" @click="void remove(p)">删除目录</button>
+                  </template>
                 </div>
               </Transition>
             </div>
@@ -655,7 +673,7 @@ onMounted(() => void load())
 
       <p v-if="pageTab !== 'panel' && plugins.length === 0" class="card hint">
         插件目录为空。内核默认不携带任何插件，可在<a :href="hrefOf('market')">插件市场</a>安装，
-        或执行 <code>yzng plugin new 名称</code> 生成开发骨架。
+        执行 <code>yzng plugin new 名称</code> 生成开发骨架，或把单个 js 放进 <code>plugins/example/</code>。
       </p>
 
       <p v-if="pageTab !== 'panel'" class="hint">

@@ -78,8 +78,15 @@ const viewedMiddlewares = computed(() => props.middlewares.filter(m => m.plugin 
         <dd><span class="tag" :class="statusClass(viewed.status)">{{ statusText(viewed.status) }}</span></dd>
         <dt v-if="viewed.author">作者</dt>
         <dd v-if="viewed.author">{{ viewed.author }}</dd>
-        <dt>安装目录</dt>
-        <dd class="mono">{{ viewed.root }}</dd>
+        <!-- 单文件插件没有自己的安装目录，`root` 是它所在的那个（可能与别的插件共用），给文件更准 -->
+        <template v-if="viewed.file">
+          <dt>文件</dt>
+          <dd class="mono">{{ viewed.file }}</dd>
+        </template>
+        <template v-else>
+          <dt>安装目录</dt>
+          <dd class="mono">{{ viewed.root }}</dd>
+        </template>
         <dt>加载耗时</dt>
         <dd>{{ viewed.loadCost }}ms</dd>
         <dt>配置文件</dt>
