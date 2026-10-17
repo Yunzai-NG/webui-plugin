@@ -1438,19 +1438,36 @@ h3 {
  * 与规则 1「颜色一律经令牌」相悖。概览页六个计数块并列，各自抬升时整排会依次浮动。
  */
 /*
- * 计数块：左列小字在上、大字在下，右列一枚图标跨两行
+ * `.stat` 是对面板插件公开的类名（见 docs 的 panel-plugin.md），数据库页也在用：
+ * 只给边框与 `b` 的数字样式，不定排版。概览计数块那套两栏排版挂在 `.stat-grid` 上。
+ */
+.stat {
+  border: 1px solid var(--border);
+}
+
+.stat b {
+  display: block;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+/*
+ * 概览计数块：左列小字在上、大字在下，右列一枚图标跨两行
  *
  * 图标借侧栏同一套线稿，底色只兑一成主色 —— 它是「这块在数什么」的速认记号，不是装饰色块，
  * 六块并排时颜色一浓整排就成了一条彩带。
  */
-.stat {
+.stat-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-rows: auto auto;
   align-content: center;
   column-gap: var(--s3);
   row-gap: 2px;
-  border: 1px solid var(--border);
 }
 
 /* 小字退后：与 `h2` 同号同重时六块读起来全是标题，数反倒不显 */
@@ -1477,8 +1494,7 @@ h3 {
 }
 
 .stat-value b {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
+  display: inline;
   font-size: var(--fs-h1);
   line-height: 30px;
   font-weight: 600;
@@ -2301,6 +2317,10 @@ h3 {
 @container (max-width: 260px) {
   .ring-value {
     font-size: var(--fs-body);
+  }
+
+  .stat b {
+    font-size: var(--fs-h2);
   }
 
   /* 两列宽约 190px 时「100.7 MB」在 22px 下已贴边；行高不降，好让整块高度不随宽度变 */

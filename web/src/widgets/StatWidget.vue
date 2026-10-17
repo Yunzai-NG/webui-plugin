@@ -57,7 +57,7 @@ const bad = computed(() => {
 
 <template>
   <!-- 小字在上、大字在下：一排六块要读的是数，说明只是给数定性 -->
-  <div class="card stat" :class="{ bad }">
+  <div class="card stat stat-grid" :class="{ bad }">
     <span class="stat-label">{{ label }}</span>
     <span class="stat-value">
       <b>{{ text }}</b><small v-if="total !== ''">{{ total }}</small>
