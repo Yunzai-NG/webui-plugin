@@ -16,7 +16,7 @@
  */
 import { computed, nextTick, onMounted, ref } from "vue"
 import { useAction } from "../action.js"
-import { del, get, post } from "../api.js"
+import { del, delAt, get, getAt, post } from "../api.js"
 import { errorText, statusClass, statusText } from "../format.js"
 import { askConfirm, askConfirm3 } from "../confirm.js"
 import { installDirOf, resultText, setupResultText } from "../market.js"
@@ -29,7 +29,9 @@ import PanelConfigEditor from "../components/PanelConfigEditor.vue"
 import PluginDetail from "../components/PluginDetail.vue"
 import TabBar from "../components/TabBar.vue"
 import { panelConfigOf } from "../panelconfig.js"
-import { panelPackages, panelTabs } from "../registry.js"
+import { storeUrlOf, versionText } from "../panelstore.js"
+import { askPanelUpdate, postPanelUpdate } from "../panelupdate.js"
+import { panelPackages, panelTabs, type PanelPackageView } from "../registry.js"
 import { showToast } from "../toast.js"
 import type {
   CommandItem,
@@ -38,6 +40,8 @@ import type {
   MarketSetupResult,
   MarketSnapshot,
   MiddlewareItem,
+  PanelStoreItem,
+  PanelStoreSnapshot,
   PluginItem,
   TaskItem,
   UpdateProbe
@@ -139,9 +143,11 @@ const pageTab = ref<string>("all")
  * **取自注册表而非某个端点**：「装上了」的判据是它在浏览器里被 `import()` 到并通过校验，
  * 只有注册表知道这件事 —— node 侧的清单只知道磁盘上有哪些文件，其中一项可能语法错到根本没跑起来。
  *
- * 注册表在模块加载期一次填满、此后不变，故这两项都不必是响应式的。
+ * 注册表在模块加载期一次填满、此后不变；本页删掉的包记在 `removedKeys`，刷新前先从列表里拿掉。
  */
-const packages = panelPackages()
+const registered = panelPackages()
+const removedKeys = ref<Set<string>>(new Set())
+const packages = computed(() => registered.filter(pkg => !removedKeys.value.has(pkg.key)))
 
 /** 插件贡献的页签，接在内置三个之后 */
 const pluginTabs = panelTabs()
@@ -151,7 +157,11 @@ const pageTabs = computed(() => [
   ...PAGE_TABS.map(item => ({
     ...item,
     count:
-      item.id === "all" ? plugins.value.length + packages.length : item.id === "core" ? plugins.value.length : packages.length
+      item.id === "all"
+        ? plugins.value.length + packages.value.length
+        : item.id === "core"
+          ? plugins.value.length
+          : packages.value.length
   })),
   ...pluginTabs.map(item => ({ id: item.id, label: item.title }))
 ])
@@ -162,13 +172,93 @@ const pageTabs = computed(() => [
  * 只算一次：配置在装载期（`loadPanelPlugins`，早于挂载）就登记好，此后只有值会变，
  * 而值是一个 `Ref` —— 用到它的地方自会重算。
  */
-const configs = new Map(packages.map(pkg => [pkg.key, panelConfigOf(pkg.key)]))
+const configs = new Map(registered.map(pkg => [pkg.key, panelConfigOf(pkg.key)]))
 
 /** 正在配置哪个包；空串意为配置模态未开 */
 const pkgConfiguring = ref("")
 
 /** 正在看哪个包的详情；空串意为包详情模态未开 */
 const pkgViewing = ref("")
+const configuredCore = computed(() => plugins.value.find(p => p.name === configuring.value))
+const configuredPanel = computed(() => packages.value.find(pkg => pkg.key === pkgConfiguring.value))
+
+/**
+ * 面板商店索引，按包名索引；判面板插件「可更新」用，与 `marketItems` 同一分寸
+ *
+ * 取不到时当没有：卡片少一枚徽标，其余照旧。
+ */
+const storeItems = ref<Map<string, PanelStoreItem>>(new Map())
+
+/** 面板是否只读；只读时面板插件那几个写按钮隐去，门在 node 侧 */
+const storeReadonly = ref(false)
+
+/**
+ * 一个面板插件包在商店索引里的条目
+ *
+ * 只认装在 `plugins/webui/plugins/` 下的多文件包：商店只往那里装、只装包形态。单文件与
+ * 其他插件随带的面板，拿名字去查会撞上同名条目，给一个不属于它的「可更新」。
+ * @param pkg 包
+ * @returns 已装的条目；不在索引里时 undefined
+ */
+function storeOf(pkg: PanelPackageView): PanelStoreItem | undefined {
+  if (pkg.kind !== "multi" || !pkg.key.startsWith("panels/")) return undefined
+  const item = storeItems.value.get(pkg.name)
+  return item?.installed === true ? item : undefined
+}
+
+/** 读面板商店索引，走缓存不回源；失败不写顶部错误条，理由同 `loadMarket` */
+async function loadStore(): Promise<void> {
+  try {
+    const snapshot = await getAt<PanelStoreSnapshot>(storeUrlOf())
+    storeItems.value = new Map(snapshot.panels.map(item => [item.name, item]))
+    storeReadonly.value = snapshot.readonly
+  } catch {
+    storeItems.value = new Map()
+  }
+}
+
+/**
+ * 更新一个面板插件包，确认框与请求与面板商店页同一份
+ * @param item 商店条目
+ */
+async function updatePanel(item: PanelStoreItem): Promise<void> {
+  menuOpen.value = ""
+  await flowOf(item.name, async () => {
+    if (!(await askPanelUpdate(item))) return
+    await run(item.name, async () => {
+      showToast(await postPanelUpdate(item))
+      await loadStore()
+    })
+  })
+}
+
+/**
+ * 删除一个面板插件包的目录
+ * @param item 商店条目
+ */
+async function removePanel(item: PanelStoreItem): Promise<void> {
+  menuOpen.value = ""
+  await flowOf(item.name, async () => {
+    const ok = await askConfirm({
+      title: `删除面板插件「${item.title}」？`,
+      body: "整个包目录会被移除，无法撤销。它贡献的组件会从各页消失。",
+      okText: "删除",
+      danger: true,
+      details: [
+        `要删的目录是 plugins/webui/plugins/${item.name}`,
+        "这个包的配置不会被删除，重装同名包后原有配置仍然有效",
+        "已摆好的版面里，它那几格会变成空位"
+      ]
+    })
+    if (!ok) return
+    await run(item.name, async () => {
+      await delAt(storeUrlOf(encodeURIComponent(item.name)))
+      removedKeys.value = new Set([...removedKeys.value, `panels/${item.name}`])
+      showToast(`${item.name} 已删除。刷新页面后它的组件不再出现。`)
+      await loadStore()
+    })
+  })
+}
 
 /** 当前页签对应的插件贡献页签定义；内置页签时为 undefined */
 const activePluginTab = computed(() => pluginTabs.find(t => t.id === pageTab.value))
@@ -344,6 +434,7 @@ async function manage(name: string, task: () => Promise<string>): Promise<void> 
     // 这些动作都会换掉磁盘上的代码并重载，命令与中间件的登记随之改变
     registriesLoaded.value = false
     await load()
+    await loadMarket()
   })
 }
 
@@ -545,7 +636,12 @@ async function toggleMenu(name: string, ev: MouseEvent): Promise<void> {
   menuUp.value = below < need && rect.top > below
 }
 
-onMounted(() => void load())
+// 两份索引各走各的：取不到只少一枚「可更新」徽标，不该拖住插件列表
+onMounted(() => {
+  void load()
+  void loadMarket()
+  void loadStore()
+})
 </script>
 
 <template>
@@ -691,49 +787,90 @@ onMounted(() => void load())
       -->
       <h2 v-if="pageTab === 'all'">面板插件（{{ packages.length }}）</h2>
       <div v-if="pageTab !== 'core'" class="grid plugins">
+        <!--
+          形制与上方核心插件卡片逐项对齐：标题旁先状态后徽标，一行版本，两行说明，一排计数，
+          盒子外「配置 / 更新」，其余进「更多」。菜单键加 `pkg:` 前缀，免得与同名核心插件撞上
+        -->
         <article v-for="pkg in packages" :key="pkg.key" class="card item plugin">
           <header>
             <h3>{{ pkg.name }}</h3>
             <span v-if="pkg.failures.length > 0" class="tag err">{{ pkg.failures.length }} 枚未装上</span>
-            <span v-else class="tag ok">已装上</span>
+            <span v-else class="tag ok">{{ statusText("loaded") }}</span>
+            <span v-if="storeOf(pkg)?.updatable" class="tag warn">可更新</span>
             <!-- 配置声明写坏了或写错了地方：卡片上给一枚徽标，缘由在详情里 -->
             <span v-if="configs.get(pkg.key)?.problem" class="tag warn">配置未生效</span>
           </header>
 
           <p class="mono hint">
-            {{ pkg.meta?.version ?? "—" }} · {{ pkg.kind === "multi" ? "多文件" : "单文件" }}
+            {{ storeOf(pkg) ? versionText(storeOf(pkg)!) : (pkg.meta?.version ?? "—") }} · 面板插件<span
+              v-if="pkg.kind !== 'multi'"
+            > · 单文件</span><span v-if="pkg.meta?.author"> · {{ pkg.meta.author }}</span>
           </p>
           <p v-if="pkg.meta?.description" class="plugin-desc">{{ pkg.meta.description }}</p>
           <p v-else class="plugin-desc hint">该插件未声明说明</p>
 
           <dl class="counts">
-            <div><dt>组件</dt><dd>{{ pkg.widgets.length }}</dd></div>
-            <div><dt>页签</dt><dd>{{ pkg.tabs.length }}</dd></div>
+            <div><dt>组件</dt><dd>{{ pkg.widgets.length - pkg.failures.length }}</dd></div>
+            <div v-if="pkg.tabs.length > 0"><dt>页签</dt><dd>{{ pkg.tabs.length }}</dd></div>
             <div>
               <dt>配置项</dt>
               <dd>{{ Object.keys(configs.get(pkg.key)?.schema?.properties ?? {}).length }}</dd>
             </div>
-            <div><dt>作者</dt><dd>{{ pkg.meta?.author ?? "—" }}</dd></div>
           </dl>
 
           <footer class="row">
-            <!--
-              「配置」只对声明了配置项的包出现：点开是空表单的按钮比不摆更难解释。
-              位置与核心插件卡片一致（首位、primary），使用者眼里这是同一件事。
-            -->
+            <!-- 「配置」只对声明了配置项的包出现：点开是空表单的按钮比不摆更难解释 -->
             <button v-if="configs.get(pkg.key)?.schema" class="primary" @click="pkgConfiguring = pkg.key">
               配置
             </button>
-            <button :class="{ primary: !configs.get(pkg.key)?.schema }" @click="pkgViewing = pkg.key">查看</button>
-            <a
-              v-if="pkg.meta?.repository"
-              class="button"
-              :href="pkg.meta.repository"
-              target="_blank"
-              rel="noreferrer noopener"
+            <button
+              v-if="storeOf(pkg)?.updatable && !storeReadonly"
+              :class="{ primary: !configs.get(pkg.key)?.schema }"
+              :disabled="locked"
+              @click="void updatePanel(storeOf(pkg)!)"
             >
-              访问仓库
-            </a>
+              更新
+            </button>
+
+            <div class="menu" @click.stop>
+              <button
+                :aria-expanded="menuOpen === `pkg:${pkg.key}`"
+                @click="void toggleMenu(`pkg:${pkg.key}`, $event)"
+              >
+                更多 ▾
+              </button>
+              <Transition name="menu">
+                <div v-if="menuOpen === `pkg:${pkg.key}`" class="menu-list" :class="{ up: menuUp }">
+                  <button @click="pkgViewing = pkg.key; menuOpen = ''">查看</button>
+                  <!-- 已是最新时「更新」不在盒子外，菜单里仍留一条，与核心插件同 -->
+                  <button
+                    v-if="storeOf(pkg) && !storeOf(pkg)!.updatable && !storeReadonly"
+                    :disabled="locked"
+                    @click="void updatePanel(storeOf(pkg)!)"
+                  >
+                    更新
+                  </button>
+                  <a
+                    v-if="pkg.meta?.repository"
+                    class="button"
+                    :href="pkg.meta.repository"
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    @click="menuOpen = ''"
+                  >
+                    访问仓库
+                  </a>
+                  <button
+                    v-if="storeOf(pkg) && !storeReadonly"
+                    class="danger"
+                    :disabled="locked"
+                    @click="void removePanel(storeOf(pkg)!)"
+                  >
+                    删除目录
+                  </button>
+                </div>
+              </Transition>
+            </div>
           </footer>
         </article>
       </div>
@@ -743,10 +880,9 @@ onMounted(() => void load())
       </p>
 
       <p v-if="pageTab !== 'core'" class="hint">
-        面板插件只有一处落点：<code>plugins/webui/plugins/</code>。放进去刷新页面即生效，无须重载插件。
-        单文件即一个 <code>.js</code>（须 <code>export const meta</code>）；插件包为一个子目录，
-        入口固定是包根的 <code>index.js</code>，自报信息写在它的 <code>package.json</code> 里。
-        该目录会被「更新 webui」清空，请留一份备份。
+        面板插件装在 <code>plugins/webui/plugins/</code>，单文件或多文件包均可。
+        仅浏览器侧的包刷新页面生效；带 node 侧的包还须重载 webui。
+        更新 webui 时，git 安装的面板包会保留，其余文件被暂存；本机没有 git 或卸载 webui 时整目录删除，请保留自己的备份。
       </p>
     </div>
     </Transition>
@@ -790,6 +926,11 @@ onMounted(() => void load())
       sub="表单由该插件的 schema 声明自动生成，保存后立即生效"
       @close="configuring = ''"
     >
+      <div v-if="configuredCore && entryOf(configuredCore)?.updatable" class="plugin-update-notice">
+        <span class="tag warn">可更新</span>
+        <span class="mono">{{ configuredCore.version }} → {{ entryOf(configuredCore)?.version }}</span>
+        <span class="hint">关闭配置后可在插件卡片上更新</span>
+      </div>
       <ConfigEditor v-if="configuring !== ''" :name="configuring" />
     </Modal>
 
@@ -820,6 +961,11 @@ onMounted(() => void load())
       sub="表单由这个包 package.json 里的 webuiPanel.config 声明自动生成，保存后立即生效"
       @close="pkgConfiguring = ''"
     >
+      <div v-if="configuredPanel && storeOf(configuredPanel)?.updatable" class="plugin-update-notice">
+        <span class="tag warn">可更新</span>
+        <span class="mono">{{ versionText(storeOf(configuredPanel)!) }}</span>
+        <span class="hint">关闭配置后可在插件卡片上更新</span>
+      </div>
       <PanelConfigEditor v-if="pkgConfiguring !== ''" :pkg="pkgConfiguring" />
     </Modal>
   </div>

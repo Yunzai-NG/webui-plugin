@@ -27,6 +27,7 @@ import { askConfirm } from "../confirm.js"
 import { datetime, errorText } from "../format.js"
 import { MARKET_TABS, emptyCriteria, gatesOf, tabCounts, visibleItems, type Criteria } from "../filter.js"
 import { setupNotes, storeResultText, storeUrlOf, versionText, willRunPm } from "../panelstore.js"
+import { askPanelUpdate, postPanelUpdate } from "../panelupdate.js"
 import { hrefOf } from "../router.js"
 import { showToast } from "../toast.js"
 import MarketFilter from "../components/MarketFilter.vue"
@@ -113,7 +114,7 @@ async function load(refresh = false): Promise<void> {
 async function askDeps(item: PanelStoreItem, action: string): Promise<{ go: boolean; deps: boolean }> {
   const details = [
     `落点：plugins/webui/plugins/${item.name}/`,
-    "**「更新 webui」会清空这个目录** —— 那是既定取舍，请对改动过的包留一份备份",
+    "更新 webui 时，git 安装的面板包会保留，其余文件被暂存；本机没有 git 或卸载 webui 时整目录删除，请保留自己的备份",
     item.server === true
       ? "这个包带 node 侧，装完须到插件页重载 webui 才会生效"
       : "这个包只有浏览器侧，装完刷新页面即生效",
@@ -151,26 +152,9 @@ async function install(item: PanelStoreItem): Promise<void> {
  * @param item 条目
  */
 async function update(item: PanelStoreItem): Promise<void> {
-  const ok = await askConfirm({
-    title: `更新面板插件「${item.title}」？`,
-    body: "更新方式由 webui 判定：包目录是 git 仓库且索引声明 git 来源时就地拉取，否则整目录重下。",
-    okText: "更新",
-    details: [
-      `当前：${versionText(item)}`,
-      "就地拉取：目录重置到远端最新提交，已装的依赖保留；本地改动自动暂存，可用 git stash pop 取回",
-      "退回重装：目录整份替换，含 node_modules —— 那份依赖要重装一遍",
-      "两条路都不动这个包的配置 —— 它存在 webui 的数据目录下，不在包目录里",
-      ...setupNotes(item)
-    ]
-  })
-  if (!ok) return
+  if (!(await askPanelUpdate(item))) return
   await run(item.name, async () => {
-    // 判据与安装那条路同一个 `willRunPm`：两处各写一遍迟早对不上，而症状是
-    // 「装的时候编译了、更新之后没编译」—— 产物停在旧版本，且毫无迹象
-    const result = await postAt<PanelStoreResult>(storeUrlOf(`${encodeURIComponent(item.name)}/update`), {
-      dependencies: willRunPm(item)
-    })
-    showToast(storeResultText(result))
+    showToast(await postPanelUpdate(item))
     await load()
   })
 }

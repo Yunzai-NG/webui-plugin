@@ -102,8 +102,9 @@ function tabComponent(tab: PanelTab, deps: PanelApiDeps): Component {
 /**
  * 注册一项
  * @param entry 清单项
+ * @param turn 前一项登记完成；本项等它之后才登记
  */
-async function loadOne(entry: PanelEntry): Promise<void> {
+async function loadOne(entry: PanelEntry, turn: Promise<void>): Promise<void> {
   /**
    * 登记一格占位并作罢
    * @param what 括在标题里的失败类别
@@ -170,6 +171,8 @@ async function loadOne(entry: PanelEntry): Promise<void> {
 
   // 样式在此一并等，且在分支之前 —— 装载失败的那一路也已经开始取它，不等就漏一个悬着的请求
   await styling
+  // 取用并发、登记按清单顺序：默认版面按登记顺序落位，不能随哪个文件先下载完而变
+  await turn
 
   if (failure !== undefined) {
     const reason = failure instanceof Error ? failure.message : String(failure)
@@ -240,7 +243,8 @@ async function loadOne(entry: PanelEntry): Promise<void> {
          * `panelcheck.ts`）。替没声明的补一个 `true`，那两行 `?? 1` 就成了它的下限，
          * 即作者什么都没说、他的卡片却能被拖成 1×1。
          */
-        ...(widget.defaultLayout.resizable === true ? { resizable: true } : {})
+        ...(widget.defaultLayout.resizable === true ? { resizable: true } : {}),
+        ...(widget.defaultLayout.fit === true ? { fit: true } : {})
       },
       component: toComponent(widget, deps),
       meta: meta.meta,
@@ -291,5 +295,12 @@ export async function loadPanelPlugins(): Promise<void> {
   }
 
   const entries = parseManifest(manifest)
-  await Promise.all(entries.map(loadOne))
+  let turn: Promise<void> = Promise.resolve()
+  await Promise.all(
+    entries.map(entry => {
+      const done = loadOne(entry, turn)
+      turn = done.catch(() => undefined)
+      return done
+    })
+  )
 }

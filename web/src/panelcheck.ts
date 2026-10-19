@@ -295,6 +295,9 @@ function checkOneWidget(def: unknown, pages: readonly string[], where = ""): Pan
   if (layout.resizable !== undefined && typeof layout.resizable !== "boolean") {
     return { ok: false, reason: `${at}defaultLayout.resizable 须是 true 或 false` }
   }
+  if (layout.fit !== undefined && typeof layout.fit !== "boolean") {
+    return { ok: false, reason: `${at}defaultLayout.fit 须是 true 或 false` }
+  }
   /*
    * 声明可调就得给下限，缺一项即不通过
    *

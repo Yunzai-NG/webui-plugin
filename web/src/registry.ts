@@ -36,7 +36,7 @@ export interface WidgetDef {
     minH?: number
     /** 使用者是否可改这一格的大小，缺省为假；详见 `grid.ts` 的 `WidgetSpec.resizable` */
     resizable?: boolean
-    /** 高度是否随内容，缺省为假；详见 `grid.ts` 的 `WidgetSpec.fit`。暂只供内置组件用 */
+    /** 高度是否随内容，缺省为假；详见 `grid.ts` 的 `WidgetSpec.fit` */
     fit?: boolean
   }
   /** 渲染它的 vue 组件 */

@@ -10,6 +10,7 @@ import {
   layoutKey,
   normalize,
   overlaps,
+  packBoard,
   parseBoard,
   rowsOf,
   serializeBoard,
@@ -340,6 +341,35 @@ describe("高度随内容", () => {
     const gap = applyMove(BASE, FIT_SPECS, { id: "tail", x: 0, y: 8, w: 12, h: 2 })
     expect(at(gap, "tail")?.y).toBe(8)
     expect(fitBoard(gap, FIT_SPECS, new Map([["disk", 3], ["run", 3]]))).toBe(gap)
+  })
+})
+
+describe("按实测重排默认版面", () => {
+  /** 声明里左栏高、右栏矮；随后的窄组件该补进**实测**更短的那一栏 */
+  const SPECS2: readonly WidgetSpec[] = [
+    { id: "left", w: 8, h: 6, minW: 4, minH: 1, resizable: true, fit: true },
+    { id: "right", w: 4, h: 2, minW: 3, minH: 1, resizable: true, fit: true },
+    { id: "late", w: 4, h: 2, minW: 3, minH: 1, resizable: true, fit: true },
+    { id: "off", w: 4, h: 2, minW: 3, minH: 1, resizable: true, defaultHidden: true }
+  ]
+  const fresh = normalize({ slots: [], hidden: [] }, SPECS2)
+  const pos = (board: Board, id: string) => visibleOf(board, SPECS2).find(slot => slot.id === id)
+
+  it("按声明高度补到右栏之下", () => {
+    expect(pos(fresh, "late")).toMatchObject({ x: 8, y: 2 })
+  })
+
+  it("**实测左栏更矮时改补到左栏之下** —— 声明高度只是猜测", () => {
+    const packed = packBoard(fresh, SPECS2, new Map([["left", 2], ["right", 8], ["late", 3]]))
+    expect(pos(packed, "late")).toMatchObject({ x: 0, y: 2 })
+    expect(pos(packed, "right")).toMatchObject({ x: 8, y: 0, h: 8 })
+  })
+
+  it("「已移除」原样保留，默认不上板的仍不上板", () => {
+    const packed = packBoard({ ...fresh, hidden: [...fresh.hidden, "right"] }, SPECS2, new Map())
+    expect(pos(packed, "right")).toBeUndefined()
+    expect(pos(packed, "off")).toBeUndefined()
+    expect(packed.hidden).toEqual(expect.arrayContaining(["off", "right"]))
   })
 })
 

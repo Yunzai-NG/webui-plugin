@@ -374,6 +374,25 @@ export function fitBoard(board: Board, specs: readonly WidgetSpec[], rows: Reado
 }
 
 /**
+ * 按实测高度重排出一份默认布局
+ *
+ * 默认落位按注册顺序找第一个空位，而随内容组件的声明高度只是猜测 —— 猜高了右栏
+ * 会空出一截，猜矮了插件组件会塞进不该去的那一栏。故未落盘过的版面在量完之后
+ * 用实测行数重排一遍，顺序与「已移除」不变。
+ * @param board 当前布局
+ * @param specs 注册表给出的组件
+ * @param rows 各组件实测所需的行数
+ * @returns 重排后的布局
+ */
+export function packBoard(board: Board, specs: readonly WidgetSpec[], rows: ReadonlyMap<string, number>): Board {
+  const sized = specs.map(spec => {
+    const h = spec.fit === true ? rows.get(spec.id) : undefined
+    return h === undefined ? spec : { ...spec, h: Math.max(h, 1), minH: Math.min(spec.minH, Math.max(h, 1)) }
+  })
+  return normalize({ slots: [], hidden: [...board.hidden] }, sized)
+}
+
+/**
  * 序列化为落盘字符串
  * @param board 布局
  * @returns JSON 字符串

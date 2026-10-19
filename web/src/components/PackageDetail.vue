@@ -109,8 +109,8 @@ const config = computed(() => (viewed.value === undefined ? undefined : panelCon
               </td>
               <td data-label="标识" class="mono">{{ w.id }}</td>
               <td data-label="所在页">{{ w.page }}</td>
-              <td data-label="默认尺寸" class="mono">{{ w.layout.w }} × {{ w.layout.h }}</td>
-              <td data-label="可调">{{ w.layout.resizable === true ? "可" : "固定" }}</td>
+              <td data-label="默认尺寸" class="mono">{{ w.layout.w }} × {{ w.layout.fit ? "自适应" : w.layout.h }}</td>
+              <td data-label="可调">{{ w.layout.resizable === true ? (w.layout.fit ? "宽度" : "宽高") : "固定" }}</td>
             </tr>
             <tr v-for="w in viewed.failures" :key="`${w.id}:why`">
               <td colspan="5" class="err">{{ w.title }}：{{ w.failure }}</td>

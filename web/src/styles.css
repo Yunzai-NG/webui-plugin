@@ -1338,10 +1338,10 @@ h3 {
  * 一张卡上要放四个计数、三个动作按钮与一条可能很长的说明。280px 下那排计数会折成两行 ——
  * 它们并列才读得出「命令 12 / 任务 2」这种对比。
  *
- * **等高由栅格给，不写固定高度**（`align-items: stretch` 是 grid 的默认值）：
- * 说明文字长短不一，固定高度必然要么截断要么留白。
+ * 插件卡片按内容取高，不把短说明拉成大块空白。
  */
 .grid.plugins {
+  align-items: start;
   /*
    * `min()` 而非直接写 320px：`minmax` 的下限是**硬下限**，栅格不会为了装进容器而破它 ——
    * 视口窄于 320px 加上左右 gutter 时，这一列会比容器宽，整页因此横向滚动。320px 宽的老
@@ -1349,6 +1349,28 @@ h3 {
    * 取 `min(320px, 100%)` 后，窄屏上下限降为容器宽度，卡片照样单列，只是不再溢出。
    */
   grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
+}
+
+/* 配置弹窗顶部的「可更新」提示 */
+.plugin-update-notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  padding-bottom: var(--s4);
+  margin-bottom: var(--s4);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-hint);
+}
+
+.grid.plugins .plugin header h3 {
+  flex: 1 1 100%;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.grid.plugins .plugin .counts {
+  margin-bottom: var(--s2);
 }
 
 /*
@@ -2212,7 +2234,12 @@ h3 {
  *
  * 行数取上整，卡内底部会多出不到一细格（48px）；不撑满则卡片的下沿落在两条格线之间，
  * 编辑态里看着就是「没贴着格子」，并排的两格下沿也无从对齐。
+ *
+ * 格子按实测内容定高，故不出滚动条：量到之前那一瞬的溢出裁掉即可，滚动条一闪反而显眼。
  */
+.board .witem.fit > * {
+  overflow: hidden;
+}
 
 /* `.sub` 自带 20px 下外边距，作末行时就成了卡片底部的一截空白 */
 .board .card > .sub:last-child {

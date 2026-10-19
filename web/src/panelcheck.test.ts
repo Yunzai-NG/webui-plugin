@@ -68,6 +68,13 @@ describe("checkPanelWidget", () => {
     expect(result.reason).toContain("minW")
   })
 
+  it("fit 认布尔，写成别的不通过", () => {
+    expect(checkPanelWidget(goodMod({ defaultLayout: { w: 4, h: 3, fit: true } }), PAGES).ok).toBe(true)
+    const result = checkPanelWidget(goodMod({ defaultLayout: { w: 4, h: 3, fit: "yes" } }), PAGES)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toContain("fit")
+  })
+
   it("声明 resizable 却缺 minH 时同样不通过", () => {
     expect(
       checkPanelWidget(goodMod({ defaultLayout: { w: 3, h: 3, minW: 2, resizable: true } }), PAGES).ok

@@ -30,6 +30,7 @@ import {
   fitBoard,
   hideWidget,
   layoutKey,
+  packBoard,
   parseBoard,
   rowsOf,
   serializeBoard,
@@ -67,9 +68,14 @@ const editModel = computed({
 
 /** 窄屏阈值，与 styles.css 里那一处 `max-width` 同一个数 */
 const NARROW = 700
+/** 侧栏展开时，按内容区宽度决定是否改为单列。 */
+const MIN_BOARD_WIDTH = 640
 
 /** 行高兜底：读不到 `--grid-row` 时用它，与 styles.css 中的取值一致 */
 const ROW_FALLBACK = 80
+
+/** 默认版面在实测高度多久不变之后重排，见 `schedulePack` */
+const PACK_SETTLE_MS = 1500
 
 /**
  * 拖到离视口上下边缘多近就开始滚
@@ -163,8 +169,14 @@ function read(): string | null {
 
 const board = ref<Board>(parseBoard(read(), specs.value))
 
+/** 版面还没落过盘：量完实测高度后按它重排一次，见 `packBoard` */
+let packPending = read() === null
+let packTimer: number | undefined
+
 /** 落盘当前布局 */
 function save(): void {
+  packPending = false
+  if (packTimer !== undefined) window.clearTimeout(packTimer)
   try {
     localStorage.setItem(layoutKey(props.page), serializeBoard(board.value))
   } catch {
@@ -489,6 +501,8 @@ async function reset(): Promise<void> {
     // 删不掉也无妨：下面这行已按默认布局重建，再有一次落位就把旧值盖掉了
   }
   board.value = parseBoard(null, specs.value)
+  packPending = true
+  scheduleMeasure()
 }
 
 /**
@@ -532,7 +546,10 @@ function scheduleMeasure(): void {
   })
 }
 
-const resizeWatch = new ResizeObserver(scheduleMeasure)
+const resizeWatch = new ResizeObserver(() => {
+  onMedia()
+  scheduleMeasure()
+})
 const mutationWatch = new MutationObserver(scheduleMeasure)
 
 /**
@@ -567,6 +584,24 @@ function measure(): void {
   }
   const same = next.size === measured.value.size && [...next].every(([id, n]) => measured.value.get(id) === n)
   if (!same) measured.value = next
+  // 只在量值变了（或尚未排期）时重新计时，否则每拍刷新的运行时长会把它一直往后推
+  if (packPending && next.size > 0 && (!same || packTimer === undefined)) schedulePack()
+}
+
+/**
+ * 实测高度稳定一阵之后重排默认版面并落盘
+ *
+ * 等数据到齐：首拍量到的多是「加载中」那一行，按它排会把插件组件塞进错的一栏。
+ * 落盘之后不再重排，否则告警多一条，下次进来版面就换了一副样子。
+ */
+function schedulePack(): void {
+  if (packTimer !== undefined) window.clearTimeout(packTimer)
+  packTimer = window.setTimeout(() => {
+    packTimer = undefined
+    if (!packPending || drag.value !== undefined) return
+    board.value = packBoard(board.value, specs.value, measured.value)
+    save()
+  }, PACK_SETTLE_MS)
 }
 
 // 组件进出、窄宽切换之后格子换了一批，要重新挂观察并量一次
@@ -574,7 +609,7 @@ watch([() => cells.value.length, stacked], () => void nextTick(scheduleMeasure))
 
 /** 记下窄屏与否；转入窄屏时退出编辑态 —— 窄屏下呈现的坐标不是落盘的那一套 */
 function onMedia(): void {
-  stacked.value = media.matches
+  stacked.value = media.matches || (host.value !== undefined && host.value.clientWidth < MIN_BOARD_WIDTH)
   if (stacked.value) editModel.value = false
 }
 
@@ -582,6 +617,7 @@ onMounted(() => {
   media.addEventListener("change", onMedia)
   // 板宽一变，表格与长路径就可能折行，内容高度跟着变
   if (host.value !== undefined) resizeWatch.observe(host.value)
+  onMedia()
   scheduleMeasure()
 })
 
@@ -591,12 +627,16 @@ onUnmounted(() => {
   edgeStop()
   resizeWatch.disconnect()
   mutationWatch.disconnect()
+  if (packTimer !== undefined) window.clearTimeout(packTimer)
   if (measureFrame !== undefined) cancelAnimationFrame(measureFrame)
 })
 </script>
 
 <template>
   <!-- 工具条整条只在宽屏出现：窄屏没有编辑态，一枚点不出结果的按钮比没有按钮更糟 -->
+  <div v-if="stacked && editModel" class="board-bar">
+    <p class="hint">内容区太窄，单列排布下不能编辑布局。收起侧栏或加宽窗口后再试。</p>
+  </div>
   <div v-if="!stacked && defs.size > 0" class="board-bar">
     <p v-if="editModel" class="hint">
       拖动组件调整位置，拖右下角调整大小（高度随内容的组件只能拖右缘改宽）。把手上按方向键可逐格微调，按住 Shift 则改大小。
@@ -604,7 +644,7 @@ onUnmounted(() => {
     <button v-if="editModel" type="button" @click="void reset()">恢复默认布局</button>
   </div>
 
-  <div v-if="editModel && removed.length > 0" class="board-add">
+  <div v-if="editModel && !stacked && removed.length > 0" class="board-add">
     <span class="hint">已移除：</span>
     <button v-for="def in removed" :key="def.id" type="button" @click="add(def.id)">＋ {{ def.title }}</button>
   </div>
@@ -637,7 +677,7 @@ onUnmounted(() => {
         v-for="cell in cells"
         :key="cell.slot.id"
         class="witem"
-        :class="{ dragging: drag?.id === cell.slot.id }"
+        :class="{ dragging: drag?.id === cell.slot.id, fit: fitIds.has(cell.slot.id) }"
         :style="styleOf(cell.slot)"
         :data-widget="cell.slot.id"
         :data-panel="cell.def.pkg"
