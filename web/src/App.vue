@@ -21,10 +21,13 @@ import { get, getAt, getToken, post, setToken } from "./api.js"
 import { ApiError } from "./api.js"
 import { errorText } from "./format.js"
 import { ROUTES, currentQuery, currentRoute, hrefOf, type RouteDef } from "./router.js"
-import { THEME_ICON } from "./icons.js"
-import { THEME_LABEL, cycleTheme, themeChoice } from "./theme.js"
+import { SCHEME_ICON } from "./icons.js"
+import { SCHEME_LABEL, cycleScheme, schemeChoice, supportedSchemes } from "./scheme.js"
+import { reloadThemes } from "./themes.js"
 import type { IconShape, Overview } from "./types.js"
 import AppIcon from "./components/AppIcon.vue"
+import BackToTop from "./components/BackToTop.vue"
+import ThemeIcon from "./components/ThemeIcon.vue"
 import ConfirmDialog from "./components/ConfirmDialog.vue"
 import PathPicker from "./components/PathPicker.vue"
 import ToastHost from "./components/ToastHost.vue"
@@ -167,6 +170,8 @@ async function probe(): Promise<void> {
     online.value = true
     state.value = "open"
     message.value = ""
+    // 主题表要令牌，闸门之前那次取不到；过了闸门再取一次
+    void reloadThemes()
     await loadMountedPages()
   } catch (err) {
     if (err instanceof ApiError && err.isAuth) {
@@ -277,22 +282,24 @@ onUnmounted(() => {
     要令牌那一态有标题、输入框、两枚钮与两行提示。故品牌那一行放在共用的位置上：
     没有它时，「正在连接内核…」是一张浮在空白页正中的、没有出处的卡片。
   -->
-  <div v-if="state === 'checking'" class="gate">
-    <div class="card gate-body">
-      <p class="gate-brand">
+  <div v-if="state === 'checking'" class="gate" data-part="login.stage">
+    <div class="card gate-body" data-part="login">
+      <div data-part="login.art" aria-hidden="true"></div>
+      <p class="gate-brand" data-part="brand">
         <img class="brand-mark" :src="MARK" alt="" width="22" height="22" />
-        <span class="brand">Yunzai NG</span>
+        <span class="brand brand-name">Yunzai NG</span>
       </p>
       <!-- 转圈而非只一行字：连不上时这一态会停在这里数秒，静止的文字读不出「还在试」 -->
-      <p class="gate-wait"><span class="spinner" aria-hidden="true" />正在连接内核…</p>
+      <p class="gate-wait"><span class="spinner" data-part="loading" aria-hidden="true" />正在连接内核…</p>
     </div>
   </div>
 
-  <div v-else-if="state === 'down'" class="gate">
-    <div class="card gate-body">
-      <p class="gate-brand">
+  <div v-else-if="state === 'down'" class="gate" data-part="login.stage">
+    <div class="card gate-body" data-part="login">
+      <div data-part="login.art" aria-hidden="true"></div>
+      <p class="gate-brand" data-part="brand">
         <img class="brand-mark" :src="MARK" alt="" width="22" height="22" />
-        <span class="brand">Yunzai NG</span>
+        <span class="brand brand-name">Yunzai NG</span>
       </p>
       <h1>无法连接内核</h1>
       <p class="sub">{{ message }}</p>
@@ -307,11 +314,12 @@ onUnmounted(() => {
     </div>
   </div>
 
-  <div v-else-if="state === 'locked'" class="gate">
-    <div class="card gate-body">
-      <p class="gate-brand">
+  <div v-else-if="state === 'locked'" class="gate" data-part="login.stage">
+    <div class="card gate-body" data-part="login">
+      <div data-part="login.art" aria-hidden="true"></div>
+      <p class="gate-brand" data-part="brand">
         <img class="brand-mark" :src="MARK" alt="" width="22" height="22" />
-        <span class="brand">Yunzai NG</span>
+        <span class="brand brand-name">Yunzai NG</span>
       </p>
       <h1>需要访问令牌</h1>
       <p v-if="message !== ''" class="sub">{{ message }}</p>
@@ -347,12 +355,12 @@ onUnmounted(() => {
     </div>
   </div>
 
-  <div v-else class="shell" :class="{ open: drawer, collapsed }">
+  <div v-else class="shell" data-part="shell" :class="{ open: drawer, collapsed }">
     <!--
       顶栏只为窄屏而存在：宽屏下品牌、版本与清除令牌都在侧栏里，顶栏会是一条空白横条，
       故在 860 以上整条隐去（见 styles.css 的 `.topbar` 媒体查询）。
     -->
-    <header class="topbar">
+    <header class="topbar" data-part="topbar">
       <button class="icon" aria-label="导航" :aria-expanded="drawer" @click="drawer = !drawer">☰</button>
       <span class="brand">
         Yunzai NG
@@ -360,11 +368,12 @@ onUnmounted(() => {
       </span>
     </header>
 
-    <aside class="side">
+    <aside class="side" data-part="sidebar">
       <!-- 一：品牌区 -->
-      <div class="side-brand">
+      <div class="side-brand" data-part="sidebar.brand">
         <img class="brand-mark" :src="MARK" alt="" width="22" height="22" />
-        <span class="brand">
+        <span data-part="brand.lockup" role="img" aria-label="Yunzai NG"></span>
+        <span class="brand brand-name">
           Yunzai NG
           <small>{{ version }}</small>
         </span>
@@ -379,7 +388,7 @@ onUnmounted(() => {
       </div>
 
       <!-- 二：分组导航 -->
-      <nav class="nav">
+      <nav class="nav" data-part="nav">
         <!-- 使用锚点而非点击事件：哈希变化由 router.ts 的 hashchange 监听接管，
              中键新开标签页与右键复制链接因此均可正常工作 -->
         <template v-for="group in groups" :key="group.title">
@@ -406,7 +415,7 @@ onUnmounted(() => {
                 :title="customExpanded ? '收起' : '展开'"
                 @click="customExpanded = !customExpanded"
               >
-                <AppIcon class="nav-icon" :path="route.icon" />
+                <ThemeIcon class="nav-icon" :route="route.id" :path="route.icon" />
                 <span class="nav-label">{{ route.label }}</span>
                 <AppIcon class="nav-caret" :path="customExpanded ? CARET_UP : CARET_DOWN" />
               </button>
@@ -417,8 +426,9 @@ onUnmounted(() => {
                 :aria-current="route.id === currentRoute ? 'page' : undefined"
                 :aria-label="route.label"
                 :title="route.label"
+                data-part="nav.item"
               >
-                <AppIcon class="nav-icon" :path="route.icon" />
+                <ThemeIcon class="nav-icon" :route="route.id" :path="route.icon" />
                 <span class="nav-label">{{ route.label }}</span>
               </a>
             </div>
@@ -467,12 +477,13 @@ onUnmounted(() => {
         -->
         <button
           class="out"
-          :aria-label="`主题：${THEME_LABEL[themeChoice]}，点击切换`"
-          :title="`主题：${THEME_LABEL[themeChoice]}（点击切换）`"
-          @click="cycleTheme"
+          :disabled="supportedSchemes.length === 1"
+          :aria-label="supportedSchemes.length === 1 ? '当前主题只有一套明暗' : `明暗：${SCHEME_LABEL[schemeChoice]}，点击切换`"
+          :title="supportedSchemes.length === 1 ? '当前主题只有一套明暗，换主题后才能切换' : `明暗：${SCHEME_LABEL[schemeChoice]}（点击切换）`"
+          @click="cycleScheme"
         >
-          <AppIcon class="nav-icon" :path="THEME_ICON[themeChoice]" />
-          <span class="nav-label">{{ THEME_LABEL[themeChoice] }}</span>
+          <AppIcon class="nav-icon" :path="SCHEME_ICON[schemeChoice]" />
+          <span class="nav-label">{{ SCHEME_LABEL[schemeChoice] }}</span>
         </button>
         <button class="out" aria-label="清除令牌" title="清除令牌" @click="signOut">
           <AppIcon class="nav-icon" :path="SIGN_OUT" />
@@ -491,12 +502,13 @@ onUnmounted(() => {
       各页的间距全部读 `--s1..--s8` 与 `--gutter`，在这个类下重声明令牌即可，见 styles.css 末尾
       「按页覆盖」一节。本仓自己的规则一律不写 `.page-*`，否则又回到「改一页牵连另一页」。
     -->
-    <main class="main" :class="`page-${currentRoute}`">
+    <main class="main" data-part="main" :class="`page-${currentRoute}`">
       <!-- `mode="out-in"` 而非默认的同时进出：两个视图重叠期间页面高度会先叠加再收回，
            在长页面之间切换时表现为内容跳一下 -->
       <Transition name="page" mode="out-in">
         <component :is="view" :key="currentRoute" />
       </Transition>
+      <BackToTop :key="currentRoute" />
     </main>
   </div>
 

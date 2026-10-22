@@ -311,21 +311,94 @@ async function confirmOverwrite(key: string): Promise<boolean> {
 }
 
 /**
+ * 删掉之后最多替多少个键留底以便撤销
+ *
+ * 留底是删之前逐个读回来：一次勾了几百个键时，为了一个多半不会点的「撤销」先发几百个请求不划算。
+ */
+const UNDO_MAX = 50
+
+/**
+ * 把删掉的键写回去
+ *
+ * 过期时刻已经过了的那些不写回：写回一个注定立刻消失的键只会让列表闪一下。
+ * @param entries 删之前读回来的键
+ * @returns 写回了几个
+ */
+async function restoreEntries(entries: readonly KvEntry[]): Promise<number> {
+  let restored = 0
+  for (const entry of entries) {
+    if (entry.expireAt !== undefined && entry.expireAt <= Date.now()) continue
+    await put("storage/kv/entry", {
+      key: entry.key,
+      value: entry.value,
+      ...(entry.expireAt === undefined ? {} : { expireAt: entry.expireAt })
+    })
+    restored++
+  }
+  return restored
+}
+
+/**
+ * 删掉之后的回执：带一枚「撤销」，点了把留底写回去
+ * @param text 回执文案
+ * @param backup 留底；为空时不给撤销
+ */
+function toastRemoved(text: string, backup: readonly KvEntry[]): void {
+  if (backup.length === 0) {
+    showToast(text)
+    return
+  }
+  showToast(text, {
+    label: "撤销",
+    run: async () => {
+      try {
+        const restored = await restoreEntries(backup)
+        showToast(restored === backup.length ? `已撤销，恢复了 ${restored} 个键` : `已撤销，恢复了 ${restored} 个键（其余已过期）`)
+        await reloadKv()
+      } catch (err) {
+        error.value = `撤销失败：${errorText(err)}`
+      }
+    }
+  })
+}
+
+/**
+ * 删之前把键读回来留底；读不到的（已过期、刚被别处删掉）就不留
+ * @param keys 完整键
+ * @returns 留底
+ */
+async function backupOf(keys: readonly string[]): Promise<KvEntry[]> {
+  if (keys.length > UNDO_MAX) return []
+  const out: KvEntry[] = []
+  for (const key of keys) {
+    try {
+      out.push(await get<KvEntry>(`storage/kv/entry?key=${encodeURIComponent(key)}`))
+    } catch {
+      // 读不到就不留底：撤销时少一个，不该因此删不成
+    }
+  }
+  return out
+}
+
+/**
  * 删一个键
+ *
+ * 仍先问一句，但「无法撤销」改成了「删后几秒内可撤销」—— 删之前把值读回来留了底。
  * @param key 完整键
  */
 async function removeEntry(key: string): Promise<void> {
   const ok = await askConfirm({
     title: `删除键 ${key}？`,
-    body: "该键及其值将被移除，此操作无法撤销。",
+    body: "该键及其值将被移除。删除后的几秒内可在提示条上撤销。",
     okText: "删除",
     danger: true
   })
   if (!ok) return
   try {
+    const backup = await backupOf([key])
     await del(`storage/kv/entry?key=${encodeURIComponent(key)}`)
     editing.value = false
-    showToast(`已删除 ${key}`)
+    toastRemoved(`已删除 ${key}`, backup)
     await reloadKv()
   } catch (err) {
     error.value = errorText(err)
@@ -454,20 +527,24 @@ function askClearPrefix(target: string): void {
 function askRemovePicked(): void {
   const keys = [...picked.value]
   if (keys.length === 0) return
+  const undoable = keys.length <= UNDO_MAX
   danger.value = {
     title: `删除勾选的 ${keys.length} 个键`,
-    body: "这些键及其值将被移除，此操作无法撤销。",
+    body: undoable
+      ? "这些键及其值将被移除。删除后的几秒内可在提示条上撤销。"
+      : `这些键及其值将被移除。一次超过 ${UNDO_MAX} 个键时不留底，删除后无法撤销。`,
     expected: "删除",
     samples: keys.slice(0, 5),
     okText: "删除",
     run: async () => {
+      const backup = await backupOf(keys)
       let removed = 0
       for (const key of keys) {
         await del(`storage/kv/entry?key=${encodeURIComponent(key)}`)
         removed++
       }
       picked.value = new Set()
-      showToast(`已删除 ${removed} 个键`)
+      toastRemoved(`已删除 ${removed} 个键`, backup)
       await reloadKv()
     }
   }

@@ -69,6 +69,7 @@ function onClick(event: MouseEvent): void {
       v-if="open"
       ref="el"
       class="modal sheet"
+      data-part="modal"
       :class="{ wide: wide === true, side: side === true }"
       @cancel.prevent="emit('close')"
       @close="emit('close')"

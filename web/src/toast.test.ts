@@ -5,11 +5,13 @@
  */
 import { beforeEach, describe, expect, it } from "vitest"
 import {
+  TOAST_ACTION_MIN_MS,
   TOAST_MAX,
   TOAST_MAX_MS,
   TOAST_MIN_MS,
   TOAST_STAGGER_MS,
   dismissToast,
+  runToastAction,
   showToast,
   toastDurationOf,
   toasts
@@ -119,6 +121,20 @@ describe("showToast 的错开到点", () => {
 })
 
 describe("dismissToast", () => {
+  it("带动作的条子至少停留 8 秒，点动作钮先收起再执行", async () => {
+    let ran = 0
+    showToast("已删除 a", { label: "撤销", run: () => void ran++ })
+    const one = toasts.value.at(-1)
+    expect(one?.action).toBe("撤销")
+    expect(one?.ms).toBeGreaterThanOrEqual(TOAST_ACTION_MIN_MS)
+    await runToastAction(one?.id ?? -1)
+    expect(ran).toBe(1)
+    expect(toasts.value.some(t => t.id === one?.id)).toBe(false)
+    // 已收起的再点一次不会重复执行
+    await runToastAction(one?.id ?? -1)
+    expect(ran).toBe(1)
+  })
+
   it("只收起指定那一条", () => {
     showToast("a")
     showToast("b")

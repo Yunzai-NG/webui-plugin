@@ -1,6 +1,6 @@
 {
   "name": "@yunzai-ng/webui-plugin",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Yunzai NG 面板插件：schema 驱动的配置表单、账号登录、日志与插件管理",
   "type": "module",
   "license": "AGPL-3.0-or-later",
@@ -29,7 +29,7 @@
     "node": "^20.19.0 || >=22.12.0"
   },
   "packageManager": "pnpm@9.15.4",
-  "files": ["dist", "src", "web", "webadapter"],
+  "files": ["dist", "src", "web", "webadapter","themes"],
   "scripts": {
     "build": "tsc -b && pnpm run sync:webadapter && pnpm run build:web",
     "sync:webadapter": "node scripts/sync-webadapter.mjs",

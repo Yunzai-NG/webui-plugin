@@ -9,25 +9,56 @@
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
     <title>Yunzai NG 面板</title>
     <!--
-      首帧的深浅由这一小段定下，不能等到 main.ts
+      三层样式的先后，必须是 <head> 里第一条样式
 
-      令牌只认 `<html data-theme>`（见 styles.css），而模块脚本要等下载与解析 ——
-      在此之前那个属性还没写上，深色偏好的使用者会先看到一帧浅色再跳成深色。
-      故此处同步写一次，随后由 theme.ts 接手「跟随系统」的后续变化。
+      面板自身（base）→ 主题（theme）→ 面板插件自带的样式（panel）。层的先后按第一次出现的顺序定，
+      与 `<link>` / `<style>` 谁先插进来无关 —— 主题样式表是运行时才换上的，没有这一行，它就盖不过
+      面板默认样式，或反过来盖过面板插件。
+    -->
+    <style>
+      @layer base, theme, panel;
+    </style>
+    <!--
+      首帧的明暗与主题由这一小段定下，不能等到 main.ts
 
-      键名与取值必须与 theme.ts 的 THEME_KEY / ThemeChoice 一致；读坏了就当跟随系统，
-      不让这一项拦住面板打开。
+      令牌只认 `<html data-scheme>`（见 styles.css），而模块脚本要等下载与解析 —— 在此之前那个属性
+      还没写上，深色偏好的使用者会先看到一帧浅色再跳成深色。主题同理：换过主题的人若等主题表取回来
+      再插样式表，每次打开都先看到一帧经典。故此处按上次留下的缓存同步写一次，随后由 scheme.ts 与
+      themes.ts 接手。
+
+      键名与取值必须与 scheme.ts 的 SCHEME_KEY、themeview.ts 的 FIRST_PAINT_KEY 一致；读坏了就当
+      跟随系统、经典主题，不让这一项拦住面板打开。地址里带 `?theme=safe` 时不插主题样式表（安全模式）。
     -->
     <script>
-      try {
-        var saved = localStorage.getItem("yunzai-ng.theme")
-        var dark =
-          saved === "dark" ||
-          (saved !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches)
-        document.documentElement.dataset.theme = dark ? "dark" : "light"
-      } catch (err) {
-        document.documentElement.dataset.theme = "light"
-      }
+      ;(function () {
+        var root = document.documentElement
+        var mode = "light"
+        try {
+          var saved = localStorage.getItem("yunzai-ng.theme")
+          var dark = saved === "dark" || (saved !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches)
+          mode = dark ? "dark" : "light"
+          var cache = /[?&]theme=safe\b/.test(location.search) ? null : JSON.parse(localStorage.getItem("yunzai-ng.theme-cache") || "null")
+          if (cache && typeof cache.id === "string") {
+            root.dataset.themeId = cache.id
+            if (cache.schemes && cache.schemes.length === 1) mode = cache.schemes[0]
+            if (typeof cache.css === "string" && cache.css.indexOf("/plugin/webui/theme/") === 0) {
+              var link = document.createElement("link")
+              link.id = "yz-theme-css"
+              link.rel = "stylesheet"
+              link.href = cache.css
+              document.head.appendChild(link)
+            }
+            for (var key in cache.vars || {}) if (key.indexOf("--slot-") === 0) root.style.setProperty(key, cache.vars[key])
+            if (typeof cache.slots === "string") root.dataset.slots = cache.slots
+          } else {
+            root.dataset.themeId = "classic"
+          }
+        } catch (err) {
+          root.dataset.themeId = "classic"
+        }
+        root.dataset.scheme = mode
+        root.dataset.theme = mode
+      })()
     </script>
   </head>
   <body>

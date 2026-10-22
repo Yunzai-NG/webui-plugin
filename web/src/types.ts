@@ -554,6 +554,8 @@ export interface PanelStoreItem {
   official: boolean
   /** 要求的最低 **webui** 版本 */
   minWebui?: string
+  /** 这个包是什么：组件、主题，或两样都有；商店据此分栏 */
+  kind: "widget" | "theme" | "both"
   /**
    * 组件数 —— 索引作者填的**预告**，不是事实
    *

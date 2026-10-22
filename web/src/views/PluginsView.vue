@@ -16,11 +16,12 @@
  */
 import { computed, nextTick, onMounted, ref } from "vue"
 import { useAction } from "../action.js"
-import { del, delAt, get, getAt, post } from "../api.js"
+import { del, delAt, get, getAt, post, postAt } from "../api.js"
 import { errorText, statusClass, statusText } from "../format.js"
 import { askConfirm, askConfirm3 } from "../confirm.js"
 import { installDirOf, resultText, setupResultText } from "../market.js"
-import { hrefOf } from "../router.js"
+import { safeHref } from "../links.js"
+import { go, hrefOf } from "../router.js"
 import ConfigEditor from "../components/ConfigEditor.vue"
 import Modal from "../components/Modal.vue"
 import PackageDetail from "../components/PackageDetail.vue"
@@ -28,10 +29,13 @@ import PageHeader from "../components/PageHeader.vue"
 import PanelConfigEditor from "../components/PanelConfigEditor.vue"
 import PluginDetail from "../components/PluginDetail.vue"
 import TabBar from "../components/TabBar.vue"
+import PageMeta, { type MetaItem } from "../components/PageMeta.vue"
+import { ICONS } from "../icons.js"
 import { panelConfigOf } from "../panelconfig.js"
-import { storeUrlOf, versionText } from "../panelstore.js"
+import { storeEntryOf, storeUrlOf, strayStoreItems, versionText } from "../panelstore.js"
 import { askPanelUpdate, postPanelUpdate } from "../panelupdate.js"
 import { panelPackages, panelTabs, type PanelPackageView } from "../registry.js"
+import { reloadThemes } from "../themes.js"
 import { showToast } from "../toast.js"
 import type {
   CommandItem,
@@ -73,6 +77,8 @@ const middlewares = ref<MiddlewareItem[]>([])
 const { error, busy, run } = useAction()
 /** 三份清单是否已拉过；「查看」首次打开时拉一次 */
 const registriesLoaded = ref(false)
+/** 插件清单是否已到；到了才出页头那一行计数，免得先闪一排 0 */
+const listed = ref(false)
 
 /** 正在配置哪个插件；空串意为配置模态未开 */
 const configuring = ref("")
@@ -137,6 +143,22 @@ function entryOf(p: PluginItem): MarketItem | undefined {
  */
 const pageTab = ref<string>("all")
 
+/** 页头下那一行：共几个、已加载几个、有几个可更新（两类合计）、有几个出错 */
+const meta = computed<MetaItem[]>(() => {
+  const list = plugins.value
+  const updatable =
+    list.filter(p => entryOf(p)?.updatable === true).length +
+    packages.value.filter(pkg => storeOf(pkg)?.updatable === true).length +
+    strays.value.filter(item => item.updatable).length
+  return [
+    { icon: ICONS.layers, label: "个内核插件", value: list.length },
+    { icon: ICONS.check, label: "已加载", value: list.filter(p => p.status === "loaded").length, tone: "ok" },
+    { icon: ICONS.refresh, label: "可更新", value: updatable, tone: "warn", hideZero: true },
+    { icon: ICONS.alert, label: "出错", value: list.filter(p => p.status === "error").length, tone: "err", hideZero: true },
+    { icon: ICONS.sparkle, label: "个面板插件包", value: panelCount.value, hideZero: true }
+  ]
+})
+
 /**
  * 已装的面板插件，按包归并
  *
@@ -158,10 +180,10 @@ const pageTabs = computed(() => [
     ...item,
     count:
       item.id === "all"
-        ? plugins.value.length + packages.value.length
+        ? plugins.value.length + panelCount.value
         : item.id === "core"
           ? plugins.value.length
-          : packages.value.length
+          : panelCount.value
   })),
   ...pluginTabs.map(item => ({ id: item.id, label: item.title }))
 ])
@@ -193,32 +215,68 @@ const storeItems = ref<Map<string, PanelStoreItem>>(new Map())
 const storeReadonly = ref(false)
 
 /**
- * 一个面板插件包在商店索引里的条目
- *
- * 只认装在 `plugins/webui/plugins/` 下的多文件包：商店只往那里装、只装包形态。单文件与
- * 其他插件随带的面板，拿名字去查会撞上同名条目，给一个不属于它的「可更新」。
+ * 一个面板插件包在商店索引里的已装条目，判据见 `storeEntryOf`
  * @param pkg 包
  * @returns 已装的条目；不在索引里时 undefined
  */
 function storeOf(pkg: PanelPackageView): PanelStoreItem | undefined {
-  if (pkg.kind !== "multi" || !pkg.key.startsWith("panels/")) return undefined
-  const item = storeItems.value.get(pkg.name)
-  return item?.installed === true ? item : undefined
+  return storeEntryOf(pkg, storeItems.value)
 }
 
-/** 读面板商店索引，走缓存不回源；失败不写顶部错误条，理由同 `loadMarket` */
-async function loadStore(): Promise<void> {
+/** 商店说已装、注册表里却没有的包（只带主题的、刚装未刷新的），各自也给一张卡片 */
+const strays = computed(() =>
+  strayStoreItems(storeItems.value.values(), new Set(packages.value.map(pkg => pkg.key))).filter(
+    item => !removedKeys.value.has(`panels/${item.name}`)
+  )
+)
+
+/** 面板插件卡片总数 */
+const panelCount = computed(() => packages.value.length + strays.value.length)
+
+/**
+ * 读面板商店索引；失败不写顶部错误条，理由同 `loadMarket`
+ * @param snapshot 已取到的快照，「检查更新」回源后直接交进来
+ */
+async function loadStore(snapshot?: PanelStoreSnapshot): Promise<void> {
   try {
-    const snapshot = await getAt<PanelStoreSnapshot>(storeUrlOf())
-    storeItems.value = new Map(snapshot.panels.map(item => [item.name, item]))
-    storeReadonly.value = snapshot.readonly
+    const data = snapshot ?? (await getAt<PanelStoreSnapshot>(storeUrlOf()))
+    storeItems.value = new Map(data.panels.map(item => [item.name, item]))
+    storeReadonly.value = data.readonly
   } catch {
     storeItems.value = new Map()
   }
 }
 
+/** 正在回源检查更新 */
+const checking = ref(false)
+
 /**
- * 更新一个面板插件包，确认框与请求与面板商店页同一份
+ * 两份索引一并回源，与插件市场、面板商店两页的「刷新索引」同一个动作
+ *
+ * 只报失败的那一份：另一份照旧刷新，徽标该出的照出。
+ */
+async function checkUpdates(): Promise<void> {
+  checking.value = true
+  try {
+    const [market, store] = await Promise.allSettled([
+      post<MarketSnapshot>("market/refresh"),
+      postAt<PanelStoreSnapshot>(storeUrlOf("refresh"))
+    ])
+    if (market.status === "fulfilled") marketItems.value = new Map(market.value.plugins.map(i => [i.name, i]))
+    if (store.status === "fulfilled") await loadStore(store.value)
+    const failed = [market.status === "rejected" ? "插件市场" : "", store.status === "rejected" ? "面板商店" : ""]
+      .filter(Boolean)
+      .join("、")
+    showToast(failed === "" ? "已检查更新" : `${failed}的索引没取到，请检查网络与镜像设置`)
+  } finally {
+    checking.value = false
+  }
+}
+
+/**
+ * 更新一个面板插件包，确认框与请求是 `panelupdate.ts` 那一份
+ *
+ * 带主题的包更完要重读主题清单，否则外观页还是旧的那份。
  * @param item 商店条目
  */
 async function updatePanel(item: PanelStoreItem): Promise<void> {
@@ -228,6 +286,7 @@ async function updatePanel(item: PanelStoreItem): Promise<void> {
     await run(item.name, async () => {
       showToast(await postPanelUpdate(item))
       await loadStore()
+      if (item.kind !== "widget") await reloadThemes()
     })
   })
 }
@@ -254,8 +313,13 @@ async function removePanel(item: PanelStoreItem): Promise<void> {
     await run(item.name, async () => {
       await delAt(storeUrlOf(encodeURIComponent(item.name)))
       removedKeys.value = new Set([...removedKeys.value, `panels/${item.name}`])
-      showToast(`${item.name} 已删除。刷新页面后它的组件不再出现。`)
+      showToast(
+        item.kind === "theme"
+          ? `主题「${item.title}」已删除；正在用它的浏览器会退回站点默认主题`
+          : `${item.name} 已删除。刷新页面后它的组件不再出现。`
+      )
       await loadStore()
+      if (item.kind !== "widget") await reloadThemes()
     })
   })
 }
@@ -269,6 +333,7 @@ async function load(): Promise<void> {
     const [p, t] = await Promise.all([get<PluginItem[]>("plugins"), get<TaskItem[]>("tasks")])
     plugins.value = p
     tasks.value = t
+    listed.value = true
     error.value = ""
   } catch (err) {
     error.value = errorText(err)
@@ -646,7 +711,12 @@ onMounted(() => {
 
 <template>
   <div @click="menuOpen = ''">
-    <PageHeader route="plugins" sub="内核之外的全部能力均由插件提供：适配器、渲染器与业务功能" />
+    <PageHeader route="plugins" sub="内核之外的全部能力均由插件提供：适配器、渲染器与业务功能。更新与删除都在这一页">
+      <template #actions>
+        <button :disabled="checking" @click="void checkUpdates()">{{ checking ? "检查中…" : "检查更新" }}</button>
+      </template>
+    </PageHeader>
+    <PageMeta v-if="listed" :items="meta" />
 
     <p v-if="error" class="banner">{{ error }}</p>
 
@@ -662,7 +732,7 @@ onMounted(() => {
       栅格里的那一份由 `WidgetCell` 的外层带上。
     -->
     <Transition name="tab" mode="out-in">
-    <div v-if="activePluginTab" :key="activePluginTab.id" :data-panel="activePluginTab.pkg">
+    <div v-if="activePluginTab" :key="activePluginTab.id" :data-panel="activePluginTab.pkg" data-part="widget.frame tab.frame">
       <component :is="activePluginTab.component" :key="activePluginTab.id" />
     </div>
 
@@ -704,7 +774,7 @@ onMounted(() => {
             重装、装依赖并编译、删除都收进菜单：它们要么慢（重装连依赖一起重下），要么少用
             （装依赖并编译多半只在装坏过一次之后用得上）。一排六个按钮在窄卡上必然折行。
           -->
-          <footer class="row">
+          <footer class="row card-actions">
             <button v-if="p.configured" class="primary" @click="configuring = p.name">配置</button>
             <button
               v-if="entryOf(p)?.updatable"
@@ -740,9 +810,9 @@ onMounted(() => {
                   </button>
                   <button v-if="p.file === undefined" :disabled="locked" @click="void setup(p)">装依赖并编译</button>
                   <a
-                    v-if="p.homepage"
+                    v-if="safeHref(p.homepage)"
                     class="button"
-                    :href="p.homepage"
+                    :href="safeHref(p.homepage)"
                     target="_blank"
                     rel="noreferrer noopener"
                     @click="menuOpen = ''"
@@ -785,7 +855,7 @@ onMounted(() => {
         同为「我装的一个插件」；差别在计数与动作：这里给组件数与页签数，且没有重载与卸载
         —— 那两个动作对浏览器侧的包无意义，摆一排灰按钮比不列出来更难解释。
       -->
-      <h2 v-if="pageTab === 'all'">面板插件（{{ packages.length }}）</h2>
+      <h2 v-if="pageTab === 'all'">面板插件（{{ panelCount }}）</h2>
       <div v-if="pageTab !== 'core'" class="grid plugins">
         <!--
           形制与上方核心插件卡片逐项对齐：标题旁先状态后徽标，一行版本，两行说明，一排计数，
@@ -818,7 +888,7 @@ onMounted(() => {
             </div>
           </dl>
 
-          <footer class="row">
+          <footer class="row card-actions">
             <!-- 「配置」只对声明了配置项的包出现：点开是空表单的按钮比不摆更难解释 -->
             <button v-if="configs.get(pkg.key)?.schema" class="primary" @click="pkgConfiguring = pkg.key">
               配置
@@ -851,9 +921,9 @@ onMounted(() => {
                     更新
                   </button>
                   <a
-                    v-if="pkg.meta?.repository"
+                    v-if="safeHref(pkg.meta?.repository)"
                     class="button"
-                    :href="pkg.meta.repository"
+                    :href="safeHref(pkg.meta?.repository)"
                     target="_blank"
                     rel="noreferrer noopener"
                     @click="menuOpen = ''"
@@ -873,14 +943,67 @@ onMounted(() => {
             </div>
           </footer>
         </article>
+
+        <!-- 商店装上、注册表里却没有的包：只带主题的，或还没刷新、入口没跑起来的 -->
+        <article v-for="item in strays" :key="`store:${item.name}`" class="card item plugin">
+          <header>
+            <h3>{{ item.name }}</h3>
+            <span v-if="item.kind === 'theme'" class="tag">主题</span>
+            <span v-else class="tag warn">未载入</span>
+            <span v-if="item.updatable" class="tag warn">可更新</span>
+          </header>
+
+          <p class="mono hint">{{ versionText(item) }} · 面板插件<span v-if="item.author"> · {{ item.author }}</span></p>
+          <p class="plugin-desc">{{ item.description }}</p>
+          <p v-if="item.kind !== 'theme'" class="hint">
+            {{ item.server ? "带 node 侧，须重载 webui 后刷新页面" : "刷新页面后载入" }}；仍不出现时到浏览器控制台看报错
+          </p>
+
+          <footer class="row card-actions">
+            <button v-if="item.kind !== 'widget'" class="primary" @click="go('appearance')">去外观页</button>
+            <button
+              v-if="!storeReadonly"
+              :class="{ primary: item.updatable && item.kind === 'widget' }"
+              :disabled="locked"
+              @click="void updatePanel(item)"
+            >
+              更新
+            </button>
+            <div class="menu" @click.stop>
+              <button
+                :aria-expanded="menuOpen === `store:${item.name}`"
+                @click="void toggleMenu(`store:${item.name}`, $event)"
+              >
+                更多 ▾
+              </button>
+              <Transition name="menu">
+                <div v-if="menuOpen === `store:${item.name}`" class="menu-list" :class="{ up: menuUp }">
+                  <a
+                    v-if="safeHref(item.homepage)"
+                    class="button"
+                    :href="safeHref(item.homepage)"
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    @click="menuOpen = ''"
+                  >
+                    访问主页
+                  </a>
+                  <button v-if="!storeReadonly" class="danger" :disabled="locked" @click="void removePanel(item)">
+                    删除目录
+                  </button>
+                </div>
+              </Transition>
+            </div>
+          </footer>
+        </article>
       </div>
 
-      <p v-if="pageTab !== 'core' && packages.length === 0" class="card hint">
+      <p v-if="pageTab !== 'core' && panelCount === 0" class="card hint">
         尚未装任何面板插件。
       </p>
 
       <p v-if="pageTab !== 'core'" class="hint">
-        面板插件装在 <code>plugins/webui/plugins/</code>，单文件或多文件包均可。
+        面板插件装在 <code>plugins/webui/plugins/</code>，单文件或多文件包均可；从<a :href="hrefOf('store')">面板商店</a>装来的包在此更新与删除。
         仅浏览器侧的包刷新页面生效；带 node 侧的包还须重载 webui。
         更新 webui 时，git 安装的面板包会保留，其余文件被暂存；本机没有 git 或卸载 webui 时整目录删除，请保留自己的备份。
       </p>

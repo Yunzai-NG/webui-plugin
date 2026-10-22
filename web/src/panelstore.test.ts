@@ -8,7 +8,15 @@
  * **页签与筛选的用例不在此处**：那几个判据已与插件市场页共用，收在 `filter.test.ts`。
  */
 import { describe, expect, it } from "vitest"
-import { setupNotes, storeResultText, storeUrlOf, versionText, willRunPm } from "./panelstore.js"
+import {
+  setupNotes,
+  storeEntryOf,
+  storeResultText,
+  storeUrlOf,
+  strayStoreItems,
+  versionText,
+  willRunPm
+} from "./panelstore.js"
 import type { PanelStoreItem, PanelStoreResult } from "./types.js"
 
 /**
@@ -21,6 +29,7 @@ function itemOf(over: Partial<PanelStoreItem> = {}): PanelStoreItem {
     name: "hardware",
     title: "硬件信息",
     description: "十枚组件",
+    kind: "widget",
     tags: ["监控"],
     official: true,
     source: "https://example/webui_index.json",
@@ -84,6 +93,42 @@ describe("versionText", () => {
 
   it("已装但读不到版本时说「未知」", () => {
     expect(versionText(itemOf({ version: "0.4.0", installed: true }))).toBe("未知")
+  })
+})
+
+describe("storeEntryOf", () => {
+  const items = new Map([
+    ["hardware", itemOf({ installed: true, installedVersion: "0.3.0", version: "0.4.0", updatable: true })],
+    ["fresh", itemOf({ name: "fresh" })]
+  ])
+
+  it("panels/ 下的多文件包按目录名对上", () => {
+    expect(storeEntryOf({ key: "panels/hardware", kind: "multi" }, items)?.updatable).toBe(true)
+  })
+
+  it("只出页签、没有 kind 的包照样对得上", () => {
+    expect(storeEntryOf({ key: "panels/hardware" }, items)).toBeDefined()
+  })
+
+  it("单文件与别的插件随带的面板不认，免得撞上同名条目", () => {
+    expect(storeEntryOf({ key: "panels/hardware", kind: "single" }, items)).toBeUndefined()
+    expect(storeEntryOf({ key: "steward/hardware", kind: "multi" }, items)).toBeUndefined()
+  })
+
+  it("索引里有、磁盘上没装的不算", () => {
+    expect(storeEntryOf({ key: "panels/fresh", kind: "multi" }, items)).toBeUndefined()
+  })
+})
+
+describe("strayStoreItems", () => {
+  it("只列已装且插件页没有卡片的，按包名排序", () => {
+    const list = [
+      itemOf({ name: "zz-theme", kind: "theme", installed: true }),
+      itemOf({ name: "hardware", installed: true }),
+      itemOf({ name: "aa-theme", kind: "theme", installed: true }),
+      itemOf({ name: "never", installed: false })
+    ]
+    expect(strayStoreItems(list, new Set(["panels/hardware"])).map(i => i.name)).toEqual(["aa-theme", "zz-theme"])
   })
 })
 

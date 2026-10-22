@@ -211,6 +211,18 @@ export function tagsOf(items: readonly Filterable[]): string[] {
   return tagFacets(items).map(one => one.value)
 }
 
+/** 卡片上至多摆几枚分类，其余在「查看」里 */
+export const CARD_TAGS = 3
+
+/**
+ * 卡片上那一排分类：前 `CARD_TAGS` 枚，加上没摆出来的枚数
+ * @param tags 条目的全部分类
+ * @returns 摆出来的与余下的枚数
+ */
+export function cardTags(tags: readonly string[]): { shown: string[]; more: number } {
+  return { shown: tags.slice(0, CARD_TAGS), more: Math.max(0, tags.length - CARD_TAGS) }
+}
+
 /**
  * 索引里出现过的作者，按条目数降序
  *

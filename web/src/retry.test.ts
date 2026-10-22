@@ -11,7 +11,7 @@
  *          存在但为空的 `retry`，此后「这个号有没有自定义」的判断从此含糊。
  */
 import { describe, expect, it } from "vitest"
-import { globalNote, globalRetryOf, isRetryCustom, retryFormOf, retryOverrideOf, retrySummary } from "./retry.js"
+import { globalNote, globalRetryOf, isRetryCustom, retryCountOf, retryFormOf, retryOverrideOf, retrySummary } from "./retry.js"
 import type { RetryForm } from "./retry.js"
 
 /**
@@ -194,5 +194,18 @@ describe("从内核配置里挑四项", () => {
     expect(globalRetryOf({ adapter: [1, 2] })).toEqual({})
     expect(globalRetryOf(undefined)).toEqual({})
     expect(globalRetryOf("我不是配置")).toEqual({})
+  })
+})
+
+describe("输入框写回数字时", () => {
+  // type="number" 的输入框经 v-model 写回数字（Vue 的约定），表单态里就不再全是字符串
+  it("照常拼出覆盖、数出项数，不因 trim 抛错", () => {
+    const form = { ...retryFormOf(undefined), limit: 5 as unknown as string, interval: 3 as unknown as string }
+    expect(retryOverrideOf(form)).toMatchObject({ limit: 5 })
+    expect(retryCountOf(form)).toBe(2)
+  })
+
+  it("四项全空时项数为 0", () => {
+    expect(retryCountOf(retryFormOf(undefined))).toBe(0)
   })
 })

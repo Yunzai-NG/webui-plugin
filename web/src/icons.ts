@@ -51,11 +51,11 @@ export const ICONS = {
 } as const
 
 /**
- * 主题三态的图标，与 `ThemeChoice` 一一对应
+ * 明暗三态的图标，与 `SchemeChoice` 一一对应
  *
  * 三态各有图形：折叠态的侧栏隐去文案，只剩图标说明当前是哪一态。
  */
-export const THEME_ICON = {
+export const SCHEME_ICON = {
   // 半明半暗的圆：跟随系统
   auto: "M12 3a9 9 0 000 18zM12 3a9 9 0 010 18",
   // 太阳

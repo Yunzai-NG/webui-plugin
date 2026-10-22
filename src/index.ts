@@ -22,6 +22,7 @@ import { loadPanelServers } from "./panelserver.js"
 import { PanelStore, STORE_CACHE_FILE, type PanelStoreSettings } from "./panelstore.js"
 import { DEFAULT_STORE_INDEX, webuiConfigSchema, type WebuiConfig } from "./storeconfig.js"
 import { mountCustomPages } from "./custompage.js"
+import { CLASSIC_ID, THEMES_ENDPOINT, THEME_ASSET_PREFIX, readThemeAsset, scanThemes, type ScannedTheme } from "./themescan.js"
 import { startCollector } from "./msgcollect.js"
 import { clearStatsReader, readBrief, setStatsReader } from "./msghub.js"
 
@@ -66,6 +67,8 @@ export interface PanelRequest {
   readonly params: Readonly<Record<string, string>>
   /** 已解析的请求体；无体时 undefined */
   readonly body: unknown
+  /** 请求头（键已小写化）；只有主题资源路由读它（`if-none-match`） */
+  readonly headers?: Readonly<Record<string, string | string[] | undefined>>
 }
 
 /**
@@ -116,7 +119,8 @@ export interface PanelHost {
   route(
     method: "GET" | "PUT" | "POST" | "DELETE",
     path: string,
-    handler: (req: PanelRequest) => unknown
+    handler: (req: PanelRequest) => unknown,
+    opts?: { auth?: boolean }
   ): unknown
 
   /**
@@ -462,6 +466,63 @@ export async function mountPanelPlugins(ctx: PanelHost, webuiRoot: string): Prom
   return mounted
 }
 
+/** 主题表的缓存时长：资源请求一次页面要打十几条，每条都重扫全部 package.json 不划算 */
+const THEME_SCAN_TTL_MS = 2000
+
+/**
+ * 开出主题的两条路由：主题表与主题资源
+ *
+ * 主题表要令牌（与面板插件清单同一待遇）；资源不要 —— `<link>` 与 `<img>` 带不上令牌，
+ * 而那些本就是公开的静态文件。资源带 `Access-Control-Allow-Origin: *`，理由见 themescan.ts 的文件头。
+ * @param ctx 插件上下文
+ * @param webuiRoot webui 安装目录
+ * @returns 无
+ */
+export function mountThemes(ctx: PanelHost, webuiRoot: string): void {
+  let cache: { at: number; list: Promise<ScannedTheme[]> } | undefined
+  /**
+   * 取主题表，两秒内复用上一次的扫描
+   * @param quiet 是否不再告警（只有主题表端点那次说话）
+   * @returns 主题表
+   */
+  const themes = (quiet: boolean): Promise<ScannedTheme[]> => {
+    const now = Date.now()
+    if (cache !== undefined && now - cache.at < THEME_SCAN_TTL_MS) return cache.list
+    const list = scanThemes(webuiRoot, quiet ? () => undefined : msg => ctx.logger.warn(msg))
+    cache = { at: now, list }
+    return list
+  }
+
+  ctx.route("GET", `/${THEMES_ENDPOINT}`, async () => {
+    cache = undefined
+    const list = await themes(false)
+    const raw = ctx.config.get() as Partial<WebuiConfig> | undefined
+    const wanted = raw?.appearance?.defaultTheme ?? CLASSIC_ID
+    const defaultTheme = list.some(t => t.info.id === wanted) ? wanted : CLASSIC_ID
+    return { themes: list.map(t => t.info), defaultTheme }
+  })
+
+  ctx.route(
+    "GET",
+    `/${THEME_ASSET_PREFIX}/:id/*file`,
+    async req => {
+      const id = req.params.id ?? ""
+      const file = req.params.file ?? ""
+      const theme = (await themes(true)).find(t => t.info.id === id)
+      const cors = { "access-control-allow-origin": "*" }
+      if (theme === undefined) return { status: 404, headers: cors, body: { error: `没有 id 为 ${id} 的主题` } }
+      const asset = await readThemeAsset(theme, file)
+      if (asset.status === 404) return { status: 404, headers: cors, body: { error: asset.error } }
+      for (const w of asset.warnings ?? []) ctx.logger.warn(`主题 ${id}：${w}`)
+      const headers = { ...cors, "content-type": asset.type, etag: asset.etag, "cache-control": "no-cache" }
+      const seen = req.headers?.["if-none-match"]
+      if (seen === asset.etag) return { status: 304, headers }
+      return { status: 200, headers, body: asset.body }
+    },
+    { auth: false }
+  )
+}
+
 /**
  * 插件定义
  *
@@ -524,6 +585,13 @@ const plugin: PluginDefinition<WebuiConfig> = definePlugin({
       await mountPanelPlugins(ctx, rootOf(import.meta.dirname))
     } catch (err) {
       ctx.logger.error(`面板插件加载失败，面板本身不受影响：${err instanceof Error ? err.message : String(err)}`)
+    }
+
+    // 主题坏了只是退回经典，不该连带面板插件或商店
+    try {
+      mountThemes(ctx, rootOf(import.meta.dirname))
+    } catch (err) {
+      ctx.logger.error(`主题加载失败，面板退回经典外观：${err instanceof Error ? err.message : String(err)}`)
     }
 
     /*

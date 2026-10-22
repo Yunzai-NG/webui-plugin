@@ -30,7 +30,7 @@ import {
   tarballFromGit,
   type GitRunner
 } from "@yunzai-ng/core"
-import { MULTI_ENTRY } from "./panelscan.js"
+import { MULTI_ENTRY, isThemeOnly } from "./panelscan.js"
 import { INSTALL_TIMEOUT_MS, SCRIPT_TIMEOUT_MS, isScriptName, runPm, type PmRunner } from "./pm.js"
 
 /** 合法包名：与内核的 NAME_RE 及扫描器的 `isSafeName` 交集一致 */
@@ -121,6 +121,12 @@ export interface PanelStoreEntry {
   readonly official: boolean
   /** 要求的最低 **webui** 版本，不是内核版本 —— 面板插件用的是 webui 给的注入口 */
   readonly minWebui?: string
+  /**
+   * 这个包是什么：`widget` 带组件或页签，`theme` 只带主题，`both` 两样都有；缺省 `widget`
+   *
+   * 商店据它分「组件」与「主题」两栏。同一条安装链，只是摆在不同的栏里。
+   */
+  readonly kind: "widget" | "theme" | "both"
   /** 组件数 —— 预告而非事实，真实数目要浏览器 `import()` 过才知道；仅供列表展示 */
   readonly widgets?: number
   /** 是否带 node 侧入口 —— 同为预告，装完以 package.json 为准 */
@@ -878,6 +884,8 @@ export class PanelStore {
     const hasPkg = await isFile(join(root, "package.json"))
     const hasEntry = await isFile(join(root, MULTI_ENTRY))
     if (hasPkg && hasEntry) return
+    // 只带主题的包：没有组件，也就没有 index.js
+    if (hasPkg && (await isThemeOnly(root))) return
     const missing = [hasPkg ? undefined : "package.json", hasEntry ? undefined : MULTI_ENTRY].filter(
       (item): item is string => item !== undefined
     )
@@ -990,10 +998,12 @@ export function parsePanelEntry(raw: unknown, source: string): PanelStoreEntry |
     typeof record.widgets === "number" && Number.isInteger(record.widgets) && record.widgets >= 0
       ? record.widgets
       : undefined
+  const kind = record.kind === "theme" || record.kind === "both" ? record.kind : "widget"
   return {
     name,
     title: text(record, "title") ?? name,
     description: text(record, "description") ?? "",
+    kind,
     tags,
     official: record.official === true,
     install,

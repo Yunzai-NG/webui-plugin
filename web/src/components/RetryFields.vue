@@ -30,6 +30,8 @@ const form = defineModel<RetryForm>({ required: true })
 defineProps<{
   /** 全局四项的当前值，只为把「跟随全局」说成一个具体的数；读不到的项缺席 */
   global: GlobalRetry
+  /** 自成一个页签时为真：标题已写在页签上，不再画分隔线与小标题 */
+  inTab?: boolean
 }>()
 
 /** 本组件这一份实例的 id 前缀，避免同页两份表单撞名 */
@@ -52,9 +54,9 @@ function clear(): void {
     各自声明一遍这四项，于是同一件事有 N 份声明，且哪个适配器忘了写，它的账号就没有
     这个能力。
   -->
-  <div class="subsect">
-    <h3>重连策略</h3>
-    <p class="hint">
+  <div :class="{ subsect: !inTab }">
+    <h3 v-if="!inTab">重连策略</h3>
+    <p class="hint retry-lead">
       四项各自可留空，留空的那项跟随全局设置（配置页 → 适配器）。这四项由内核统一执行，与适配器无关。
     </p>
 

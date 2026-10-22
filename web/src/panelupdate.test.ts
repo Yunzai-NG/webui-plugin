@@ -11,6 +11,7 @@ const item: PanelStoreItem = {
   name: "hardware",
   title: "硬件信息",
   description: "十枚组件",
+  kind: "widget",
   version: "0.4.0",
   installedVersion: "0.3.1",
   installed: true,

@@ -61,7 +61,7 @@ const def = computed(() => routeOf(props.route))
 </script>
 
 <template>
-  <header class="page-head">
+  <header class="page-head" data-part="page.header">
     <!-- `icon` 在场即以它为准，否则仍取那份表里的一枚（见 AppIcon：`shapes` 优先于 `path`） -->
     <span class="page-icon">
       <AppIcon :path="def?.icon ?? UNKNOWN" :shapes="icon" />

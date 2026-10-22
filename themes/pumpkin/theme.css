@@ -1,0 +1,411 @@
+/*
+ * YUNZAI NG（id 为 pumpkin）
+ *
+ * 南瓜橙主色、云青辅色，取自品牌图标：橙是南瓜台，青是那朵云。深色是主场 —— 深夜蓝底上
+ * 暖橙与云青的光晕才「亮」得起来；浅色取暖白。
+ *
+ * 只写与经典不同的地方，其余落回经典（webui 的 styles.css）。整份文件由面板包进 `@layer theme`，
+ * 故这里的同名规则盖得过面板默认样式，又盖不过面板插件在自己地盘里写的样式。
+ * 图（图标、边框、开关、插图、背景）都在清单的 `icons` 与 `slots` 里，面板自己摆；这里只管配色、
+ * 字体，以及那些图摆好之后还要配合的几处。
+ *
+ * 主色按钮上用深字：白字压南瓜橙只有约 3.3:1，不过 AA；深字压它约 6:1。
+ */
+
+/* 圆体拉丁字：Nunito（OFL-1.1，见 fonts/OFL.txt），只带拉丁子集，中文落到系统字体 */
+@font-face {
+  font-family: "Nunito";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(fonts/nunito-400.woff2) format("woff2");
+}
+
+@font-face {
+  font-family: "Nunito";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(fonts/nunito-700.woff2) format("woff2");
+}
+
+@font-face {
+  font-family: "Nunito";
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url(fonts/nunito-800.woff2) format("woff2");
+}
+
+:root {
+  --font-ui: "Nunito", "Manrope", system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+
+  --bg: #faf7f2;
+  --panel: #ffffff;
+  --raise: #f6efe6;
+  --border: #ece3d6;
+  --border-strong: #d9cbb7;
+  --text: #2a211a;
+  --muted: #7b6d5f;
+
+  --accent: #d0661f;
+  --accent-solid: #e8792e;
+  --on-accent: #2a1405;
+  --accent-glow: rgb(232 121 46 / 18%);
+  --accent-2: #2b9ad6;
+
+  --info: #2b9ad6;
+  --ok: #1f9d6b;
+  --warn: #c98a12;
+  --err: #d64545;
+  --code-bg: #fbf6ef;
+
+  --bg-gradient-1: rgb(244 167 98 / 28%);
+  --bg-gradient-2: rgb(140 202 238 / 26%);
+  --bg-gradient-3: rgb(250 247 242 / 0%);
+
+  --scrollbar-thumb: rgb(208 102 31 / 30%);
+  --scrollbar-thumb-hover: rgb(208 102 31 / 60%);
+
+  /* 卡片的描边改由内阴影画（见下），这两枚是它的颜色 */
+  --pk-stroke: var(--border);
+  --pk-stroke-hover: color-mix(in srgb, var(--accent-solid) 45%, var(--border));
+}
+
+:root[data-scheme="dark"] {
+  --bg: #0b1220;
+  --panel: #121b2e;
+  --raise: #18233a;
+  --border: #22304d;
+  --border-strong: #31436a;
+  --text: #edf1f8;
+  --muted: #8e9ab3;
+
+  --accent: #ff9d55;
+  --accent-solid: #f08a3c;
+  --on-accent: #1c0e04;
+  --accent-glow: rgb(255 157 85 / 22%);
+  --accent-2: #63c7f2;
+
+  --info: #63c7f2;
+  --ok: #4fd39a;
+  --warn: #f5c46b;
+  --err: #ff7a7a;
+  --code-bg: #0e1626;
+
+  --bg-gradient-1: rgb(240 138 60 / 20%);
+  --bg-gradient-2: rgb(79 182 232 / 16%);
+  --bg-gradient-3: rgb(11 18 32 / 0%);
+
+  --scrollbar-thumb: rgb(255 157 85 / 26%);
+  --scrollbar-thumb-hover: rgb(255 157 85 / 55%);
+  --shadow-float: 0 18px 40px -12px rgb(0 0 0 / 70%), 0 0 36px -18px rgb(255 157 85 / 35%);
+}
+
+/* 背景档位选「渐变」时：两团光晕（暖橙在左上、云青在右下），正常混合 —— 经典那套 soft-light 会把橙压没 */
+:root[data-backdrop="gradient"] body {
+  background-image:
+    radial-gradient(ellipse 70% 55% at 0% 0%, var(--bg-gradient-1), transparent 70%),
+    radial-gradient(ellipse 65% 60% at 100% 100%, var(--bg-gradient-2), transparent 70%);
+  background-blend-mode: normal;
+}
+
+h1,
+h2,
+.stat-value {
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+/* 主按钮：橙到云青的一道斜渐变，悬停时光晕从橙转青 */
+button.primary {
+  background: linear-gradient(120deg, var(--accent-solid), color-mix(in srgb, var(--accent-solid) 70%, var(--accent-2)));
+  border-color: transparent;
+  color: var(--on-accent);
+  font-weight: 700;
+}
+
+button.primary:hover:not(:disabled) {
+  box-shadow: 0 8px 22px -10px var(--accent-2);
+}
+
+/*
+ * 页签：选中项的底色由滑动的选中块给（`tab.ink`），按钮本身不填色 —— 上面那条主按钮的渐变若也落在
+ * 页签上，会盖住正在滑过来的选中块，读起来就是又跳回去了
+ */
+[data-part~="tab"].primary,
+[data-part~="tab"].primary:hover:not(:disabled) {
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-part~="tab.ink"] {
+  background: linear-gradient(120deg, var(--accent-solid), color-mix(in srgb, var(--accent-solid) 70%, var(--accent-2)));
+  box-shadow: 0 8px 20px -12px var(--accent-2);
+}
+
+/*
+ * 组件格子：边框带一半在格缝里、一半垫在卡片底下（outset 是宽度的一半），边宽归零好让格子里的卡片
+ * 不缩 —— 芽的根落在卡片的圆角背后，看上去是从格子后面探出来的。只认恰为 `widget.frame` 的那些：
+ * 插件页签与扩展页面的外框带着别的部件名，也带着自己的边框
+ */
+:root[data-slots~="frame.widget"] [data-part="widget.frame"] {
+  border-width: 0;
+}
+
+/*
+ * 卡片：一段藤沿着左上角的圆角爬过去（`frame.card` 的边框图）
+ *
+ * 边框图只画装饰，不画描边 —— 图里的圆角是死的，而圆角可以在外观页调。描边改用内阴影画，
+ * 它跟着 `border-radius` 走。边宽归零，边框图压在内边距上，卡片的排版因此与经典一致。
+ */
+:root[data-slots~="frame.card"] .card {
+  border-width: 0;
+  background-clip: border-box;
+  box-shadow: inset 0 0 0 1px var(--pk-stroke);
+  transition: box-shadow var(--dur-1) var(--ease);
+}
+
+:root[data-slots~="frame.card"] .card:hover {
+  box-shadow: inset 0 0 0 1px var(--pk-stroke-hover);
+}
+
+/* 计数块的数字：橙到青的渐变字；出错的那块（.bad）保持错误色，不被渐变盖掉 */
+.stat:not(.bad) .stat-value {
+  background: linear-gradient(120deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* 页头图标取辅色，与主色错开 */
+[data-part~="page.header"] .page-icon {
+  color: var(--accent-2);
+}
+
+/* 步骤条：当前一步多一圈云青的光 */
+[data-part~="steps"] .step.now .step-dot {
+  box-shadow: 0 0 0 3px var(--accent-glow), 0 0 14px -2px var(--accent-2);
+}
+
+/* 侧栏：右下角一只小南瓜，藤往上爬；只占右边一溜，不压底部那几行字。低功耗时收掉 */
+[data-part~="sidebar"] {
+  background-image: url(art/side-vine.svg);
+  background-repeat: no-repeat;
+  background-position: right 6px bottom 4px;
+  background-size: 84px auto;
+}
+
+/* 彩色导航图标：未选中时略淡一点，选中的那一枚放大一圈 */
+[data-part~="nav.item"] img[data-part~="nav.icon"] {
+  opacity: 0.82;
+  transition: opacity var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+
+[data-part~="nav.item"]:hover img[data-part~="nav.icon"],
+[data-part~="nav.item"].on img[data-part~="nav.icon"] {
+  opacity: 1;
+}
+
+[data-part~="nav.item"].on img[data-part~="nav.icon"] {
+  transform: scale(1.12);
+}
+
+/* 空状态插图是 3:2 的横图，经典那个 96px 的方框装进去只剩一半大 */
+:root[data-slots~="empty"] [data-part~="empty.art"] {
+  width: 168px;
+  height: 112px;
+}
+
+/* 加载中的南瓜圈比经典的转圈大两像素：里面那片叶子太小就看不出来 */
+:root[data-slots~="loading"] .spinner {
+  width: 16px;
+  height: 16px;
+}
+
+/* 模态与提示条：上沿一道橙到青的细线 */
+[data-part~="modal"],
+[data-part~="toast"] {
+  background-image: linear-gradient(90deg, var(--accent-solid), var(--accent-2));
+  background-size: 100% 3px;
+  background-repeat: no-repeat;
+}
+
+/* 回到顶部：进度环取主色，外面再晕一圈 */
+[data-part~="backtotop"] {
+  box-shadow: var(--shadow-float), 0 0 0 4px var(--accent-glow);
+}
+
+/*
+ * 日志页：做成一个终端框
+ *
+ * 不论明暗都是深底：日志是机器的输出，深底浅字读起来最省眼，也与 docs 里的终端示意一致。
+ * 上沿用背景画一条标题栏与三个圆点，不改 DOM。
+ */
+[data-part~="logs"] {
+  --text: #d7deea;
+  --muted: #7f8aa3;
+  padding-top: calc(var(--s3) + 34px);
+  border-color: #22304d;
+  background:
+    radial-gradient(circle at 18px 17px, #ff5f57 5px, transparent 5.5px),
+    radial-gradient(circle at 36px 17px, #febc2e 5px, transparent 5.5px),
+    radial-gradient(circle at 54px 17px, #28c840 5px, transparent 5.5px),
+    linear-gradient(#141c2c 0 34px, #0d1320 34px);
+  background-attachment: local;
+  color: #d7deea;
+}
+
+/*
+ * 登录与连接中：卡片顶上是南瓜田（`login.art`），整片底板是一层极光与透视网格
+ *
+ * 只在这里放常驻动画 —— 日常工作区不放，手机上长时间开着面板不该一直耗电。
+ */
+[data-part~="login.stage"] {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+[data-part~="login.stage"]::before {
+  content: "";
+  position: absolute;
+  inset: -20%;
+  z-index: -1;
+  background:
+    radial-gradient(closest-side at 25% 30%, rgb(240 138 60 / 34%), transparent),
+    radial-gradient(closest-side at 75% 35%, rgb(79 182 232 / 30%), transparent),
+    radial-gradient(closest-side at 50% 80%, rgb(130 110 255 / 20%), transparent);
+  animation: pk-aurora 22s ease-in-out infinite alternate;
+}
+
+[data-part~="login.stage"]::after {
+  content: "";
+  position: absolute;
+  left: -30%;
+  right: -30%;
+  bottom: -10%;
+  height: 45%;
+  z-index: -1;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--accent-2) 22%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-2) 22%, transparent) 1px, transparent 1px);
+  background-size: 56px 56px;
+  transform: perspective(320px) rotateX(62deg);
+  transform-origin: 50% 100%;
+  mask-image: linear-gradient(to top, black 10%, transparent 90%);
+  -webkit-mask-image: linear-gradient(to top, black 10%, transparent 90%);
+}
+
+[data-part~="login"] {
+  box-shadow: var(--shadow-float), inset 0 0 0 1px var(--pk-stroke);
+}
+
+@keyframes pk-aurora {
+  from {
+    transform: translate3d(-4%, -2%, 0) scale(1);
+  }
+
+  to {
+    transform: translate3d(4%, 3%, 0) scale(1.08);
+  }
+}
+
+/*
+ * 主题脚本拨开关时撒出来的东西（见 theme.js）：脚本只管位置与动画，长相在这里
+ *
+ * 承载层是一个贴在视口左上角、零尺寸的 fixed 元素，挂在开关所在的那一层（模态里就挂进模态）。
+ */
+.pk-burst {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 60;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.pk-bit {
+  position: absolute;
+  pointer-events: none;
+}
+
+/* 南瓜籽：奶白的扁水滴，一圈浅橙的边 */
+.pk-seed {
+  width: 7px;
+  height: 10px;
+  border-radius: 50% 50% 50% 50% / 62% 62% 38% 38%;
+  background: #fff4e2;
+  box-shadow: inset 0 0 0 1.5px #f2b072;
+}
+
+.pk-sky {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-2);
+}
+
+/* 叶子：一头尖的叶形，中间一道浅色主脉 */
+.pk-leaf {
+  width: 12px;
+  height: 7px;
+  border-radius: 0 100% 0 100%;
+  background: linear-gradient(135deg, #a5dc72, #4f9d3c);
+  box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 10%);
+}
+
+/* 组件格子的指针光斑（同见 theme.js）：脚本写 --pk-x / --pk-y，这里画 */
+:root[data-pk-spot="on"] [data-part~="widget.frame"] > .card {
+  background-image: radial-gradient(260px circle at var(--pk-x, -999px) var(--pk-y, -999px), var(--accent-glow), transparent 70%);
+}
+
+/*
+ * 卡片朝指针微微倾斜（同见 theme.js）：脚本写 --pk-rx / --pk-ry 与 data-pk-tilt
+ *
+ * 只在倾斜时才有 transform：常驻的 transform 会给每张卡片开一层叠放上下文，「更多」菜单就盖不过下一张卡片。
+ * 倾斜中的那张抬到上面一层，它的菜单同理。回正走慢一档，松手处不会一下弹回去。
+ */
+:root .card[data-pk-tilt] {
+  position: relative;
+  z-index: 2;
+  transform: perspective(900px) rotateX(var(--pk-rx, 0deg)) rotateY(var(--pk-ry, 0deg));
+  transition:
+    transform 120ms ease-out,
+    box-shadow var(--dur-1) var(--ease);
+  will-change: transform;
+}
+
+:root .card[data-pk-tilt="out"] {
+  transition:
+    transform 420ms cubic-bezier(.2, .7, .3, 1),
+    box-shadow var(--dur-1) var(--ease);
+}
+
+/* 菜单开着的那张再高一层：指针去够菜单时会划过下一张卡片，那张一倾斜就会盖住菜单 */
+:root .card:has(.menu-list) {
+  position: relative;
+  z-index: 3;
+}
+
+/* 低功耗：藤蔓与极光收掉，网格也收掉，只留底色 */
+:root[data-low-power="on"] [data-part~="sidebar"] {
+  background-image: none;
+}
+
+:root[data-low-power="on"] [data-part~="login.stage"]::before,
+:root[data-motion="off"] [data-part~="login.stage"]::before {
+  animation: none;
+}
+
+:root[data-low-power="on"] [data-part~="login.stage"]::after {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-part~="login.stage"]::before {
+    animation: none;
+  }
+}

@@ -7,6 +7,7 @@
  */
 import { computed, ref, watch } from "vue"
 import { statusClass, statusText } from "../format.js"
+import { safeHref } from "../links.js"
 import Modal from "./Modal.vue"
 import TabBar from "./TabBar.vue"
 import type { CommandItem, MiddlewareItem, PluginItem, TaskItem } from "../types.js"
@@ -93,7 +94,8 @@ const viewedMiddlewares = computed(() => props.middlewares.filter(m => m.plugin 
         <dd>{{ viewed.configured ? "已声明" : "未声明 —— 该插件没有可改的配置项" }}</dd>
         <dt v-if="viewed.homepage">仓库</dt>
         <dd v-if="viewed.homepage">
-          <a :href="viewed.homepage" target="_blank" rel="noreferrer noopener">{{ viewed.homepage }}</a>
+          <a v-if="safeHref(viewed.homepage)" :href="safeHref(viewed.homepage)" target="_blank" rel="noreferrer noopener">{{ viewed.homepage }}</a>
+          <span v-else class="mono">{{ viewed.homepage }}</span>
         </dd>
         <dt v-if="viewed.error">错误</dt>
         <dd v-if="viewed.error" class="err">{{ viewed.error }}</dd>

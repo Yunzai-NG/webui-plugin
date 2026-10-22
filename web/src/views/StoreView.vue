@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 模块职责：面板商店页 —— 浏览面板插件索引，装 / 更 / 删
+ * 模块职责：面板商店页 —— 浏览面板插件索引并安装；更新与删除在插件页
  * 依赖方向：依赖 api / format / confirm / panelstore / types
  * 生命周期：挂载时读一次索引（允许命中缓存），刷新与写动作后重读
  * 注意事项：**与插件市场页是两页，刻意不合并** —— 索引、落点、安装语义、版本判据四处都不同：
@@ -22,13 +22,14 @@
  */
 import { computed, onMounted, ref } from "vue"
 import { useAction } from "../action.js"
-import { delAt, getAt, postAt } from "../api.js"
+import { getAt, postAt } from "../api.js"
 import { askConfirm } from "../confirm.js"
 import { datetime, errorText } from "../format.js"
-import { MARKET_TABS, emptyCriteria, gatesOf, tabCounts, visibleItems, type Criteria } from "../filter.js"
+import { MARKET_TABS, cardTags, emptyCriteria, gatesOf, tabCounts, visibleItems, type Criteria } from "../filter.js"
 import { setupNotes, storeResultText, storeUrlOf, versionText, willRunPm } from "../panelstore.js"
-import { askPanelUpdate, postPanelUpdate } from "../panelupdate.js"
-import { hrefOf } from "../router.js"
+import { safeHref } from "../links.js"
+import { currentQuery, go, hrefOf } from "../router.js"
+import { reloadThemes } from "../themes.js"
 import { showToast } from "../toast.js"
 import MarketFilter from "../components/MarketFilter.vue"
 import Modal from "../components/Modal.vue"
@@ -50,11 +51,24 @@ const criteria = ref<Criteria>(emptyCriteria())
 /** 正在看哪个条目的详情；空串意为详情模态未开 */
 const viewing = ref("")
 
-/** 全部条目 */
-const items = computed(() => snapshot.value?.panels ?? [])
+/** 「组件」与「主题」两栏；地址里带 `?kind=theme` 时直接落在主题栏（外观页「去商店找主题」即如此） */
+type Kind = "widget" | "theme"
+const kind = ref<Kind>(currentQuery.value.kind === "theme" ? "theme" : "widget")
+const KIND_TABS = computed(() => [
+  { id: "widget" as const, label: "组件", count: allItems.value.filter(i => i.kind !== "theme").length },
+  { id: "theme" as const, label: "主题", count: allItems.value.filter(i => i.kind !== "widget").length }
+])
+
+/** 索引里的全部条目 */
+const allItems = computed(() => snapshot.value?.panels ?? [])
+
+/** 当前这一栏的条目；两样都带的包在两栏里都出现 */
+const items = computed(() =>
+  allItems.value.filter(item => (kind.value === "theme" ? item.kind !== "widget" : item.kind !== "theme"))
+)
 
 /** 正在看的那个条目 */
-const viewed = computed(() => items.value.find(item => item.name === viewing.value))
+const viewed = computed(() => allItems.value.find(item => item.name === viewing.value))
 
 /** 索引获取失败的地址 */
 const badSources = computed(() => snapshot.value?.sources.filter(source => !source.ok) ?? [])
@@ -142,41 +156,9 @@ async function install(item: PanelStoreItem): Promise<void> {
   if (!go) return
   await run(item.name, async () => {
     const result = await postAt<PanelStoreResult>(storeUrlOf("install"), { name: item.name, dependencies: deps })
-    showToast(storeResultText(result))
+    showToast(item.kind === "theme" ? `主题「${item.title}」已安装，到外观页选用` : storeResultText(result))
     await load()
-  })
-}
-
-/**
- * 更一个包
- * @param item 条目
- */
-async function update(item: PanelStoreItem): Promise<void> {
-  if (!(await askPanelUpdate(item))) return
-  await run(item.name, async () => {
-    showToast(await postPanelUpdate(item))
-    await load()
-  })
-}
-
-/**
- * 删一个包
- * @param item 条目
- */
-async function remove(item: PanelStoreItem): Promise<void> {
-  const ok = await askConfirm({
-    title: `删除面板插件「${item.title}」？`,
-    body: "整个包目录会被移除，无法撤销。它贡献的组件会从各页消失。",
-    okText: "删除",
-    danger: true,
-    // 配置存在 webui 的数据目录下，故删包不删配置 —— 与内核 remove() 保留配置同理
-    details: ["这个包的配置不会被删除，重装同名包后原有配置仍然有效", "已摆好的版面里，它那几格会变成空位"]
-  })
-  if (!ok) return
-  await run(item.name, async () => {
-    await delAt(storeUrlOf(encodeURIComponent(item.name)))
-    showToast(`${item.name} 已删除。刷新页面后它的组件不再出现。`)
-    await load()
+    if (item.kind !== "widget") await reloadThemes()
   })
 }
 
@@ -187,7 +169,7 @@ onMounted(() => void load())
   <div>
     <PageHeader
       route="store"
-      sub="装往面板上添组件的包。与插件市场是两回事 —— 那边装内核插件，这边装面板插件"
+      sub="装往面板上添组件的包，以及换一整身皮肤的主题。与插件市场是两回事 —— 那边装内核插件，这边装面板插件。装好的包在插件页更新与删除"
     >
       <template #actions>
         <button :disabled="loading" @click="void load(true)">{{ loading ? "刷新中…" : "刷新索引" }}</button>
@@ -197,7 +179,7 @@ onMounted(() => void load())
     <p v-if="error" class="banner">{{ error }}</p>
 
     <p v-if="readonly" class="banner">
-      面板处于只读模式（配置项 server.readonly 为 true），装 / 更 / 删一律不可用。此页仍可浏览。
+      面板处于只读模式（配置项 server.readonly 为 true），安装不可用。此页仍可浏览。
     </p>
 
     <!-- 取源失败与「索引里没有条目」分开呈现，理由见文件头 -->
@@ -214,6 +196,8 @@ onMounted(() => void load())
         </li>
       </ul>
     </div>
+
+    <TabBar v-model="kind" :items="KIND_TABS" label="组件还是主题" />
 
     <TabBar
       :items="storeTabs"
@@ -273,30 +257,24 @@ onMounted(() => void load())
         </p>
 
         <p v-if="item.tags.length > 0" class="tags">
-          <span v-for="tag in item.tags" :key="tag" class="tag">{{ tag }}</span>
+          <span v-for="tag in cardTags(item.tags).shown" :key="tag" class="tag">{{ tag }}</span>
+          <span v-if="cardTags(item.tags).more > 0" class="tag-more">+{{ cardTags(item.tags).more }}</span>
         </p>
 
-        <footer class="row">
-          <template v-if="!readonly">
-            <button v-if="!item.installed" class="primary" :disabled="busy === item.name" @click="void install(item)">
-              安装
-            </button>
-            <button
-              v-else
-              :class="{ primary: item.updatable }"
-              :disabled="busy === item.name"
-              @click="void update(item)"
-            >
-              更新
-            </button>
-            <a v-if="item.installed" class="button" :href="hrefOf('plugins')">在插件页查看</a>
-            <button v-if="item.installed" class="danger" :disabled="busy === item.name" @click="void remove(item)">
-              删除
-            </button>
-          </template>
-          <a v-else-if="item.installed" class="button" :href="hrefOf('plugins')">在插件页查看</a>
+        <!-- 装完只留一个去处，更新与删除在插件页，与插件市场同 -->
+        <footer class="row card-actions">
+          <button
+            v-if="!item.installed && !readonly"
+            class="primary"
+            :disabled="busy === item.name"
+            @click="void install(item)"
+          >
+            安装
+          </button>
+          <button v-else-if="item.updatable" class="primary" @click="go('plugins')">去更新</button>
+          <a v-else-if="item.installed" class="button" :href="hrefOf('plugins')">去插件页</a>
           <button @click="viewing = item.name">查看</button>
-          <a v-if="item.homepage" class="button" :href="item.homepage" target="_blank" rel="noreferrer noopener">
+          <a v-if="safeHref(item.homepage)" class="button" :href="safeHref(item.homepage)" target="_blank" rel="noreferrer noopener">
             主页
           </a>
         </footer>
@@ -346,7 +324,10 @@ onMounted(() => void load())
             {{ viewed.server === true ? "带 node 侧 —— 装完须到插件页重载 webui" : "只有浏览器侧 —— 装完刷新页面即生效" }}
           </dd>
           <dt>分类</dt>
-          <dd>{{ viewed.tags.length === 0 ? "未声明" : viewed.tags.join("、") }}</dd>
+          <dd v-if="viewed.tags.length === 0">未声明</dd>
+          <dd v-else class="tags">
+            <span v-for="tag in viewed.tags" :key="tag" class="tag">{{ tag }}</span>
+          </dd>
           <dt>装后步骤</dt>
           <dd>
             <span v-if="(viewed.setup?.scripts.length ?? 0) > 0" class="mono">
@@ -359,7 +340,8 @@ onMounted(() => void load())
           <dd class="mono">{{ viewed.source }}</dd>
           <dt v-if="viewed.homepage">主页</dt>
           <dd v-if="viewed.homepage">
-            <a :href="viewed.homepage" target="_blank" rel="noreferrer noopener">{{ viewed.homepage }}</a>
+            <a v-if="safeHref(viewed.homepage)" :href="safeHref(viewed.homepage)" target="_blank" rel="noreferrer noopener">{{ viewed.homepage }}</a>
+            <span v-else class="mono">{{ viewed.homepage }}</span>
           </dd>
         </dl>
       </template>

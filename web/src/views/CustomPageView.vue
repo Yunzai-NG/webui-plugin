@@ -20,6 +20,7 @@ import { getAt } from "../api.js"
 import { errorText } from "../format.js"
 import { currentQuery } from "../router.js"
 import { attachBridge } from "../custombridge.js"
+import { attachThemeBridge } from "../themebridge.js"
 import PageHeader from "../components/PageHeader.vue"
 import type { IconShape } from "../types.js"
 
@@ -92,7 +93,12 @@ const detach = attachBridge(
   () => frame.value,
   () => page.value?.id ?? ""
 )
-onUnmounted(detach)
+// 主题桥与数据桥并列：页面引了 /theme-sdk.js 就跟着面板的主题与明暗走
+const detachTheme = attachThemeBridge(() => frame.value)
+onUnmounted(() => {
+  detach()
+  detachTheme()
+})
 </script>
 
 <template>
@@ -118,7 +124,7 @@ onUnmounted(detach)
       也不给 `allow-top-navigation` —— 插件页面把整个面板导走不该是它能做到的事。
       `referrerpolicy` 取 no-referrer：页面里若引了外部资源，面板的地址不必随之外发。
     -->
-    <div v-else-if="frameUrl !== ''" class="custom-frame">
+    <div v-else-if="frameUrl !== ''" class="custom-frame" data-part="widget.frame page.frame">
       <iframe
         ref="frame"
         :src="frameUrl"

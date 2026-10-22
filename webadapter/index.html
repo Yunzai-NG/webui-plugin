@@ -11,11 +11,12 @@
       1. 源不透明，**读不到面板的 localStorage**，故取数只能走 postMessage 数据桥；
          也**不能用 localStorage 存偏好** —— 存了不报错，只是下次打开丢掉。
       2. 取不到面板那份带哈希的产物 CSS，故样式自带一份，令牌值抄 web/src/styles.css
-         的浅色/深色两套，观感与面板一致。
-      3. 主题跟随系统（prefers-color-scheme）而非面板当前主题：面板的主题存在 localStorage
-         里，本页读不到。这会在使用者手动切换面板主题时出现不一致，但不一致好过
-         「亮色面板里嵌一块永远深色的方块」。
+         的浅色/深色两套 —— 那是不在面板里打开（直接访问本页地址）时的样子。
+      3. 在面板里打开时，下面引的 theme-sdk.js 收面板发来的主题消息，把面板当前主题与明暗的
+         令牌写到本页根上（行内样式，盖过这里的默认值），并写好 data-scheme。于是换主题、
+         换明暗时本页即时跟着变。默认值仍按 prefers-color-scheme 分两套，只为 SDK 生效之前那一帧。
     -->
+    <script src="/theme-sdk.js"></script>
     <style>
       :root {
         --bg: #f0f2f5;
@@ -25,11 +26,11 @@
         --muted: #6b7280;
         --accent: hsl(239, 84%, 67%);
         --accent-solid: hsl(239, 78%, 56%);
-        --accent-soft: hsla(239, 84%, 67%, 0.12);
+        --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
         --ok: #10b981;
         --warn: #f59e0b;
         --err: #ef4444;
-        --recv: hsl(239, 78%, 60%);
+        --recv: var(--accent-solid);
         --sent: #10b981;
         /*
          * 「全部」那一档要在一张图上分辨六条系列（收/发 × 消息/图片/表情包）
@@ -42,9 +43,10 @@
         --sent-img: hsl(190, 85%, 40%);
         --recv-stk: hsl(340, 82%, 60%);
         --sent-stk: hsl(280, 68%, 58%);
-        --r-1: 8px;
-        --r-2: 12px;
-        --r-3: 16px;
+        /* 圆角取面板的两档：SDK 写进来的 --r-ctl / --r-card 生效后随主题变 */
+        --r-1: var(--r-ctl, 8px);
+        --r-2: var(--r-ctl, 12px);
+        --r-3: var(--r-card, 16px);
         --dur-1: 150ms;
         --dur-2: 250ms;
       }
@@ -58,11 +60,11 @@
           --muted: #8b92a5;
           --accent: hsl(239, 84%, 74%);
           --accent-solid: hsl(239, 84%, 67%);
-          --accent-soft: hsla(239, 84%, 74%, 0.18);
+          --accent-soft: color-mix(in srgb, var(--accent) 18%, transparent);
           --ok: #34d399;
           --warn: #fbbf24;
           --err: #f87171;
-          --recv: hsl(239, 84%, 74%);
+          --recv: var(--accent);
           --sent: #34d399;
           /* 与浅色那套同色相、提亮：深色底上原样照搬会暗成一片，尤其那两个蓝绿 */
           --recv-img: hsl(38, 95%, 62%);

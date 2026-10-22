@@ -17,6 +17,10 @@
  *
  *          **同时在场的几条错开到点**（{@link TOAST_STAGGER_MS}）：一次操作连提几条等长文案时，
  *          一摞条子会齐齐消失，读起来像界面闪了一下。错开之后是一条一条地收。
+ *
+ *          **可以带一枚动作钮**（「撤销」）：删掉之后给几秒反悔，比删之前多问一句更管用 —— 确认框
+ *          问多了会被条件反射地点掉，而手滑往往是在点完之后才意识到的。动作函数不放进响应式
+ *          状态里，按 id 另存，条子收起时一并丢掉。
  */
 import { ref } from "vue"
 
@@ -30,7 +34,20 @@ export interface Toast {
   ms: number
   /** 预计到点的时刻，只用来给后来的条子算错开间隔 */
   dueAt: number
+  /** 动作钮的文案；没有动作时不出现 */
+  action?: string
 }
+
+/** 一枚动作钮 */
+export interface ToastAction {
+  /** 文案，如「撤销」 */
+  label: string
+  /** 点下去做什么；做完条子随即收起 */
+  run: () => void | Promise<void>
+}
+
+/** 带动作的条子至少停留这么久：要留出读完再伸手去点的时间 */
+export const TOAST_ACTION_MIN_MS = 8000
 
 /** 同时在场的回执上限，超出时丢最旧的那条 */
 export const TOAST_MAX = 3
@@ -53,6 +70,9 @@ export const toasts = ref<Toast[]>([])
 /** 回执标识的自增源 */
 let seq = 0
 
+/** 各条的动作函数，按 id 存 */
+const actions = new Map<number, ToastAction["run"]>()
+
 /**
  * 按文案长度算停留时长
  *
@@ -70,8 +90,9 @@ export function toastDurationOf(text: string): number {
  *
  * 空串（或只有空白）不提示：调用方常把「清掉上一条」写成传空串，那不该弹出一个空条子。
  * @param text 文案
+ * @param action 可选的动作钮
  */
-export function showToast(text: string): void {
+export function showToast(text: string, action?: ToastAction): void {
   const trimmed = text.trim()
   if (trimmed === "") return
   seq += 1
@@ -79,16 +100,33 @@ export function showToast(text: string): void {
   const rest = toasts.value.filter(one => one.text !== trimmed)
   // 留下的条子再加这一条正好满员；满了就是丢最旧的那条
   const kept = rest.slice(1 - TOAST_MAX)
+  for (const one of toasts.value) if (!kept.includes(one)) actions.delete(one.id)
   const now = Date.now()
 
   // 到点时刻挨个躲开在场各条：按到点先后升序走，每次只往后挪，故走完与谁都隔着一个错开间隔。
   // 只在撞上时才挪，不强行按加入次序排队 —— 否则紧跟一条长回执之后的「已复制值」要陪着站十几秒
-  let dueAt = now + toastDurationOf(trimmed)
+  const base = toastDurationOf(trimmed)
+  let dueAt = now + (action === undefined ? base : Math.max(base, TOAST_ACTION_MIN_MS))
   for (const one of [...kept].sort((a, b) => a.dueAt - b.dueAt)) {
     if (Math.abs(one.dueAt - dueAt) < TOAST_STAGGER_MS) dueAt = one.dueAt + TOAST_STAGGER_MS
   }
 
-  toasts.value = [...kept, { id: seq, text: trimmed, ms: dueAt - now, dueAt }]
+  if (action !== undefined) actions.set(seq, action.run)
+  toasts.value = [
+    ...kept,
+    { id: seq, text: trimmed, ms: dueAt - now, dueAt, ...(action === undefined ? {} : { action: action.label }) }
+  ]
+}
+
+/**
+ * 点一条回执上的动作钮：先收起条子再执行，免得连点两下执行两次
+ * @param id 回执标识
+ * @returns 动作执行完毕
+ */
+export async function runToastAction(id: number): Promise<void> {
+  const run = actions.get(id)
+  dismissToast(id)
+  await run?.()
 }
 
 /**
@@ -98,5 +136,6 @@ export function showToast(text: string): void {
  * @param id 回执标识
  */
 export function dismissToast(id: number): void {
+  actions.delete(id)
   toasts.value = toasts.value.filter(one => one.id !== id)
 }

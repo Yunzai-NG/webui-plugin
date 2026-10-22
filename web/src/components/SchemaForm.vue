@@ -14,6 +14,9 @@
  *          左侧一道竖线加缩进表达，一组字段读起来与它上下的字段同级。现在由 `SubForm`
  *          渲染成带标题的可折叠区块（判据在 subform.ts）。顶层对象仍摊平 —— 它的标题
  *          就是分区页签上那个名字，再套一层分组等于同一个名字出现两遍。
+ *
+ *          **调用方可以在末尾加几枚自己的页签**（`extras`），内容走同名插槽。账号的重连策略就是这样
+ *          进来的：它归内核、不在适配器的 schema 里，却和那几栏一样是「这个号的一组设置」。
  */
 import { computed, ref, watch } from "vue"
 import SchemaField from "./SchemaField.vue"
@@ -39,6 +42,12 @@ const props = defineProps<{
    * 两处各记一份必然在「保存成功后清账」那一刻错开。
    */
   dirty?: readonly string[]
+  /**
+   * 排在 schema 分区之后的额外页签，内容由调用方以同名插槽给出
+   *
+   * `issuePrefix`：服务端错误的路径以它打头时归这一栏（保存失败时据此跳过去、标红角标）。
+   */
+  extras?: readonly { id: string; label: string; count?: number; issuePrefix?: string }[]
 }>()
 
 const emit = defineEmits<{
@@ -106,8 +115,21 @@ const active = computed(() => {
   return found ?? sections.value[0]
 })
 
-/** 页签条的条目，标识即分区标题 */
-const tabs = computed(() => sections.value.map(section => ({ id: section.title, label: section.title })))
+/**
+ * 额外页签的内部标识：加一个前缀，免得调用方起的名字与某个 group 标题撞上
+ * @param id 调用方给的标识
+ * @returns 内部标识
+ */
+const extraKey = (id: string): string => `extra:${id}`
+
+/** 当前选中的额外页签；选中的是 schema 分区时 undefined */
+const activeExtra = computed(() => (props.extras ?? []).find(item => extraKey(item.id) === picked.value))
+
+/** 页签条的条目：schema 分区在前，额外页签在后 */
+const tabs = computed(() => [
+  ...sections.value.map(section => ({ id: section.title, label: section.title })),
+  ...(props.extras ?? []).map(item => ({ id: extraKey(item.id), label: item.label, count: item.count }))
+])
 
 /**
  * 一个路径属于哪个分区
@@ -117,6 +139,8 @@ const tabs = computed(() => sections.value.map(section => ({ id: section.title, 
  * @returns 分区标题；认不出时 undefined
  */
 function sectionOf(path: string): string | undefined {
+  const extra = (props.extras ?? []).find(item => item.issuePrefix !== undefined && path.startsWith(item.issuePrefix))
+  if (extra !== undefined) return extraKey(extra.id)
   const head = path.split(".")[0] ?? path
   return sections.value.find(item => item.keys.includes(head))?.title
 }
@@ -164,7 +188,7 @@ watch(
   () => props.issues,
   list => {
     if (list === undefined || list.length === 0) return
-    const here = active.value?.title
+    const here = activeExtra.value === undefined ? active.value?.title : extraKey(activeExtra.value.id)
     if (here !== undefined && (badges.value.get(here)?.bad ?? 0) > 0) return
     const first = list.map(issue => sectionOf(issue.path)).find(title => title !== undefined)
     if (first === undefined) return
@@ -202,7 +226,13 @@ function nodesIn(section: Section): FormNode[] {
       一次只渲染一个分区：全铺开时「保存」被推到几屏之下。角标：改动数，以及取错误色的错误数（它挡着保存）。
       只有一个分区时整排不画。
     -->
-    <TabBar v-if="sections.length > 1" :items="tabs" :model-value="active?.title ?? ''" label="配置分区" @update:model-value="picked = $event">
+    <TabBar
+      v-if="tabs.length > 1"
+      :items="tabs"
+      :model-value="activeExtra === undefined ? (active?.title ?? '') : extraKey(activeExtra.id)"
+      label="配置分区"
+      @update:model-value="picked = $event"
+    >
       <template #default="{ item }">
         <span v-if="(badges.get(item.id)?.dirty ?? 0) > 0" class="tag">
           {{ badges.get(item.id)?.dirty }}
@@ -214,7 +244,10 @@ function nodesIn(section: Section): FormNode[] {
     </TabBar>
 
     <Transition name="tab" mode="out-in">
-    <section v-if="active" :key="active.title" class="card">
+    <section v-if="activeExtra" :key="extraKey(activeExtra.id)" class="card">
+      <slot :name="activeExtra.id" />
+    </section>
+    <section v-else-if="active" :key="active.title" class="card">
       <!--
         标题在页签上已经写着，故这里不再重复一遍
 

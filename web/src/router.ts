@@ -166,6 +166,15 @@ export function hrefOf(id: string, query: Record<string, string> = {}): string {
   return search === "" ? `#/${id}` : `#/${id}?${search}`
 }
 
+/**
+ * 跳到一页；给要用 `<button>` 形制的跳转（`button.primary` 有强调样式，`a.button` 没有）
+ * @param id 路由标识
+ * @param query 查询参数
+ */
+export function go(id: string, query: Record<string, string> = {}): void {
+  location.hash = hrefOf(id, query)
+}
+
 window.addEventListener("hashchange", () => {
   const parsed = parseHash()
   currentRoute.value = parsed.id

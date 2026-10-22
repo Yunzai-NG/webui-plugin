@@ -83,6 +83,53 @@ export function versionText(item: PanelStoreItem): string {
   return item.updatable ? `${local} → ${indexed}` : local
 }
 
+/** 插件页上一张面板插件卡片里，与商店对得上的那两项 */
+export interface StorePackageRef {
+  /** 包键，形如 `panels/hardware` */
+  key: string
+  /** 单文件还是多文件；只出页签的包没有 */
+  kind?: "single" | "multi"
+}
+
+/** 商店落点的归属名，与 node 侧 `PANELS_OWNER` 一致 */
+const STORE_OWNER = "panels/"
+
+/**
+ * 一个面板插件包在商店里的已装条目
+ *
+ * 只认 `panels/` 下的包：商店只往那里装、只装目录。单文件同名时不认，否则会给它一个不属于它的「可更新」。
+ * 只出页签的包没有 `kind`，照样认。
+ * @param pkg 包
+ * @param items 商店条目，按包名索引
+ * @returns 已装的条目；对不上时 undefined
+ */
+export function storeEntryOf(
+  pkg: StorePackageRef,
+  items: ReadonlyMap<string, PanelStoreItem>
+): PanelStoreItem | undefined {
+  if (pkg.kind === "single" || !pkg.key.startsWith(STORE_OWNER)) return undefined
+  const item = items.get(pkg.key.slice(STORE_OWNER.length))
+  return item?.installed === true ? item : undefined
+}
+
+/**
+ * 商店说已装、插件页却没有卡片的那些条目
+ *
+ * 只带主题的包本就不进注册表；刚装还没刷新的、入口整个没跑起来的也落在这里。
+ * 不列出来，它们的「可更新」在插件页上就无处可见。
+ * @param items 商店条目
+ * @param keys 插件页已有卡片的包键
+ * @returns 按包名排序
+ */
+export function strayStoreItems(
+  items: Iterable<PanelStoreItem>,
+  keys: ReadonlySet<string>
+): PanelStoreItem[] {
+  return [...items]
+    .filter(item => item.installed && !keys.has(`${STORE_OWNER}${item.name}`))
+    .sort((a, b) => a.name.localeCompare(b.name))
+}
+
 /**
  * 把一次安装或更新的结果说成一句话
  *

@@ -6,6 +6,7 @@
  * 注意事项：失败的组件与装上的列在同一张表里，不另设一节 —— 使用者找的是「我装的那枚组件在哪」
  */
 import { computed, ref, watch } from "vue"
+import { safeHref } from "../links.js"
 import { panelConfigOf } from "../panelconfig.js"
 import Modal from "./Modal.vue"
 import TabBar from "./TabBar.vue"
@@ -84,9 +85,10 @@ const config = computed(() => (viewed.value === undefined ? undefined : panelCon
         <dd class="mono">{{ viewed.key }}</dd>
         <dt v-if="viewed.meta?.repository">仓库</dt>
         <dd v-if="viewed.meta?.repository">
-          <a :href="viewed.meta.repository" target="_blank" rel="noreferrer noopener">
+          <a v-if="safeHref(viewed.meta.repository)" :href="safeHref(viewed.meta.repository)" target="_blank" rel="noreferrer noopener">
             {{ viewed.meta.repository }}
           </a>
+          <span v-else class="mono">{{ viewed.meta.repository }}</span>
         </dd>
       </dl>
 

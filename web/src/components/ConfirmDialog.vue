@@ -119,6 +119,7 @@ function onClick(event: MouseEvent): void {
       v-if="pending"
       ref="el"
       class="modal"
+      data-part="modal"
       @cancel.prevent="dismissible && settle('cancel')"
       @close="dismissible && settle('cancel')"
       @click="onClick"

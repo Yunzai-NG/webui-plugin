@@ -125,6 +125,16 @@ export function retryOverrideOf(form: RetryForm): RetryPayload | null {
 }
 
 /**
+ * 表单里填了几项覆盖，给页签角标用；四项全空时 0
+ * @param form 表单态
+ * @returns 项数
+ */
+export function retryCountOf(form: RetryForm): number {
+  const payload = retryOverrideOf(form)
+  return payload === null ? 0 : Object.keys(payload).length
+}
+
+/**
  * 这个账号有没有自己的重连策略
  *
  * 判键数而非判 `!== undefined`：一个空对象在内核那侧与「没填」等价（`#policyOf` 取
@@ -226,11 +236,12 @@ function durationText(value: DurationLike): string {
  *
  * 非数字**原样回送**而不是丢掉，与 `SchemaField` 的 `setNumber` 同一个道理：丢掉等于
  * 把一次填错静默变成「这一项跟随全局」，而回送换来内核一句指名到字段的 400。
- * @param text 输入框内容
+ * @param text 输入框内容。`type="number"` 的输入框经 v-model 写回的是数字而非字符串（Vue 的
+ *             约定），故两种都收 —— 只当字符串处理时一输入就抛 `trim is not a function`
  * @returns 数字或原文；空串时 undefined
  */
-function numberOf(text: string): number | string | undefined {
-  const trimmed = text.trim()
+function numberOf(text: string | number): number | string | undefined {
+  const trimmed = String(text).trim()
   if (trimmed === "") return undefined
   const n = Number(trimmed)
   return Number.isFinite(n) ? n : trimmed
@@ -242,8 +253,8 @@ function numberOf(text: string): number | string | undefined {
  * @param unit 单位
  * @returns 时长值；拼不出来时退回原文，空串时 undefined
  */
-function durationOf(text: string, unit: DurationUnit): DurationLike | string | undefined {
-  const trimmed = text.trim()
+function durationOf(text: string | number, unit: DurationUnit): DurationLike | string | undefined {
+  const trimmed = String(text).trim()
   if (trimmed === "") return undefined
   return joinDuration(trimmed, unit) ?? trimmed
 }

@@ -5,8 +5,13 @@
  * 生命周期：随调用方
  * 注意事项：键盘按 WAI-ARIA 页签模式：只有选中项可被 Tab 到，左右键 / Home / End 移动并选中。
  *          选中项一变就只横向滚动页签条把它露出来；`scrollIntoView` 会连带外层滚动容器。
+ *
+ *          **选中块是一块垫在按钮底下的 `.tabs-ink`，滑过去而不是跳过去。** 它量的是选中那枚按钮的
+ *          offset 位置与尺寸；页签的宽度会随字体加载、角标数字变化，故用 ResizeObserver 跟着重量。
+ *          首次就位不带过渡，免得一进页面就看见它从最左端滑进来。它排在所有按钮之后，`tabAt(i)`
+ *          按下标取按钮因此不受影响。
  */
-import { computed, onMounted, ref, watch } from "vue"
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue"
 import AppIcon from "./AppIcon.vue"
 import { motionEnabled } from "../appearance.js"
 import { revealLeft } from "../tabscroll.js"
@@ -38,6 +43,9 @@ const emit = defineEmits<{
 }>()
 
 const bar = ref<HTMLElement>()
+const ink = ref<HTMLElement>()
+/** 选中块已就位过一次；之后的移动才带过渡 */
+const inkReady = ref(false)
 
 /** 选中项的下标；对不上任何一枚时 -1 */
 const current = computed(() => props.items.findIndex(item => item.id === props.modelValue))
@@ -69,12 +77,57 @@ function reveal(smooth: boolean): void {
   box.scrollTo({ left, behavior: smooth && motionEnabled() ? "smooth" : "auto" })
 }
 
+/** 把选中块挪到选中那枚底下；没有选中项时藏起来 */
+function placeInk(): void {
+  const el = ink.value
+  if (el === undefined) return
+  const tab = tabAt(current.value)
+  if (tab === undefined) {
+    el.style.opacity = "0"
+    return
+  }
+  el.style.opacity = "1"
+  el.style.width = `${tab.offsetWidth}px`
+  el.style.height = `${tab.offsetHeight}px`
+  el.style.transform = `translate(${tab.offsetLeft}px, ${tab.offsetTop}px)`
+}
+
+/** 跟着按钮尺寸变化重量 */
+let sizes: ResizeObserver | undefined
+
+/** 重新盯住当前这一组按钮 */
+function observeTabs(): void {
+  if (sizes === undefined || bar.value === undefined) return
+  sizes.disconnect()
+  sizes.observe(bar.value)
+  for (const child of bar.value.children) if (child !== ink.value) sizes.observe(child)
+}
+
 watch(
   () => props.modelValue,
-  () => reveal(true),
+  () => {
+    reveal(true)
+    placeInk()
+  },
   { flush: "post" }
 )
-onMounted(() => reveal(false))
+watch(
+  () => props.items,
+  () => {
+    observeTabs()
+    placeInk()
+  },
+  { flush: "post" }
+)
+onMounted(() => {
+  reveal(false)
+  placeInk()
+  sizes = new ResizeObserver(() => placeInk())
+  observeTabs()
+  // 等首个位置落定再打开过渡
+  void nextTick(() => requestAnimationFrame(() => (inkReady.value = true)))
+})
+onUnmounted(() => sizes?.disconnect())
 
 /**
  * 方向键移动并选中
@@ -111,11 +164,12 @@ function onKey(event: KeyboardEvent): void {
 </script>
 
 <template>
-  <div ref="bar" class="toolbar tabs" role="tablist" :aria-label="label" @keydown="onKey">
+  <div ref="bar" class="toolbar tabs" data-part="tabbar" role="tablist" :aria-label="label" @keydown="onKey">
     <button
       v-for="(item, i) in items"
       :key="item.id"
       type="button"
+      data-part="tab"
       role="tab"
       :aria-selected="i === current"
       :tabindex="i === focusable ? 0 : -1"
@@ -126,5 +180,6 @@ function onKey(event: KeyboardEvent): void {
       <span v-if="item.count !== undefined" class="tag">{{ item.count }}</span>
       <slot :item="item" />
     </button>
+    <span ref="ink" class="tabs-ink" :class="{ ready: inkReady }" data-part="tab.ink" aria-hidden="true" />
   </div>
 </template>

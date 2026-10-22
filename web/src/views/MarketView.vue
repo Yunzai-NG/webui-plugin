@@ -26,8 +26,9 @@ import { useAction } from "../action.js"
 import { del, get, post } from "../api.js"
 import { datetime, errorText } from "../format.js"
 import { askConfirm } from "../confirm.js"
-import { MARKET_TABS, emptyCriteria, gatesOf, visibleItems, tabCounts, type Criteria } from "../filter.js"
+import { MARKET_TABS, cardTags, emptyCriteria, gatesOf, visibleItems, tabCounts, type Criteria } from "../filter.js"
 import { resultText } from "../market.js"
+import { safeHref } from "../links.js"
 import { hrefOf } from "../router.js"
 import { showToast } from "../toast.js"
 import MarketFilter from "../components/MarketFilter.vue"
@@ -282,6 +283,7 @@ async function dropCustom(item: MarketItem): Promise<void> {
   await run(item.name, async () => {
     await del(`market/custom/${encodeURIComponent(item.name)}`)
     showToast(`已撤掉 ${item.name} 的登记，插件目录未动。`)
+    viewing.value = ""
     await load()
   })
 }
@@ -390,9 +392,11 @@ onMounted(() => {
           <span v-if="item.minCore"> · 需要内核 {{ item.minCore }} 及以上</span>
         </p>
         <p v-if="item.tags.length > 0" class="tags">
-          <span v-for="tag in item.tags" :key="tag" class="tag">{{ tag }}</span>
+          <span v-for="tag in cardTags(item.tags).shown" :key="tag" class="tag">{{ tag }}</span>
+          <span v-if="cardTags(item.tags).more > 0" class="tag-more">+{{ cardTags(item.tags).more }}</span>
         </p>
-        <footer class="row">
+        <!-- 至多三枚，一行放得下；主页与撤销登记在「查看」里 -->
+        <footer class="row card-actions">
           <button v-if="!item.installed" class="primary" :disabled="busy === item.name" @click="void install(item)">
             安装
           </button>
@@ -401,26 +405,17 @@ onMounted(() => {
 
             更新、重装、装依赖、卸载与删除都在那边。这里再摆一套，使用者得先猜该去哪一页。
           -->
-          <a v-else class="button" :href="hrefOf('plugins')">在插件页查看</a>
+          <a v-else class="button" :href="hrefOf('plugins')">去插件页</a>
           <button @click="viewing = item.name">查看</button>
           <a
-            v-if="item.homepage"
+            v-if="safeHref(item.homepage)"
             class="button"
-            :href="item.homepage"
+            :href="safeHref(item.homepage)"
             target="_blank"
             rel="noreferrer noopener"
           >
             主页
           </a>
-          <!--
-            撤登记只对自登记的那几条出现，且**不取 danger 形制**
-
-            它不删任何东西（插件目录一字不动），故与「卸载」不是同一类动作。给它红色会让人
-            以为点下去要丢东西，而真正会丢东西的那个按钮在插件页。
-          -->
-          <button v-if="item.custom" :disabled="busy === item.name" @click="void dropCustom(item)">
-            撤销登记
-          </button>
         </footer>
       </article>
     </div>
@@ -458,7 +453,10 @@ onMounted(() => {
           <dt v-if="viewed.minCore">最低内核版本</dt>
           <dd v-if="viewed.minCore" class="mono">{{ viewed.minCore }}</dd>
           <dt>分类</dt>
-          <dd>{{ viewed.tags.length === 0 ? "未声明" : viewed.tags.join("、") }}</dd>
+          <dd v-if="viewed.tags.length === 0">未声明</dd>
+          <dd v-else class="tags">
+            <span v-for="tag in viewed.tags" :key="tag" class="tag">{{ tag }}</span>
+          </dd>
           <dt>装后步骤</dt>
           <dd>
             <span v-if="(viewed.setup?.scripts.length ?? 0) > 0" class="mono">
@@ -477,10 +475,15 @@ onMounted(() => {
           <dt v-if="viewed.custom">登记</dt>
           <dd v-if="viewed.custom">
             这一条由你自己登记，不来自任何索引，故没有经过审核。撤掉登记不会删插件目录。
+            <!-- 不取 danger 形制：它不删任何东西，真正会丢东西的那个按钮在插件页 -->
+            <p class="row">
+              <button :disabled="busy === viewed.name" @click="void dropCustom(viewed)">撤销登记</button>
+            </p>
           </dd>
           <dt v-if="viewed.homepage">主页</dt>
           <dd v-if="viewed.homepage">
-            <a :href="viewed.homepage" target="_blank" rel="noreferrer noopener">{{ viewed.homepage }}</a>
+            <a v-if="safeHref(viewed.homepage)" :href="safeHref(viewed.homepage)" target="_blank" rel="noreferrer noopener">{{ viewed.homepage }}</a>
+            <span v-else class="mono">{{ viewed.homepage }}</span>
           </dd>
         </dl>
         <p v-if="viewed.installed" class="hint">

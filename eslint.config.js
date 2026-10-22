@@ -165,6 +165,41 @@ export default [
     }
   },
   {
+    /**
+     * 扩展页主题 SDK：同样是经扩展页 `<script src>` 加载的经典脚本，理由同上
+     */
+    files: ["web/public/theme-sdk.js"],
+    languageOptions: {
+      ecmaVersion: 2023,
+      sourceType: "script",
+      globals: {
+        window: "readonly",
+        document: "readonly",
+        CustomEvent: "readonly"
+      }
+    }
+  },
+  {
+    /**
+     * 内置主题的脚本：面板以 ES 模块动态 import，跑在浏览器里
+     */
+    files: ["themes/*/*.js"],
+    languageOptions: {
+      ecmaVersion: 2023,
+      sourceType: "module",
+      globals: {
+        document: "readonly",
+        Element: "readonly",
+        Node: "readonly",
+        HTMLInputElement: "readonly",
+        requestAnimationFrame: "readonly",
+        cancelAnimationFrame: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly"
+      }
+    }
+  },
+  {
     files: ["**/*.test.ts", "scripts/**/*.mjs", "vitest.config.ts"],
     rules: {
       "jsdoc/require-jsdoc": "off",

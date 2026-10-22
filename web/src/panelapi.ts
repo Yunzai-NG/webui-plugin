@@ -19,6 +19,9 @@ import { getAt } from "./api.js"
 import { bytes, clock, duration } from "./format.js"
 import { gaugeLevel, percent, ratioOf } from "./gauge.js"
 import { panelConfigValue } from "./panelconfig.js"
+import { PANEL_UI, type PanelUi } from "./panelui.js"
+import { schemeMode } from "./scheme.js"
+import { currentTheme, slotOf } from "./themes.js"
 import { onTick } from "./tick.js"
 
 /** 注入给插件的格式化函数，皆为 `format.ts` 与 `gauge.ts` 里已有的纯函数 */
@@ -93,6 +96,41 @@ export interface PanelApi {
   config: ComputedRef<Record<string, unknown>>
   /** 格式化函数 */
   fmt: PanelFmt
+  /**
+   * 当前主题，只读且响应式
+   *
+   * 多数插件用不着它：用令牌写的颜色、面板的公开类、组件格子的外框，换主题时都自动跟着变。
+   * 要用主题的图（比如自己画一张空状态）时读 `asset(槽位名)`；主题没给那个槽位时返回 undefined，
+   * 插件画自己的就好。
+   */
+  theme: PanelTheme
+  /**
+   * 面板自己的几样控件：`Switch`、`Icon`、`EmptyState`、`Spinner`
+   *
+   * 用它们而不是自己手写，主题的贴图（开关的表情包滑块、空状态插图）才落得到插件里。
+   */
+  ui: PanelUi
+}
+
+/** `api.theme` */
+export interface PanelTheme {
+  /** 主题 id，经典为 `classic` */
+  readonly id: ComputedRef<string>
+  /** 当前明暗 */
+  readonly scheme: ComputedRef<"light" | "dark">
+  /**
+   * 取当前主题某个槽位的图
+   * @param slot 槽位名，见 docs 的「主题开发」
+   * @returns 图片地址；主题没给时 undefined
+   */
+  asset(slot: string): string | undefined
+}
+
+/** 全部插件共用一份：主题只有一个，各插件读到的是同一组响应式值 */
+const THEME: PanelTheme = {
+  id: computed(() => currentTheme.value.id),
+  scheme: computed(() => schemeMode.value),
+  asset: slot => slotOf(slot)
 }
 
 /**
@@ -220,6 +258,8 @@ export function makePanelApi(deps: PanelApiDeps = {}): PanelApi {
       offs.push(fn)
     },
     config: computed(() => configured.value),
-    fmt: { bytes, percent, duration, clock, ratioOf, gaugeLevel }
+    fmt: { bytes, percent, duration, clock, ratioOf, gaugeLevel },
+    theme: THEME,
+    ui: PANEL_UI
   }
 }

@@ -5,31 +5,39 @@
  * 一套额外的 API，以及调整间距需先查阅其主题变量文档。而面板须能在 Termux 的
  * 手机浏览器中打开，该代价不成比例。
  *
- * 深浅色由 `<html data-theme>` 决定，取值只有 `light` / `dark`。「跟随系统」是
- * theme.ts 的三态之一，它在写这个属性之前就已解析成两值 —— 故本文件不出现
+ * 明暗由 `<html data-scheme>` 决定，取值只有 `light` / `dark`。「跟随系统」是
+ * scheme.ts 的三态之一，它在写这个属性之前就已解析成两值 —— 故本文件不出现
  * `prefers-color-scheme`：同一件事只该有一个判据，两个判据必然在某个组合下打架
  * （已选浅色而系统偏好深色时，媒体查询那一支仍会命中）。首帧的属性由 index.html
- * 的内联脚本写下。
+ * 的内联脚本写下。旧名 `data-theme` 同时写着、取值相同，留给照旧文档写的第三方样式，
+ * 本仓不再用它：「主题」如今指的是整身皮肤（`data-theme-id`），不是明暗。
  *
  * **移动优先。** 基础规则面向窄屏，`min-width` 断点向上增强。面板的实际使用场景
  * 包含手机浏览器（Termux 部署尤为常见），以桌面布局为基准再向下压缩，会使窄屏
  * 长期处于被裁剪的状态。侧栏在窄屏下为抽屉，开合状态由 App.vue 的 `.shell.open` 表达。
  *
- * 改动本文件前先读这四条成文规则 —— 其存在是为了让「以后再加一个控件」无须每次
- * 重新决定一遍：
+ * **本文件是「经典」主题，也是兜底层。** 别的主题（`themes/` 与面板商店里装的）只写它想改的
+ * 令牌与部件样式，没写的一律落回这里。三层的先后由 `index.html` 里那句 `@layer base, theme, panel`
+ * 固定：本文件在 `base`，主题在 `theme`，面板插件自带的样式在 `panel` —— 与谁先注入无关。
  *
- *   1) **颜色一律经令牌取用**，不写字面值。例外仅两处：遮罩的 rgba、二维码的白底。
+ * 改动本文件前先读这四条成文规则 —— 其存在是为了让「以后再加一个控件」无须每次
+ * 重新决定一遍，也是为了让主题换得动：
+ *
+ *   1) **颜色一律经令牌取用**，不写字面值。写死的颜色主题换不掉，换了深色底它还是那个颜色。
+ *      例外仅两处：二维码的白底（扫码要求）、危险按钮上的字色（见那一节）。
  *   2) **圆角只有三档**：卡片 `--r-card`、控件 `--r-ctl`、药丸与徽标 `--r-pill`。
  *      不出现第四种。
  *   3) **层次靠色阶不靠阴影**：底 → 面 → 面·浮起 三级，配 1px 描边。**在页面平面之内的
  *      东西一律不用投影** —— 卡片、输入框、徽标、页签一概只有描边与色阶。投影只留给
- *      那些真的离开了页面的：抓在手里的那一格（`.witem.dragging`）、悬浮的下拉菜单
- *      （`.menu-list`）、模态与抽屉的遮罩。判据是「它是否浮在别的内容之上」，
- *      而不是「加一点阴影是否好看」。
+ *      那些真的离开了页面的：抓在手里的那一格、悬浮的下拉菜单、模态与提示条，统一取
+ *      `--shadow-float`。不用毛玻璃：半透明底在手机上逐帧重算模糊，且压在不同背景上可读性不一。
  *   4) **过渡三档时长**（`--dur-1` 控件变色 / `--dur-2` 一般位移 / `--dur-3` 大面积表面），
  *      且只过渡 transform、opacity、color、background-color、border-color 与
  *      `stroke-dasharray`（环的进度）—— **不过渡 width / height / top / left**：
  *      那几样逐帧触发重排，在手机浏览器上表现为动一下卡一下。
+ *
+ * 主题能挂样式的地方只有两类：令牌（下面 `:root` 里的变量）与 `data-part` 钩子（见各组件），
+ * 外加公开类名（`.card` `.stat` `.tag` …）。其余类名是内部实现，随时会改，主题不要依赖。
  */
 
 /*
@@ -80,14 +88,22 @@
 }
 
 /*
+ * 以下全部在 `base` 层：主题（`theme` 层）与面板插件（`panel` 层）的同名规则一律盖得过它，与特异度无关。
+ * `@font-face` 留在层外：字体声明不参与层叠。
+ */
+@layer base {
+
+/*
  * 令牌
  *
- * 一支强调色贯穿全站，取自项目标识的金色。**金色在深色底成立、在白底不成立**
- * （金 #f0d8a8 压白仅 1.4:1），因此浅色模式移到同色相的青铜 #7a5c1f（压白 6.2:1、
- * 压页面底 5.8:1，均过 AA）。这不是两套配色，而是同一支色相的两个位置。
+ * 一支强调色贯穿全站，由色相 `--accent-hue` 推出浅、深两个位置；外观页的「强调色」改的就是它。
+ * 这里是经典主题的取值，主题包在 `@layer theme` 里重新声明同名变量即可整套换掉。
  *
  * 语义色（成功 / 警告 / 错误）只在真正表达状态处出现，不作装饰；`--info` 仅用于
  * 与状态无关的提示，不与主色争夺注意力。
+ *
+ * **这些变量是公开契约**（面板插件、扩展页与主题都在用），只增不改名。
+ * 全表见 docs 的「设计令牌」一页。
  */
 :root {
   /* 中性：底 → 面 → 面·浮起 三级层次 - 干净明亮 */
@@ -105,12 +121,17 @@
   --accent-solid: hsl(var(--accent-hue), 78%, 56%);
   --on-accent: #ffffff;
   --accent-glow: hsla(var(--accent-hue), 84%, 67%, 0.15);
+  /* 辅色：渐变与图表的第二支颜色。经典里取主色相偏 40°，主题可换成一支完全不同的颜色 */
+  --accent-2: hsl(calc(var(--accent-hue) - 40), 78%, 58%);
 
   /* 语义 - 柔和饱和度 */
   --info: #3b82f6;
   --ok: #10b981;
   --warn: #f59e0b;
   --err: #ef4444;
+  /* 危险按钮：浅色白字压红、悬停压深一档；深色反过来，深字压亮红 —— 与主按钮同一条道理 */
+  --on-err: #ffffff;
+  --err-hover: color-mix(in srgb, var(--err) 85%, #000);
   --code-bg: #f8f9fc;
 
   /* 字族：机器产出的值一律等宽，给人读的句子一律无衬线 */
@@ -168,24 +189,32 @@
   --content-max: 1240px;
   --gutter: var(--s3);
 
-  /* ── 玻璃拟态 ── */
-  --glass-bg: rgb(255 255 255 / 80%);
-  --glass-border: rgb(255 255 255 / 60%);
-  --glass-blur: 20px;
-  
-  /* ── 大厂级阴影系统 - 多层次柔和阴影 ── */
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.04);
-  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.04);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.06), 0 2px 4px -2px rgb(0 0 0 / 0.04);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.06), 0 4px 6px -4px rgb(0 0 0 / 0.04);
-  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.06), 0 8px 10px -6px rgb(0 0 0 / 0.04);
-  --shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.12);
-  --shadow-inner: inset 0 2px 4px 0 rgb(0 0 0 / 0.04);
+  /*
+   * 投影只有一档：浮起之物（拖动中的格子、下拉菜单、模态、提示条）
+   *
+   * `--shadow-sm` … `--shadow-2xl` 是早先的一整套，面板插件里有人在用（hardware 用过 `--shadow-2xl`），
+   * 故名字留着、一律指到这两档上 —— 删掉的话那些插件的投影直接消失，而不报任何错。
+   */
+  --shadow-float: 0 12px 28px -8px rgb(0 0 0 / 22%), 0 4px 10px -4px rgb(0 0 0 / 10%);
+  --shadow-none: 0 0 #0000;
+  --shadow-sm: var(--shadow-none);
+  --shadow: var(--shadow-none);
+  --shadow-md: var(--shadow-none);
+  --shadow-lg: var(--shadow-float);
+  --shadow-xl: var(--shadow-float);
+  --shadow-2xl: var(--shadow-float);
+  --shadow-inner: var(--shadow-none);
 
-  /* 玻璃阴影 */
-  --glass-shadow: 0 2px 12px -2px rgb(0 0 0 / 0.06), 0 1px 4px -1px rgb(0 0 0 / 0.04);
-  --glass-shadow-hover: 0 8px 24px -4px rgb(0 0 0 / 0.1), 0 4px 8px -2px rgb(0 0 0 / 0.06);
-  --glass-highlight: inset 0 1px 0 rgb(255 255 255 / 90%);
+  /* 遮罩：抽屉的 `.scrim` 与模态的 `::backdrop` 同一取值 —— 同一件事在两处不该是两种黑 */
+  --scrim: rgb(0 0 0 / 45%);
+
+  /* 滚动条：细的、跟着强调色的滑块；主题可整套换掉 */
+  --scrollbar-thumb: color-mix(in srgb, var(--accent) 32%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--accent) 60%, transparent);
+
+  /* 早先文档里写的两个名字，从来没有真正定义过；照旧文档写的插件靠这两个别名不至于失效 */
+  --fg: var(--text);
+  --line: var(--border);
 
   /* 背景渐变 - 干净明亮 */
   --bg-gradient-1: #eef1f8;
@@ -201,9 +230,9 @@
  * 层级关系在两种模式下必须一致 —— 浅色下主按钮显眼，深色下同样显眼。
  * 深色模式的主按钮是**深字压金底**：金底配白字必然不过对比度。
  *
- * 判据是 `<html data-theme="dark">`，不是 `prefers-color-scheme`（见文件头）。
+ * 判据是 `<html data-scheme="dark">`，不是 `prefers-color-scheme`（见文件头）。
  */
-:root[data-theme="dark"] {
+:root[data-scheme="dark"] {
   /* 深色模式 - 深邃高级感 */
   --bg: #0f1117;
   --panel: #1a1d27;
@@ -218,21 +247,20 @@
   --accent-solid: hsl(var(--accent-hue), 84%, 67%);
   --on-accent: #ffffff;
   --accent-glow: hsla(var(--accent-hue), 84%, 74%, 0.25);
+  --accent-2: hsl(calc(var(--accent-hue) - 40), 80%, 70%);
 
   /* 深色模式语义色 */
   --info: #60a5fa;
   --ok: #34d399;
   --warn: #fbbf24;
   --err: #f87171;
+  --on-err: #2a1110;
+  --err-hover: color-mix(in srgb, var(--err) 85%, #fff);
   --code-bg: #151820;
 
-  /* ── 玻璃拟态（深色） ── */
-  --glass-bg: rgb(26 29 39 / 75%);
-  --glass-border: rgb(255 255 255 / 12%);
-  --glass-shadow: 0 4px 24px -4px rgb(0 0 0 / 40%), 0 2px 8px -2px rgb(0 0 0 / 30%);
-  --glass-shadow-hover: 0 10px 32px -4px rgb(0 0 0 / 50%), 0 4px 12px -2px rgb(0 0 0 / 40%);
-  --glass-highlight: inset 0 1px 0 rgb(255 255 255 / 10%);
-  
+  --shadow-float: 0 14px 32px -8px rgb(0 0 0 / 55%), 0 4px 12px -4px rgb(0 0 0 / 35%);
+  --scrim: rgb(0 0 0 / 60%);
+
   /* 深色背景渐变 */
   --bg-gradient-1: #1e1b4b;
   --bg-gradient-2: #172554;
@@ -498,10 +526,8 @@ h3 {
   align-items: center;
   gap: var(--s2);
   padding: var(--s2) var(--s3);
-  background: var(--glass-bg);
-  border-bottom: 1px solid var(--glass-border);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
   z-index: 20;
@@ -543,11 +569,8 @@ h3 {
   width: var(--side-width);
   padding: var(--s3) 0;
   overflow-y: auto;
-  background: var(--glass-bg);
-  border-right: 1px solid var(--glass-border);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  box-shadow: var(--glass-shadow);
+  background: var(--panel);
+  border-right: 1px solid var(--border);
   transform: translateX(-100%);
   transition: transform var(--dur-2) var(--ease);
 }
@@ -570,7 +593,7 @@ h3 {
      品牌图标左缘也应在同一位置。但品牌区是 flex 容器，图标本身有 flex:none，
      故左侧只需与导航项图标对齐即可（16px = var(--s4)），右侧对称。 */
   padding: var(--s2) var(--s3) var(--s3) var(--s3);
-  border-bottom: 1px solid var(--glass-border);
+  border-bottom: 1px solid var(--border);
 }
 
 /*
@@ -581,9 +604,8 @@ h3 {
  */
 .brand-mark {
   flex: none;
-  border: 1px solid var(--glass-border);
+  border: 1px solid var(--border);
   border-radius: 10px;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 6%);
 }
 
 /* 侧栏内品牌名与版本徽标改为上下两行：220px 一行放不下「名称 + 徽标 + 折叠按钮」 */
@@ -597,12 +619,8 @@ h3 {
 
 .side-brand .brand small {
   margin-left: 0;
-  /* 版本徽标：更精致的药丸样式 */
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 40%);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: var(--raise);
+  border: 1px solid var(--border);
 }
 
 /*
@@ -621,7 +639,7 @@ h3 {
   position: fixed;
   inset: 0;
   z-index: 30;
-  background: rgb(0 0 0 / 45%);
+  background: var(--scrim);
 }
 
 .shell.open .scrim {
@@ -821,7 +839,7 @@ h3 {
   align-items: center;
   gap: var(--s2);
   padding: var(--s3) var(--s3) 0 calc(var(--s4) + 3px);
-  border-top: 1px solid var(--glass-border);
+  border-top: 1px solid var(--border);
 }
 
 .side-foot .out {
@@ -977,13 +995,11 @@ h3 {
     z-index: auto;
     transform: none;
     padding: var(--s4) 0 var(--s3);
-    background: var(--glass-bg);
+    background: var(--panel);
     border: none;
-    border-right: 1px solid var(--glass-border);
+    border-right: 1px solid var(--border);
     border-radius: 0;
     overflow: hidden;
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
   }
 
   /* 折叠态：去掉阴影避免视觉溢出 */
@@ -1143,7 +1159,7 @@ h3 {
   /* 组标题隐去后，分组关系由一道分隔线接管；`+ a` 命中的正是每组的首项 */
   .shell.collapsed .nav-group + a {
     margin-top: var(--s2);
-    border-top: 1px solid var(--glass-border);
+    border-top: 1px solid var(--border);
     padding-top: calc(var(--s2) + 1px);
   }
 
@@ -1444,6 +1460,30 @@ h3 {
 .card.item footer {
   margin-top: auto;
   padding-top: var(--s2);
+}
+
+/*
+ * 卡片底部那排动作：收窄内边距，一行放得下三枚
+ *
+ * 卡片窄到 280px 时，常规按钮的 18px 左右内边距让第三枚折到下一行。仍留着折行：
+ * 极窄的屏上宁可两行，也不能被 `.card` 的 `overflow: hidden` 裁掉半枚。
+ */
+.card-actions {
+  gap: var(--s1) var(--s2);
+}
+
+.card-actions > button,
+.card-actions > a.button,
+.card-actions > .menu > button {
+  padding: 7px 12px;
+  white-space: nowrap;
+}
+
+/* 卡片上没摆出来的分类：只是一个数，不是一枚可点的分类 */
+.tags .tag-more {
+  color: var(--muted);
+  font-size: var(--fs-hint);
+  align-self: center;
 }
 
 /*
@@ -2125,7 +2165,6 @@ h3 {
   height: 10px;
   border-radius: var(--r-pill);
   background: var(--raise);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 .bar-fill {
@@ -2134,15 +2173,15 @@ h3 {
   background: linear-gradient(90deg, var(--border-strong) 0%, var(--accent) 100%);
   /* 只过渡 width：这条槽的宽度由百分比给出，不涉及布局重排 */
   transition: width var(--dur-2) var(--ease);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
+/* 渐变的浅端由语义色本身调出，不另写一支色值：主题换了 `--warn` 时这一端跟着换 */
 .bar-fill.warn {
-  background: linear-gradient(90deg, var(--warn) 0%, #fbbf24 100%);
+  background: linear-gradient(90deg, var(--warn) 0%, color-mix(in srgb, var(--warn) 60%, var(--panel)) 100%);
 }
 
 .bar-fill.err {
-  background: linear-gradient(90deg, var(--err) 0%, #fca5a5 100%);
+  background: linear-gradient(90deg, var(--err) 0%, color-mix(in srgb, var(--err) 55%, var(--panel)) 100%);
 }
 
 /* ─────────────── 组件板 ─────────────── */
@@ -2260,8 +2299,7 @@ h3 {
  */
 .witem.dragging {
   z-index: 2;
-  /* 比模态那道阴影更沉：它此刻离页面最远。写死色值，本项目没有阴影令牌 */
-  box-shadow: 0 12px 28px -8px rgb(0 0 0 / 28%);
+  box-shadow: var(--shadow-float);
   border-radius: var(--r-card);
   /* 略透，让底下的落点预览与底网透出来 —— 落点是此刻唯一要看清的东西 */
   opacity: 0.92;
@@ -4056,6 +4094,8 @@ textarea {
  * `white-space: nowrap` 只管住「一枚之内不折行」，管不了「一枚被压窄」，两条缺一不可。
  */
 .toolbar.tabs button {
+  position: relative;
+  z-index: 1;
   flex: none;
   white-space: nowrap;
   border-color: transparent;
@@ -4063,6 +4103,7 @@ textarea {
   border-radius: var(--r-pill);
   padding: 8px 16px;
   font-size: var(--fs-body);
+  transition: color var(--dur-2) var(--ease), background-color var(--dur-1) var(--ease);
 }
 
 .toolbar.tabs button:hover:not(:disabled) {
@@ -4071,10 +4112,37 @@ textarea {
   color: var(--text);
 }
 
-.toolbar.tabs button.primary {
-  background: var(--accent-solid);
+/* 选中项本身不填色：底色由下面那块滑动的 `.tabs-ink` 给，悬停时也不盖掉它 */
+.toolbar.tabs button.primary,
+.toolbar.tabs button.primary:hover:not(:disabled) {
+  background: transparent;
   border-color: transparent;
   color: var(--on-accent);
+  box-shadow: none;
+}
+
+/*
+ * 选中块：垫在选中那枚按钮底下，切换时滑过去
+ *
+ * 位置与尺寸由 TabBar.vue 量好写进行内样式；弹性缓动让它落定时略带回弹，读起来是「滑到」
+ * 而不是「出现」。关闭动效时 `--dur-*` 被压到 1ms，它就是直接到位。
+ */
+.tabs-ink {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  border-radius: var(--r-pill);
+  background: var(--accent-solid);
+  box-shadow: 0 6px 16px -10px var(--accent-solid);
+  pointer-events: none;
+}
+
+.tabs-ink.ready {
+  transition:
+    transform var(--dur-3) var(--ease-spring),
+    width var(--dur-3) var(--ease-spring),
+    height var(--dur-2) var(--ease);
 }
 
 /*
@@ -4263,8 +4331,7 @@ button.primary:active:not(:disabled) {
 button.danger:hover:not(:disabled) {
   border-color: var(--err);
   color: var(--err);
-  background: color-mix(in srgb, var(--err) 8%, var(--glass-bg));
-  box-shadow: var(--shadow-md);
+  background: color-mix(in srgb, var(--err) 8%, var(--panel));
 }
 
 /* 抽屉开关：只有一个字符，按方形处理 */
@@ -4610,8 +4677,8 @@ table.pairs td {
 /* ─────────────── 日志 ─────────────── */
 .logs {
   position: relative;
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
+  background: var(--panel);
+  border: 1px solid var(--border);
   border-radius: var(--r-card);
   padding: var(--s3);
   height: 60vh;
@@ -4619,9 +4686,6 @@ table.pairs td {
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.55;
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  box-shadow: var(--glass-shadow), var(--glass-highlight);
 }
 
 /*
@@ -4808,15 +4872,25 @@ button.log-more:active:not(:disabled) {
 }
 
 /* ─────────────── 登录会话 ─────────────── */
-.steps {
+.login-session {
+  display: grid;
+  gap: var(--s3);
+}
+
+.login-steps {
   margin: 0;
   padding-left: var(--s5);
   color: var(--muted);
   font-size: var(--fs-hint);
 }
 
-.steps li {
+.login-steps li {
   margin-bottom: var(--s1);
+}
+
+.login-answer {
+  width: 240px;
+  max-width: 100%;
 }
 
 /* 二维码底色必须是纯白：扫码依赖黑白对比，随主题变化会使深色模式下扫不出 */
@@ -4825,6 +4899,7 @@ button.log-more:active:not(:disabled) {
   max-width: 240px;
   border: 1px solid var(--border-strong);
   border-radius: var(--r-ctl);
+  /* 成文例外：二维码要白底才扫得出来，与主题无关 */
   background: #fff;
   padding: var(--s2);
 }
@@ -4867,7 +4942,7 @@ button.log-more:active:not(:disabled) {
   gap: var(--s2);
   margin: 0 0 var(--s5);
   padding-bottom: var(--s4);
-  border-bottom: 1px solid var(--glass-border);
+  border-bottom: 1px solid var(--border);
 }
 
 /* 闸门里的标题不必与页头的 h1 同样大：这一块只有一件事要做 */
@@ -5015,18 +5090,15 @@ html:has(dialog[open]) {
   max-height: calc(100dvh - 2 * var(--s6));
   overflow-y: auto;
   padding: var(--s5);
-  border: 1px solid var(--glass-border);
+  border: 1px solid var(--border);
   border-radius: var(--r-card);
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  box-shadow: var(--glass-shadow-hover), var(--glass-highlight);
+  background: var(--panel);
+  box-shadow: var(--shadow-float);
   color: var(--text);
 }
 
-/* 遮罩：与抽屉的 `.scrim` 同一取值 —— 同一件事在两处不该是两种黑 */
 .modal::backdrop {
-  background: rgb(0 0 0 / 45%);
+  background: var(--scrim);
 }
 
 /*
@@ -5138,7 +5210,7 @@ html:has(dialog[open]) {
 button.danger.solid {
   background: var(--err);
   border-color: var(--err);
-  color: #fff;
+  color: var(--on-err);
 }
 
 /*
@@ -5207,7 +5279,8 @@ button.danger.solid {
   border-top: 1px solid var(--border);
 }
 
-.subsect > .hint:first-of-type {
+.subsect > .hint:first-of-type,
+.retry-lead {
   margin-bottom: var(--s4);
 }
 
@@ -5293,12 +5366,10 @@ button.danger.solid {
   margin-top: var(--s1);
   padding: var(--s1);
   gap: var(--s1);
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
+  background: var(--panel);
+  border: 1px solid var(--border);
   border-radius: var(--r-ctl);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  box-shadow: var(--glass-shadow-hover), var(--glass-highlight);
+  box-shadow: var(--shadow-float);
 }
 
 /*
@@ -5406,19 +5477,9 @@ button.danger.solid {
 }
 
 button.danger.solid:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--err) 85%, #000);
-  border-color: color-mix(in srgb, var(--err) 85%, #000);
-  color: #fff;
-}
-
-:root[data-theme="dark"] button.danger.solid {
-  color: #2a1110;
-}
-
-:root[data-theme="dark"] button.danger.solid:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--err) 85%, #fff);
-  border-color: color-mix(in srgb, var(--err) 85%, #fff);
-  color: #2a1110;
+  background: var(--err-hover);
+  border-color: var(--err-hover);
+  color: var(--on-err);
 }
 
 /* ─────────────── 两个市场页的筛选区 ─────────────── */
@@ -6239,6 +6300,22 @@ a.button:active {
   overflow: hidden;
   /* 外壳让开了指针，条子自己收回来：悬停暂停与那枚关闭钮都要点得到 */
   pointer-events: auto;
+}
+
+/* 回执上的动作钮（「撤销」）：取强调色的文字钮，不抢正文，但一眼能找到 */
+.toast button.toast-act {
+  flex: none;
+  min-height: 0;
+  padding: 2px var(--s2);
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.toast button.toast-act:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .toast-ico {
@@ -7159,6 +7236,318 @@ button.db-chip.on:hover:not(:disabled) {
   color: var(--accent);
 }
 
+/* ─────────────── 页头下的元信息行 ─────────────── */
+
+.page-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s4);
+  margin: calc(var(--s3) * -1) 0 var(--s4);
+  font-size: var(--fs-hint);
+  color: var(--muted);
+}
+
+.page-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+.page-meta-item b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.page-meta-item.ok .page-meta-ico {
+  color: var(--ok);
+}
+
+.page-meta-item.warn .page-meta-ico,
+.page-meta-item.warn b {
+  color: var(--warn);
+}
+
+.page-meta-item.err .page-meta-ico,
+.page-meta-item.err b {
+  color: var(--err);
+}
+
+.page-meta-ico {
+  width: 15px;
+  height: 15px;
+  color: var(--accent);
+}
+
+/* ─────────────── 步骤条 ─────────────── */
+
+.steps {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0 0 var(--s4);
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex: none;
+  font-size: var(--fs-hint);
+  color: var(--muted);
+}
+
+/* 步与步之间的连线画在后一步的前面，最后一步不必收尾 */
+.step + .step::before {
+  content: "";
+  width: 28px;
+  height: 2px;
+  margin-right: var(--s1);
+  border-radius: var(--r-pill);
+  background: var(--border);
+}
+
+.step.done + .step::before,
+.step.now::before {
+  background: var(--accent);
+}
+
+.step-dot {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-strong);
+  font-size: var(--fs-label);
+  font-weight: 600;
+}
+
+.step.done .step-dot {
+  border-color: var(--accent-solid);
+  background: var(--accent-solid);
+  color: var(--on-accent);
+}
+
+.step.now {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.step.now .step-dot {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+/*
+ * ─────────────── 主题槽位 ───────────────
+ *
+ * 主题在清单里给了某个槽位，`<html data-slots>` 里就有那个名字、`--slot-*` 变量里就有那张图
+ * （见 themes.ts）。每条规则都挂在 `[data-slots~=…]` 上：没给的槽位一条都不生效，经典的样子原封不动。
+ */
+
+/* 卡片与组件格子的边框图：九宫格切片。border-image 画不出圆角，圆角由图本身画 */
+:root[data-slots~="frame.card"] .card {
+  border-style: solid;
+  border-color: transparent;
+  border-width: var(--slot-frame-card-width);
+  border-image: var(--slot-frame-card) var(--slot-frame-card-slice) fill / var(--slot-frame-card-width) /
+    var(--slot-frame-card-outset) var(--slot-frame-card-repeat);
+  background-clip: padding-box;
+}
+
+/* 边宽只算没外扩的那一截：outset 等于宽度时整条边框带落在格缝里，格子里的卡片不缩 */
+:root[data-slots~="frame.widget"] .witem {
+  border-style: solid;
+  border-color: transparent;
+  border-width: max(0px, calc(var(--slot-frame-widget-width) - var(--slot-frame-widget-outset)));
+  border-image: var(--slot-frame-widget) var(--slot-frame-widget-slice) / var(--slot-frame-widget-width) /
+    var(--slot-frame-widget-outset) var(--slot-frame-widget-repeat);
+}
+
+/* 组件格子套了边框图时，里面那张卡片不再画自己的边与 `frame.card`：两道边叠着像描了两遍 */
+/* 写 border-image-source 而非 border-image 简写：构建时的压缩器把 `border-image: none` 压成空值，整条失效 */
+:root[data-slots~="frame.widget"] .witem .card {
+  border-color: transparent;
+  border-image-source: none;
+}
+
+/* 开关滑块换成主题的图，开与关各一张（「表情包左右开关」） */
+:root[data-slots~="switch.thumb.off"] .switch-track::after,
+:root[data-slots~="switch.thumb.off"] [data-part~="switch"] [data-part~="switch.thumb"] {
+  background: var(--slot-switch-thumb-off) center / contain no-repeat;
+  border-radius: 0;
+}
+
+:root[data-slots~="switch.thumb.on"] .switch input:checked + .switch-track::after,
+:root[data-slots~="switch.thumb.on"] [data-part~="switch"][aria-checked="true"] [data-part~="switch.thumb"] {
+  background: var(--slot-switch-thumb-on) center / contain no-repeat;
+  border-radius: 0;
+}
+
+/* 有贴图时滑块放大一圈，压在轨道两端：表情包缩到 16px 就看不出是谁了 */
+:root[data-slots~="switch.thumb.off"] .switch-track::after,
+:root[data-slots~="switch.thumb.on"] .switch input:checked + .switch-track::after {
+  top: -3px;
+  left: -2px;
+  width: 26px;
+  height: 26px;
+}
+
+:root[data-slots~="switch.thumb.on"] .switch input:checked + .switch-track::after {
+  transform: translateX(18px);
+}
+
+/* 空状态与加载中的插图 */
+:root[data-slots~="empty"] .empty-art {
+  background: var(--slot-empty) center / contain no-repeat;
+}
+
+:root[data-slots~="empty"] .empty-art > * {
+  display: none;
+}
+
+:root[data-slots~="loading"] .spinner {
+  border: none;
+  border-radius: 0;
+  background: var(--slot-loading) center / contain no-repeat;
+  animation: none;
+}
+
+/* 登录与连接中的那张卡片上方的插图 */
+[data-part~="login.art"] {
+  display: none;
+}
+
+:root[data-slots~="login.art"] [data-part~="login.art"] {
+  display: block;
+  height: 140px;
+  margin: calc(var(--s6) * -1) calc(var(--s6) * -1) var(--s4);
+  border-radius: var(--r-card) var(--r-card) 0 0;
+  background: var(--slot-login-art) center / cover no-repeat;
+}
+
+/* 品牌：主题给了 `brand.mark` 时换掉侧栏与闸门上那枚标记（图换了，尺寸不变） */
+:root[data-slots~="brand.mark"] .brand-mark {
+  content: var(--slot-brand-mark);
+}
+
+/* 给了 `brand.lockup`（图标 + 字标的整张图）时，宽屏侧栏只摆那张图，文字与标记让位 */
+[data-part~="brand.lockup"] {
+  display: none;
+}
+
+@media (min-width: 860px) {
+  :root[data-slots~="brand.lockup"] .shell:not(.collapsed) [data-part~="brand.lockup"] {
+    display: block;
+    flex: 1;
+    min-width: 0;
+    height: 30px;
+    background: var(--slot-brand-lockup) left center / contain no-repeat;
+  }
+
+  :root[data-slots~="brand.lockup"] .shell:not(.collapsed) .side-brand .brand-mark,
+  :root[data-slots~="brand.lockup"] .shell:not(.collapsed) .side-brand .brand-name {
+    display: none;
+  }
+}
+
+/*
+ * 回到顶部：右下角一枚圆钮，外圈是进度环
+ *
+ * `position: fixed` 而非 sticky：宽屏下它的父元素 `.main` 才是滚动容器，sticky 会随内容的高度
+ * 漂在半途。它浮在内容之上，故按文件头第 3 条取 `--shadow-float`。
+ */
+.to-top {
+  position: fixed;
+  right: var(--s5);
+  bottom: var(--s5);
+  z-index: 25;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--panel);
+  color: var(--accent);
+  box-shadow: var(--shadow-float);
+  opacity: 0;
+  transform: translateY(12px) scale(0.9);
+  pointer-events: none;
+  transition:
+    opacity var(--dur-2) var(--ease),
+    transform var(--dur-2) var(--ease);
+}
+
+.to-top.on {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.to-top-ring {
+  position: absolute;
+  inset: -1px;
+  width: calc(100% + 2px);
+  height: calc(100% + 2px);
+  transform: rotate(-90deg);
+}
+
+.to-top-track,
+.to-top-bar {
+  fill: none;
+  stroke-width: 2.5;
+}
+
+.to-top-track {
+  stroke: var(--border);
+}
+
+.to-top-bar {
+  stroke: currentColor;
+  stroke-linecap: round;
+  transition: stroke-dashoffset var(--dur-1) linear;
+}
+
+.to-top-ico {
+  width: 18px;
+  height: 18px;
+}
+
+/* 彩色图片图标：原色显示，与描边图标同尺寸 */
+.theme-icon {
+  flex: none;
+  object-fit: contain;
+}
+
+/* 滚动条：细的、跟着令牌走的滑块。Firefox 只认前两项，Safari 与旧版 Chromium 认 webkit 那套 */
+:root {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+@supports not (scrollbar-color: auto) {
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: var(--r-pill);
+    background: var(--scrollbar-thumb) padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover) padding-box;
+  }
+}
+
 /* ─────────────── 外观设置落到全站的部分 ─────────────── */
 
 /* 页面背景：纯色去掉渐变，点阵换成一层细点 */
@@ -7172,12 +7561,23 @@ button.db-chip.on:hover:not(:disabled) {
   background-blend-mode: normal;
 }
 
-/* 玻璃拟态：卡片改用半透明底加背景模糊 */
-:root[data-glass="on"] .card {
-  border-color: var(--glass-border);
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
+/* 主题背景图：主题给了 `backdrop` 槽位、且背景档位是「图片」时铺满页面底 */
+:root[data-backdrop="image"][data-slots~="backdrop"] body {
+  background-image: var(--slot-backdrop);
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  background-blend-mode: normal;
+}
+
+/* 低功耗：背景只留底色，常驻动画全停（主题脚本也读这个开关） */
+:root[data-low-power="on"] body {
+  background-image: none;
+  background-attachment: scroll;
+}
+
+:root[data-low-power="on"] [data-part~="decor"] {
+  display: none;
 }
 
 /* 关闭动效：时长令牌已压到 1ms，这里兜住写死时长的动画（骨架、转圈） */
@@ -7227,3 +7627,5 @@ button.db-chip.on:hover:not(:disabled) {
 .toast-bar {
   animation-duration: var(--toast-ms, 2600ms) !important;
 }
+
+} /* @layer base */

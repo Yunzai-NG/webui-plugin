@@ -14,6 +14,7 @@ import {
   MARKET_TABS,
   activeCount,
   authorFacets,
+  cardTags,
   compareVersion,
   emptyCriteria,
   gatesOf,
@@ -606,5 +607,16 @@ describe("toggleTag", () => {
   it("四排共用这一个函数，故它只认字符串、不在意是哪一维", () => {
     expect(toggleTag(["A"], "W")).toEqual(["A", "W"])
     expect(toggleTag(["ccxhan"], "ccxhan")).toEqual([])
+  })
+})
+
+describe("cardTags", () => {
+  it("卡片上只摆前三枚，余下的记个数", () => {
+    expect(cardTags(["功能", "原神", "星穹铁道", "绝区零"])).toEqual({ shown: ["功能", "原神", "星穹铁道"], more: 1 })
+  })
+
+  it("不足三枚时全摆，余数为零", () => {
+    expect(cardTags(["适配器"])).toEqual({ shown: ["适配器"], more: 0 })
+    expect(cardTags([])).toEqual({ shown: [], more: 0 })
   })
 })

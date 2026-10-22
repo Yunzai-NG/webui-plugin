@@ -239,6 +239,20 @@ async function isFile(path: string): Promise<boolean> {
 }
 
 /**
+ * 一个目录是不是只带主题的包：package.json 里有 `webuiTheme`
+ * @param dir 包目录
+ * @returns 是则真；没有 package.json 或读不动时为假
+ */
+export async function isThemeOnly(dir: string): Promise<boolean> {
+  try {
+    const doc = JSON.parse(await readFile(join(dir, "package.json"), "utf8")) as unknown
+    return isRecord(doc) && isRecord(doc.webuiTheme)
+  } catch {
+    return false
+  }
+}
+
+/**
  * 列出一个目录下的全部文件名
  *
  * 目录不存在时给空数组而不抛错，那是常态。不在此处筛扩展名：筛掉谁要记一条警告，
@@ -561,7 +575,10 @@ export async function scanPanelDir(
     const sub = join(dir, name)
     const files = await listDirFiles(sub)
     if (!files.includes(MULTI_ENTRY)) {
-      warn(`${sub} 缺少入口文件 ${MULTI_ENTRY}，已跳过。多文件面板插件的入口须是 ${MULTI_ENTRY}`)
+      // 只带主题、不带组件的包没有 index.js，那是正常的 —— 主题由 themescan.ts 扫
+      if (!(await isThemeOnly(sub))) {
+        warn(`${sub} 缺少入口文件 ${MULTI_ENTRY}，已跳过。多文件面板插件的入口须是 ${MULTI_ENTRY}`)
+      }
       continue
     }
     const info = await readPanelPackage(sub)

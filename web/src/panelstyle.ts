@@ -245,6 +245,38 @@ export function scopePanelCss(css: string, pkg: string): string {
 }
 
 /**
+ * 包进 `@layer panel`：面板插件在自己地盘里的样式盖得过主题，与注入先后无关
+ *
+ * 打头的 `@charset` / `@import` 须留在层外 —— 它们只在样式表最前面才有效，包进块里会被浏览器丢掉。
+ * @param css 已限定过的样式表
+ * @returns 包好的样式表
+ */
+export function layerPanelCss(css: string): string {
+  const head: string[] = []
+  let body = css
+  for (;;) {
+    const m = /^\s*@(charset|import)\b[^;]*;/i.exec(body)
+    if (m === null) break
+    head.push(m[0].trim())
+    body = body.slice(m[0].length)
+  }
+  return `${head.join("\n")}${head.length > 0 ? "\n" : ""}@layer panel {\n${body.trim()}\n}`
+}
+
+/**
+ * 样式表里写死的颜色有几处
+ *
+ * 写死的颜色主题换不掉：一款深底主题下，`color: #333` 的字就看不见了。只数、不改 ——
+ * 改了作者会以为自己写的生效了。`#000` / `#fff` 出现在 `color-mix` 里调明暗是常见写法，也一并数进去：
+ * 那样的写法同样不随主题。
+ * @param css 样式表文本，已去过注释
+ * @returns 写死的颜色个数
+ */
+export function countLiteralColors(css: string): number {
+  return (css.match(/#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(/gi) ?? []).length
+}
+
+/**
  * 取一个包的样式表，限定后注入 `<head>`
  *
  * **用 `fetch` 取文本再注入，而不是插一个 `<link>`。** 限定要改写选择器，而那要求先拿到
@@ -271,8 +303,16 @@ export async function loadPanelStyle(pkg: string, url: string): Promise<void> {
     return
   }
 
+  const literals = countLiteralColors(stripComments(css))
+  if (literals > 0) {
+    console.error(
+      `面板插件 ${pkg} 的样式表里有 ${literals} 处写死的颜色。换了主题它们不会跟着变，深底主题下可能看不见；` +
+        "请改用 var(--text)、var(--panel) 等令牌（见 docs 的「设计令牌」）"
+    )
+  }
+
   const el = document.createElement("style")
   el.dataset.panel = pkg
-  el.textContent = scopePanelCss(css, pkg)
+  el.textContent = layerPanelCss(scopePanelCss(css, pkg))
   document.head.append(el)
 }

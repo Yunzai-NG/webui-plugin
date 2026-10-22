@@ -677,6 +677,7 @@ onUnmounted(() => {
         v-for="cell in cells"
         :key="cell.slot.id"
         class="witem"
+        data-part="widget.frame"
         :class="{ dragging: drag?.id === cell.slot.id, fit: fitIds.has(cell.slot.id) }"
         :style="styleOf(cell.slot)"
         :data-widget="cell.slot.id"

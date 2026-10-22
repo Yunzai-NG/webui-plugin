@@ -1,0 +1,47 @@
+{
+  "name": "theme-pumpkin",
+  "version": "0.7.0",
+  "private": true,
+  "description": "YUNZAI NG：南瓜橙 + 云青，深夜蓝底",
+  "author": "Yunzai-NG",
+  "webuiTheme": {
+    "id": "pumpkin",
+    "name": "YUNZAI NG",
+    "description": "南瓜橙主色、云青辅色，深夜蓝底。整套南瓜图标与插图、睡着与醒来的南瓜开关、组件格子边上长出的芽、南瓜田登录页与终端框日志，拨开关时会撒出几颗种子。",
+    "license": "AGPL-3.0-or-later；字体 Nunito 为 OFL-1.1",
+    "schemes": ["light", "dark"],
+    "style": "theme.css",
+    "script": "theme.js",
+    "preview": "preview.svg",
+    "icons": {
+      "mode": "image",
+      "nav": {
+        "overview": "icons/overview.svg",
+        "accounts": "icons/accounts.svg",
+        "logs": "icons/logs.svg",
+        "storage": "icons/storage.svg",
+        "plugins": "icons/plugins.svg",
+        "custom": "icons/custom.svg",
+        "market": "icons/market.svg",
+        "store": "icons/store.svg",
+        "config": "icons/config.svg",
+        "help": "icons/help.svg",
+        "appearance": "icons/appearance.svg"
+      }
+    },
+    "slots": {
+      "brand.mark": "art/logo-rounded.svg",
+      "brand.lockup": { "light": "art/logo-lockup.svg", "dark": "art/logo-lockup-ondark.svg" },
+      "frame.card": { "image": "art/frame-card.svg", "slice": 48, "width": "24px" },
+      "frame.widget": { "image": "art/frame-widget.svg", "slice": 32, "width": "16px", "outset": "8px" },
+      "switch.thumb.off": "art/switch-off.svg",
+      "switch.thumb.on": "art/switch-on.svg",
+      "empty": "art/empty.svg",
+      "loading": "art/loading.svg",
+      "login.art": { "light": "art/login-light.svg", "dark": "art/login-dark.svg" },
+      "backdrop": { "light": "art/backdrop-light.svg", "dark": "art/backdrop-dark.svg" }
+    },
+    "options": { "accentHue": false, "radius": true, "backdrop": true },
+    "backdrop": "image"
+  }
+}

@@ -1,113 +1,131 @@
 <script setup lang="ts">
 /**
- * 模块职责：外观设置页 —— 深浅主题、预设方案、逐项自定义、实时预览与配置的导入导出
- * 依赖方向：依赖 appearance / theme / icons / download 与 AppIcon、PageHeader
+ * 模块职责：外观页 —— 主题、明暗、版式、动效、备份五个页签
+ * 依赖方向：依赖 appearance / scheme / themes / download 与 AppIcon、PageHeader、TabBar
  * 生命周期：随所在页面
  * 注意事项：所有修改经 appearance.ts 写成 CSS 变量与 `<html data-*>`，即时生效、自动落盘，本页不另存。
- *          视觉方案与配色方案各管各的参数；细调后对不上任何方案时，该栏高亮「自定义」。
+ *
+ *          **「主题」页签里的强调色、圆角、背景只对当前主题生效**，按主题分别保存；主题在清单里没开放
+ *          的项整行置灰并说明。版式与动效是个人偏好，换哪款主题都跟着人走。
+ *
+ *          页签的选择记在地址上（`?tab=`），从别处（比如侧栏的明暗按钮的说明）链进来能直接落到那一栏。
  */
-import { computed, ref } from "vue"
+import { computed, ref, watch } from "vue"
 import AppIcon from "../components/AppIcon.vue"
 import PageHeader from "../components/PageHeader.vue"
+import TabBar from "../components/TabBar.vue"
 import {
   COLOR_PRESETS,
-  CUSTOM,
-  LAYOUT_PRESETS,
-  appearanceValues,
-  applyColorPreset,
-  applyLayoutPreset,
-  colorPresetOf,
+  appearance,
+  chooseTheme,
+  effectiveOverrides,
   exportAppearance,
   importAppearance,
-  layoutPresetOf,
   resetAppearance,
-  updateValue,
-  type AppearanceValues,
-  type LayoutPreset
+  resetOverrides,
+  resetPrefs,
+  updateOverride,
+  updatePref,
+  type AppearancePrefs,
+  type ThemeOverrides
 } from "../appearance.js"
 import { copyText, downloadText } from "../download.js"
 import { errorText } from "../format.js"
-import { ICONS, THEME_ICON } from "../icons.js"
-import { THEME_LABEL, setTheme, themeChoice, type ThemeChoice } from "../theme.js"
+import { ICONS, SCHEME_ICON } from "../icons.js"
+import { currentQuery, hrefOf } from "../router.js"
+import { SCHEME_LABEL, schemeChoice, setScheme, supportedSchemes, type SchemeChoice } from "../scheme.js"
+import { currentTheme, safeMode, themeError, themeList, themesLoaded } from "../themes.js"
 import { showToast } from "../toast.js"
 
-/** 以分段按钮选择的几项 */
-type SegKey = "radius" | "density" | "fontScale" | "width" | "motion" | "backdrop"
+type Tab = "theme" | "scheme" | "layout" | "motion" | "backup"
+
+const TABS: readonly { id: Tab; label: string; icon: string }[] = [
+  { id: "theme", label: "主题", icon: ICONS.palette },
+  { id: "scheme", label: "明暗", icon: SCHEME_ICON.auto },
+  { id: "layout", label: "版式", icon: ICONS.layers },
+  { id: "motion", label: "动效", icon: ICONS.motion },
+  { id: "backup", label: "备份", icon: ICONS.download }
+]
+
+const tab = ref<Tab>(TABS.some(t => t.id === currentQuery.value.tab) ? (currentQuery.value.tab as Tab) : "theme")
+watch(tab, id => history.replaceState(null, "", hrefOf("appearance", id === "theme" ? {} : { tab: id })))
 
 /** 一组分段按钮 */
-interface Segment {
-  key: SegKey
+interface Segment<K extends string> {
+  key: K
   label: string
   hint: string
   icon: string
-  options: { value: AppearanceValues[SegKey]; label: string; desc: string }[]
+  options: { value: string; label: string; desc: string }[]
 }
 
-/**
- * 定义一组分段按钮；按参数名约束取值，写错档位在编译期即报错
- * @param key 参数名
- * @param label 名称
- * @param hint 说明
- * @param icon 图标
- * @param options 各档
- * @returns 分段定义
- */
-function seg<K extends SegKey>(
-  key: K,
-  label: string,
-  hint: string,
-  icon: string,
-  options: { value: AppearanceValues[K]; label: string; desc: string }[]
-): Segment {
-  return { key, label, hint, icon, options }
-}
-
-/** 视觉方案管辖的分段项；玻璃拟态是开关，单列 */
-const LAYOUT_SEGMENTS: readonly Segment[] = [
-  seg("radius", "圆角", "卡片、按钮与输入框的圆角", ICONS.radius, [
-    { value: "small", label: "小", desc: "8px" },
-    { value: "medium", label: "中", desc: "14px" },
-    { value: "large", label: "大", desc: "20px" }
-  ]),
-  seg("density", "密度", "元素之间的间距与内边距", ICONS.density, [
-    { value: "compact", label: "紧凑", desc: "0.85×" },
-    { value: "normal", label: "正常", desc: "1×" },
-    { value: "comfortable", label: "舒适", desc: "1.2×" }
-  ]),
-  seg("fontScale", "字号", "全站文字整体缩放", ICONS.type, [
-    { value: "small", label: "小", desc: "93%" },
-    { value: "normal", label: "标准", desc: "100%" },
-    { value: "large", label: "大", desc: "108%" }
-  ]),
-  seg("width", "内容宽度", "主内容区的最大宽度", ICONS.width, [
-    { value: "narrow", label: "窄", desc: "1040px" },
-    { value: "normal", label: "标准", desc: "1240px" },
-    { value: "wide", label: "宽", desc: "1480px" },
-    { value: "full", label: "铺满", desc: "不限" }
-  ]),
-  seg("backdrop", "背景", "页面底层的装饰", ICONS.image, [
-    { value: "gradient", label: "渐变", desc: "柔和光晕" },
-    { value: "dots", label: "点阵", desc: "细点网格" },
-    { value: "plain", label: "纯色", desc: "无装饰" }
-  ])
+const PREF_SEGMENTS: readonly Segment<"density" | "fontScale" | "width">[] = [
+  {
+    key: "density",
+    label: "密度",
+    hint: "元素之间的间距与内边距",
+    icon: ICONS.density,
+    options: [
+      { value: "compact", label: "紧凑", desc: "0.85×" },
+      { value: "normal", label: "正常", desc: "1×" },
+      { value: "comfortable", label: "舒适", desc: "1.2×" }
+    ]
+  },
+  {
+    key: "fontScale",
+    label: "字号",
+    hint: "全站文字整体缩放",
+    icon: ICONS.type,
+    options: [
+      { value: "small", label: "小", desc: "93%" },
+      { value: "normal", label: "标准", desc: "100%" },
+      { value: "large", label: "大", desc: "108%" }
+    ]
+  },
+  {
+    key: "width",
+    label: "内容宽度",
+    hint: "主内容区的最大宽度",
+    icon: ICONS.width,
+    options: [
+      { value: "narrow", label: "窄", desc: "1040px" },
+      { value: "normal", label: "标准", desc: "1240px" },
+      { value: "wide", label: "宽", desc: "1480px" },
+      { value: "full", label: "铺满", desc: "不限" }
+    ]
+  }
 ]
 
-/** 动效是个人偏好，不归任何方案 */
-const MOTION_SEGMENT = seg("motion", "动效", "过渡与入场动画；系统要求减少动效时始终从简", ICONS.motion, [
+const MOTION_OPTIONS = [
   { value: "full", label: "完整", desc: "默认时长" },
   { value: "reduced", label: "减弱", desc: "约一半" },
   { value: "off", label: "关闭", desc: "无动画" }
-])
+] as const
 
-const THEMES: readonly ThemeChoice[] = ["auto", "light", "dark"]
+const RADIUS_OPTIONS = [
+  { value: undefined, label: "主题默认", desc: "" },
+  { value: "small", label: "小", desc: "8px" },
+  { value: "medium", label: "中", desc: "14px" },
+  { value: "large", label: "大", desc: "20px" }
+] as const
+
+const BACKDROP_OPTIONS = [
+  { value: undefined, label: "主题默认", desc: "" },
+  { value: "gradient", label: "渐变", desc: "柔和光晕" },
+  { value: "dots", label: "点阵", desc: "细点网格" },
+  { value: "plain", label: "纯色", desc: "无装饰" },
+  { value: "image", label: "背景图", desc: "主题提供" }
+] as const
+
+const SCHEMES: readonly SchemeChoice[] = ["auto", "light", "dark"]
 
 const error = ref("")
 const fileInput = ref<HTMLInputElement | null>(null)
 
-const layoutActive = computed(() => layoutPresetOf(appearanceValues.value))
-const colorActive = computed(() => colorPresetOf(appearanceValues.value))
-const layoutName = computed(() => LAYOUT_PRESETS.find(p => p.id === layoutActive.value)?.name ?? "自定义")
-const colorName = computed(() => COLOR_PRESETS.find(p => p.id === colorActive.value)?.name ?? "自定义")
+/** 当前主题之内存着的改动（未经「主题允许」过滤：置灰的行也要显示它原来存了什么） */
+const own = computed<ThemeOverrides>(() => appearance.value.perTheme[currentTheme.value.id] ?? {})
+const live = computed(() => effectiveOverrides(appearance.value, { id: currentTheme.value.id, options: currentTheme.value.options, defaultBackdrop: currentTheme.value.backdrop }))
+const hasBackdropImage = computed(() => currentTheme.value.slots.backdrop !== undefined)
 
 /**
  * 某色相对应的强调色
@@ -115,34 +133,26 @@ const colorName = computed(() => COLOR_PRESETS.find(p => p.id === colorActive.va
  * @returns CSS 颜色
  */
 function accentColor(hue: number): string {
-  return `hsl(${hue} 84% 67%)`
+  return `hsl(${hue} 84% 62%)`
 }
 
 /**
- * 方案卡片缩略图的圆角
- * @param radius 圆角档位
- * @returns CSS 长度
+ * 某一态是否可选：主题只给一套明暗时，另一套与「跟随系统」都不可选
+ * @param s 明暗选择
+ * @returns 是否可选
  */
-function previewRadius(radius: AppearanceValues["radius"]): string {
-  return radius === "small" ? "4px" : radius === "large" ? "10px" : "7px"
+function schemeAllowed(s: SchemeChoice): boolean {
+  if (supportedSchemes.value.length !== 1) return true
+  return s === supportedSchemes.value[0]
 }
 
 /**
- * 视觉方案缩略图的内边距，示意密度
- * @param p 方案
- * @returns CSS 长度
- */
-function previewPad(p: LayoutPreset["values"]): string {
-  return p.density === "compact" ? "4px" : p.density === "comfortable" ? "9px" : "6px"
-}
-
-/**
- * 选一档
- * @param key 参数名
+ * 改一项个人偏好
+ * @param key 偏好项
  * @param value 取值
  */
-function pick(key: SegKey, value: AppearanceValues[SegKey]): void {
-  updateValue(key, value)
+function pickPref(key: keyof AppearancePrefs, value: string): void {
+  updatePref(key, value as never)
 }
 
 /**
@@ -150,7 +160,7 @@ function pick(key: SegKey, value: AppearanceValues[SegKey]): void {
  * @param event 输入事件
  */
 function onHue(event: Event): void {
-  updateValue("accentHue", Number((event.target as HTMLInputElement).value))
+  updateOverride("accentHue", Number((event.target as HTMLInputElement).value))
 }
 
 /** 复制当前配置 */
@@ -185,18 +195,8 @@ async function onImport(event: Event): Promise<void> {
   }
 }
 
-/** 重置为默认 */
-function reset(): void {
-  resetAppearance()
-  flash("已恢复默认外观")
-}
-
 /**
  * 显示一条回执，并清掉上一次的错误
- *
- * 仍留一层函数而非三处各自 `showToast`：这三件事（复制、导入、恢复默认）都要连带清掉
- * 错误横幅 —— 上一次「文件不是合法的 JSON」不该停在一次成功的复制之后。计时与收起
- * 归提示条自己（见 `toast.ts`），故这里不再留计时器。
  * @param text 文案
  */
 function flash(text: string): void {
@@ -207,120 +207,186 @@ function flash(text: string): void {
 
 <template>
   <div>
-    <PageHeader route="appearance" sub="自定义界面外观，修改即时生效并保存在本浏览器">
-      <template #actions>
-        <button @click="void copyConfig()"><AppIcon class="btn-ico" :path="ICONS.copy" />复制配置</button>
-        <button @click="downloadConfig()"><AppIcon class="btn-ico" :path="ICONS.download" />导出</button>
-        <button @click="fileInput?.click()"><AppIcon class="btn-ico" :path="ICONS.file" />导入</button>
-        <input ref="fileInput" type="file" accept="application/json,.json" hidden @change="void onImport($event)" />
-      </template>
-    </PageHeader>
+    <PageHeader route="appearance" sub="主题、明暗与个人偏好，修改即时生效并保存在本浏览器" />
 
     <p v-if="error" class="banner">{{ error }}</p>
+    <p v-if="safeMode" class="banner warn">
+      安全模式：地址里带着 <code>?theme=safe</code>，所有主题都没有加载。去掉它刷新即回到所选的主题。
+    </p>
+    <p v-else-if="themeError" class="banner">{{ themeError }}</p>
 
-    <div class="ap-layout">
-      <div class="ap-main">
-        <!-- 主题 -->
+    <TabBar v-model="tab" :items="TABS" label="外观设置" />
+
+    <Transition name="tab" mode="out-in">
+      <!-- ── 主题 ── -->
+      <div v-if="tab === 'theme'" key="theme">
         <section class="card">
-          <h2><AppIcon class="btn-ico" :path="THEME_ICON[themeChoice]" />主题</h2>
-          <p class="hint">「跟随系统」随操作系统的深浅设置切换。</p>
+          <h2><AppIcon class="btn-ico" :path="ICONS.palette" />选择主题</h2>
+          <p class="hint">
+            主题换的是一整身皮肤：配色、图标、边框、控件贴图与插图。面板插件的组件与扩展页面也跟着换。
+            <a :href="hrefOf('store', { kind: 'theme' })">去面板商店找更多主题 →</a>
+          </p>
+          <p v-if="!themesLoaded" class="hint">正在读取已装的主题…</p>
           <div class="ap-themes" role="radiogroup" aria-label="主题">
             <button
-              v-for="t in THEMES"
-              :key="t"
+              v-for="t in themeList"
+              :key="t.id"
+              type="button"
               role="radio"
-              :aria-checked="themeChoice === t"
               class="ap-theme"
-              :class="[`ap-theme-${t}`, { active: themeChoice === t }]"
-              @click="setTheme(t)"
+              :class="{ active: currentTheme.id === t.id }"
+              :aria-checked="currentTheme.id === t.id"
+              :disabled="safeMode"
+              @click="chooseTheme(t.id)"
             >
-              <span class="ap-theme-art" aria-hidden="true"><i></i><i></i></span>
-              <span class="ap-theme-label"><AppIcon class="btn-ico" :path="THEME_ICON[t]" />{{ THEME_LABEL[t] }}</span>
+              <span class="ap-theme-art">
+                <img v-if="t.preview" :src="t.preview" alt="" loading="lazy" />
+                <AppIcon v-else class="ap-theme-none" :path="ICONS.image" />
+              </span>
+              <span class="ap-theme-info">
+                <span class="ap-theme-name">
+                  {{ t.name }}
+                  <AppIcon v-if="currentTheme.id === t.id" class="btn-ico ap-check" :path="ICONS.check" />
+                </span>
+                <span class="ap-theme-desc">{{ t.description || "没有说明" }}</span>
+                <span class="ap-theme-meta">
+                  <span class="tag">{{ t.builtin ? "内置" : t.pkg }}</span>
+                  <span v-if="t.schemes.length === 1" class="tag">仅{{ t.schemes[0] === "dark" ? "深色" : "浅色" }}</span>
+                  <span v-if="t.script" class="tag warn" title="这款主题带脚本，与面板插件同等信任">带脚本</span>
+                </span>
+              </span>
             </button>
           </div>
+          <p v-if="currentTheme.license" class="hint ap-license">授权：{{ currentTheme.license }}</p>
         </section>
 
-        <!-- 配色方案：只改强调色 -->
         <section class="card">
-          <h2><AppIcon class="btn-ico" :path="ICONS.palette" />配色方案</h2>
-          <p class="hint">当前：{{ colorName }}。只改强调色，不动圆角、间距等视觉参数。</p>
-          <div class="color-grid" role="radiogroup" aria-label="配色方案">
+          <h2><AppIcon class="btn-ico" :path="ICONS.sparkle" />在「{{ currentTheme.name }}」之内调整</h2>
+          <p class="hint">只对当前主题生效，换别的主题时各自保存。主题没开放的项不可调。</p>
+
+          <div class="setting-row" :class="{ locked: !currentTheme.options.accentHue }">
+            <div class="setting-label">
+              <span><AppIcon class="btn-ico" :path="ICONS.palette" />强调色</span>
+              <span class="hint">{{ currentTheme.options.accentHue ? "按钮、选中态与进度条的颜色" : "这款主题的配色是定好的，不可改" }}</span>
+            </div>
+            <div class="setting-control ap-colors">
+              <button
+                v-for="c in COLOR_PRESETS"
+                :key="c.id"
+                type="button"
+                class="color-dot"
+                :class="{ active: live.accentHue === c.hue }"
+                :style="{ background: accentColor(c.hue) }"
+                :title="c.name"
+                :aria-label="`强调色：${c.name}`"
+                :disabled="!currentTheme.options.accentHue"
+                @click="updateOverride('accentHue', c.hue)"
+              />
+              <input
+                type="range"
+                min="0"
+                max="360"
+                step="1"
+                class="hue-slider"
+                aria-label="强调色色相"
+                :value="own.accentHue ?? 239"
+                :disabled="!currentTheme.options.accentHue"
+                @input="onHue"
+              />
+              <button type="button" class="link" :disabled="own.accentHue === undefined" @click="updateOverride('accentHue', undefined)">
+                主题默认
+              </button>
+            </div>
+          </div>
+
+          <div class="setting-row" :class="{ locked: !currentTheme.options.radius }">
+            <div class="setting-label">
+              <span><AppIcon class="btn-ico" :path="ICONS.radius" />圆角</span>
+              <span class="hint">卡片、按钮与输入框的圆角</span>
+            </div>
+            <div class="setting-control" role="radiogroup" aria-label="圆角">
+              <button
+                v-for="opt in RADIUS_OPTIONS"
+                :key="opt.label"
+                type="button"
+                role="radio"
+                class="option-btn"
+                :class="{ active: own.radius === opt.value }"
+                :aria-checked="own.radius === opt.value"
+                :disabled="!currentTheme.options.radius"
+                @click="updateOverride('radius', opt.value)"
+              >
+                <span class="option-label">{{ opt.label }}</span>
+                <span v-if="opt.desc" class="option-desc">{{ opt.desc }}</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="setting-row" :class="{ locked: !currentTheme.options.backdrop }">
+            <div class="setting-label">
+              <span><AppIcon class="btn-ico" :path="ICONS.image" />背景</span>
+              <span class="hint">页面底层的装饰；低功耗模式下一律只留底色</span>
+            </div>
+            <div class="setting-control" role="radiogroup" aria-label="背景">
+              <button
+                v-for="opt in BACKDROP_OPTIONS"
+                v-show="opt.value !== 'image' || hasBackdropImage"
+                :key="opt.label"
+                type="button"
+                role="radio"
+                class="option-btn"
+                :class="{ active: own.backdrop === opt.value }"
+                :aria-checked="own.backdrop === opt.value"
+                :disabled="!currentTheme.options.backdrop"
+                @click="updateOverride('backdrop', opt.value)"
+              >
+                <span class="option-label">{{ opt.label }}</span>
+                <span v-if="opt.desc" class="option-desc">{{ opt.desc }}</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button type="button" @click="resetOverrides()"><AppIcon class="btn-ico" :path="ICONS.refresh" />撤销本主题内的调整</button>
+          </div>
+        </section>
+      </div>
+
+      <!-- ── 明暗 ── -->
+      <div v-else-if="tab === 'scheme'" key="scheme">
+        <section class="card">
+          <h2><AppIcon class="btn-ico" :path="SCHEME_ICON[schemeChoice]" />明暗</h2>
+          <p class="hint">
+            「跟随系统」随操作系统的深浅设置切换。明暗与主题无关：换主题不动这里的选择。
+            <template v-if="supportedSchemes.length === 1">
+              当前主题只有{{ supportedSchemes[0] === "dark" ? "深色" : "浅色" }}一套，换一款主题后才能切换。
+            </template>
+          </p>
+          <div class="ap-schemes" role="radiogroup" aria-label="明暗">
             <button
-              v-for="c in COLOR_PRESETS"
-              :key="c.id"
+              v-for="s in SCHEMES"
+              :key="s"
+              type="button"
               role="radio"
-              :aria-checked="colorActive === c.id"
-              class="color-card"
-              :class="{ active: colorActive === c.id }"
-              @click="applyColorPreset(c.id)"
+              class="ap-scheme"
+              :class="[`ap-scheme-${s}`, { active: schemeChoice === s }]"
+              :aria-checked="schemeChoice === s"
+              :disabled="!schemeAllowed(s)"
+              @click="setScheme(s)"
             >
-              <span class="color-dot" :style="{ background: accentColor(c.hue) }"></span>
-              <span class="color-name">{{ c.name }}</span>
+              <span class="ap-scheme-art" aria-hidden="true"><i></i><i></i></span>
+              <span class="ap-scheme-label"><AppIcon class="btn-ico" :path="SCHEME_ICON[s]" />{{ SCHEME_LABEL[s] }}</span>
             </button>
-            <div class="color-card is-custom" :class="{ active: colorActive === CUSTOM }" :aria-current="colorActive === CUSTOM">
-              <span class="color-dot" :style="{ background: accentColor(appearanceValues.accentHue) }"></span>
-              <span class="color-name">自定义</span>
-            </div>
-          </div>
-          <div class="hue-row">
-            <input
-              type="range"
-              min="0"
-              max="360"
-              step="1"
-              class="hue-slider"
-              aria-label="强调色色相"
-              :value="appearanceValues.accentHue"
-              @input="onHue"
-            />
-            <span class="hue-value">{{ appearanceValues.accentHue }}°</span>
           </div>
         </section>
+      </div>
 
-        <!-- 视觉方案：只改形，不改色 -->
+      <!-- ── 版式 ── -->
+      <div v-else-if="tab === 'layout'" key="layout">
         <section class="card">
-          <h2><AppIcon class="btn-ico" :path="ICONS.layers" />视觉方案</h2>
-          <p class="hint">当前：{{ layoutName }}。管圆角、密度、字号、宽度、背景与玻璃拟态，不动配色。</p>
-          <div class="preset-grid">
-            <button
-              v-for="p in LAYOUT_PRESETS"
-              :key="p.id"
-              class="preset-card"
-              :class="{ active: layoutActive === p.id }"
-              :aria-pressed="layoutActive === p.id"
-              @click="applyLayoutPreset(p.id)"
-            >
-              <span class="preset-preview">
-                <span
-                  class="preview-card"
-                  :style="{ borderRadius: previewRadius(p.values.radius), padding: previewPad(p.values) }"
-                >
-                  <i></i><i></i><b :style="{ borderRadius: previewRadius(p.values.radius) }"></b>
-                </span>
-              </span>
-              <span class="preset-info">
-                <span class="preset-name">
-                  {{ p.name }}
-                  <AppIcon v-if="layoutActive === p.id" class="btn-ico preset-check" :path="ICONS.check" />
-                </span>
-                <span class="preset-desc">{{ p.description }}</span>
-              </span>
-            </button>
-            <div class="preset-card is-custom" :class="{ active: layoutActive === CUSTOM }" :aria-current="layoutActive === CUSTOM">
-              <span class="preset-preview">
-                <AppIcon class="custom-ico" :path="ICONS.sparkle" />
-              </span>
-              <span class="preset-info">
-                <span class="preset-name">
-                  自定义
-                  <AppIcon v-if="layoutActive === CUSTOM" class="btn-ico preset-check" :path="ICONS.check" />
-                </span>
-                <span class="preset-desc">在下方逐项调整后自动归到这里</span>
-              </span>
-            </div>
-          </div>
-
-          <div v-for="s in LAYOUT_SEGMENTS" :key="s.key" class="setting-row">
+          <h2><AppIcon class="btn-ico" :path="ICONS.layers" />版式</h2>
+          <p class="hint">个人偏好：跟着人走，换哪款主题都保留。</p>
+          <div v-for="s in PREF_SEGMENTS" :key="s.key" class="setting-row">
             <div class="setting-label">
               <span><AppIcon class="btn-ico" :path="s.icon" />{{ s.label }}</span>
               <span class="hint">{{ s.hint }}</span>
@@ -329,514 +395,362 @@ function flash(text: string): void {
               <button
                 v-for="opt in s.options"
                 :key="opt.value"
+                type="button"
                 role="radio"
-                :aria-checked="appearanceValues[s.key] === opt.value"
                 class="option-btn"
-                :class="{ active: appearanceValues[s.key] === opt.value }"
-                @click="pick(s.key, opt.value)"
+                :class="{ active: appearance.prefs[s.key] === opt.value }"
+                :aria-checked="appearance.prefs[s.key] === opt.value"
+                @click="pickPref(s.key, opt.value)"
               >
                 <span class="option-label">{{ opt.label }}</span>
                 <span class="option-desc">{{ opt.desc }}</span>
               </button>
             </div>
           </div>
-
-          <div class="setting-row">
-            <div class="setting-label">
-              <span><AppIcon class="btn-ico" :path="ICONS.layers" />玻璃拟态</span>
-              <span class="hint">卡片半透明并模糊背景；低端设备上可能卡顿</span>
-            </div>
-            <div class="setting-control">
-              <button
-                class="toggle-btn"
-                role="switch"
-                :aria-checked="appearanceValues.glassEffect"
-                :class="{ active: appearanceValues.glassEffect }"
-                @click="updateValue('glassEffect', !appearanceValues.glassEffect)"
-              >
-                <span class="toggle-track"><span class="toggle-thumb"></span></span>
-                <span class="toggle-label">{{ appearanceValues.glassEffect ? "已启用" : "已禁用" }}</span>
-              </button>
-            </div>
-          </div>
         </section>
+      </div>
 
-        <!-- 动效：个人偏好，不归任何方案 -->
+      <!-- ── 动效 ── -->
+      <div v-else-if="tab === 'motion'" key="motion">
         <section class="card">
           <h2><AppIcon class="btn-ico" :path="ICONS.motion" />动效</h2>
           <div class="setting-row">
             <div class="setting-label">
-              <span>{{ MOTION_SEGMENT.label }}</span>
-              <span class="hint">{{ MOTION_SEGMENT.hint }}</span>
+              <span>过渡与入场动画</span>
+              <span class="hint">系统要求减少动效时始终从简</span>
             </div>
-            <div class="setting-control" role="radiogroup" :aria-label="MOTION_SEGMENT.label">
+            <div class="setting-control" role="radiogroup" aria-label="动效">
               <button
-                v-for="opt in MOTION_SEGMENT.options"
+                v-for="opt in MOTION_OPTIONS"
                 :key="opt.value"
+                type="button"
                 role="radio"
-                :aria-checked="appearanceValues.motion === opt.value"
                 class="option-btn"
-                :class="{ active: appearanceValues.motion === opt.value }"
-                @click="pick('motion', opt.value)"
+                :class="{ active: appearance.prefs.motion === opt.value }"
+                :aria-checked="appearance.prefs.motion === opt.value"
+                @click="pickPref('motion', opt.value)"
               >
                 <span class="option-label">{{ opt.label }}</span>
                 <span class="option-desc">{{ opt.desc }}</span>
               </button>
             </div>
           </div>
-        </section>
-
-        <div class="actions">
-          <button class="danger" @click="reset()"><AppIcon class="btn-ico" :path="ICONS.refresh" />恢复默认</button>
-        </div>
-      </div>
-
-      <!-- 实时预览：直接用全站的类，所见即各页所得 -->
-      <aside class="ap-aside">
-        <section class="card ap-preview">
-          <h2><AppIcon class="btn-ico" :path="ICONS.eye" />预览</h2>
-          <p class="hint">下面的控件与各页使用同一套样式。</p>
-          <div class="ap-sample">
-            <div class="row">
-              <button class="primary">主按钮</button>
-              <button>次按钮</button>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span>低功耗</span>
+              <span class="hint">关掉背景动画、光斑与背景大图，主题脚本也会停下常驻动画。手机与 Termux 上推荐打开</span>
             </div>
-            <div class="row">
-              <span class="tag">标签</span>
-              <span class="tag ok">正常</span>
-              <button class="link">文字链接</button>
+            <div class="setting-control">
+              <label class="switch">
+                <input type="checkbox" :checked="appearance.prefs.lowPower" aria-label="低功耗" @change="updatePref('lowPower', ($event.target as HTMLInputElement).checked)" />
+                <span class="switch-track"></span>
+              </label>
             </div>
-            <input type="search" placeholder="输入框" aria-label="预览输入框" />
-            <div class="bar-slot"><div class="bar-fill" style="width: 62%"></div></div>
-            <p class="banner warn">提示条</p>
           </div>
         </section>
-      </aside>
-    </div>
+      </div>
+
+      <!-- ── 备份 ── -->
+      <div v-else key="backup">
+        <section class="card">
+          <h2><AppIcon class="btn-ico" :path="ICONS.download" />导出与导入</h2>
+          <p class="hint">一份 JSON，含所选主题、明暗之外的全部偏好与各主题之内的调整。旧版导出的文件也认。</p>
+          <div class="row">
+            <button type="button" @click="void copyConfig()"><AppIcon class="btn-ico" :path="ICONS.copy" />复制配置</button>
+            <button type="button" @click="downloadConfig()"><AppIcon class="btn-ico" :path="ICONS.download" />导出文件</button>
+            <button type="button" @click="fileInput?.click()"><AppIcon class="btn-ico" :path="ICONS.file" />导入文件</button>
+            <input ref="fileInput" type="file" accept="application/json,.json" hidden @change="void onImport($event)" />
+          </div>
+        </section>
+        <section class="card">
+          <h2><AppIcon class="btn-ico" :path="ICONS.refresh" />恢复默认</h2>
+          <p class="hint">「恢复个人偏好」只动版式与动效；「全部恢复」连主题也换回经典、撤掉每款主题之内的调整。</p>
+          <div class="row">
+            <button type="button" @click="resetPrefs(); flash('已恢复个人偏好')">恢复个人偏好</button>
+            <button type="button" class="danger" @click="resetAppearance(); flash('已全部恢复默认')">全部恢复</button>
+          </div>
+          <p class="hint">
+            主题把外观页遮住、点不到东西时：在地址后加 <code>?theme=safe</code> 打开，所有主题都不加载。
+          </p>
+        </section>
+      </div>
+    </Transition>
   </div>
 </template>
 
+<!-- 放进 base 层：主题可以换掉本页的样子，与全站其余样式同一待遇 -->
 <style scoped>
-h2 {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  margin: 0 0 var(--s2);
-  font-size: var(--fs-h2);
-  font-weight: 600;
-}
-
-.card > .hint {
-  margin: 0 0 var(--s4);
-}
-
-/* 主栏 + 右侧预览；预览在宽屏钉住，滚动调整时始终看得见效果 */
-.ap-layout {
-  display: grid;
-  gap: var(--s5);
-  align-items: start;
-}
-
-@media (min-width: 1100px) {
-  .ap-layout {
-    grid-template-columns: minmax(0, 1fr) 300px;
+@layer base {
+  h2 {
+    display: flex;
+    align-items: center;
+    gap: var(--s2);
+    margin: 0 0 var(--s2);
+    font-size: var(--fs-h2);
+    font-weight: 600;
   }
 
-  .ap-aside {
-    position: sticky;
-    top: var(--s4);
+  .card > .hint {
+    margin: 0 0 var(--s4);
   }
-}
 
-.ap-main {
-  min-width: 0;
-}
+  /* ── 主题卡片 ── */
+  .ap-themes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+    gap: var(--s3);
+  }
 
-/* ── 主题 ── */
-.ap-themes {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--s3);
-}
+  .ap-theme {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: 0;
+    overflow: hidden;
+    border-width: 2px;
+    border-radius: var(--r-card);
+    text-align: left;
+  }
 
-.ap-theme {
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--s2);
-  padding: var(--s2);
-  border-width: 2px;
-}
+  .ap-theme.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
 
-.ap-theme.active {
-  border-color: var(--accent);
-  color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-glow);
-}
+  .ap-theme-art {
+    display: grid;
+    place-items: center;
+    aspect-ratio: 16 / 9;
+    background: var(--raise);
+    border-bottom: 1px solid var(--border);
+  }
 
-/* 缩略图的配色是对「浅 / 深」本身的示意，故例外地写死，而不随当前主题翻转 */
-.ap-theme-art {
-  display: flex;
-  height: 54px;
-  overflow: hidden;
-  border-radius: var(--r-ctl);
-  border: 1px solid var(--border);
-}
+  .ap-theme-art img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
 
-.ap-theme-art i {
-  flex: 1;
-}
+  .ap-theme-none {
+    width: 28px;
+    height: 28px;
+    color: var(--muted);
+  }
 
-.ap-theme-light .ap-theme-art i,
-.ap-theme-auto .ap-theme-art i:first-child {
-  background: linear-gradient(180deg, #ffffff 0 30%, #f0f2f5 30%);
-}
+  .ap-theme-info {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s1);
+    padding: var(--s3);
+  }
 
-.ap-theme-dark .ap-theme-art i,
-.ap-theme-auto .ap-theme-art i:last-child {
-  background: linear-gradient(180deg, #1a1d27 0 30%, #0f1117 30%);
-}
+  .ap-theme-name {
+    display: flex;
+    align-items: center;
+    gap: var(--s1);
+    font-weight: 600;
+  }
 
-.ap-theme-label {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--s1);
-  font-size: var(--fs-hint);
-}
+  .ap-check {
+    color: var(--accent);
+  }
 
-/* ── 预设 ── */
-.preset-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr));
-  gap: var(--s3);
-}
+  .ap-theme-desc {
+    font-size: var(--fs-hint);
+    font-weight: 400;
+    color: var(--muted);
+  }
 
-.preset-card {
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--s3);
-  padding: var(--s3);
-  border-width: 2px;
-  border-radius: var(--r-card);
-  text-align: left;
-}
+  .ap-theme-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s1);
+    margin-top: var(--s1);
+  }
 
-.preset-card.active {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-glow);
-}
+  .ap-license {
+    margin: var(--s3) 0 0;
+  }
 
-.preset-preview {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 64px;
-  border-radius: var(--r-ctl);
-  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, var(--panel)));
-}
+  /* ── 明暗 ── */
+  .ap-schemes {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--s3);
+  }
 
-/* 「自定义」只是状态指示，不可点；用 div 画成与方案卡同形 */
-.is-custom {
-  display: flex;
-  border: 2px dashed var(--border);
-  background: var(--panel);
-  color: var(--muted);
-}
+  .ap-scheme {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--s2);
+    padding: var(--s2);
+    border-width: 2px;
+  }
 
-.is-custom.active {
-  border-style: solid;
-  color: var(--text);
-}
+  .ap-scheme.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
 
-.is-custom .preset-preview {
-  background: var(--raise);
-}
+  /* 缩略图是对「浅 / 深」本身的示意，取页面底与卡片面两级令牌，按各自的明暗写死成两块 */
+  .ap-scheme-art {
+    display: flex;
+    height: 54px;
+    overflow: hidden;
+    border-radius: var(--r-ctl);
+    border: 1px solid var(--border);
+  }
 
-.custom-ico {
-  width: 24px;
-  height: 24px;
-  color: var(--muted);
-}
+  .ap-scheme-art i {
+    flex: 1;
+  }
 
-.is-custom.active .custom-ico {
-  color: var(--accent);
-}
+  .ap-scheme-light .ap-scheme-art i,
+  .ap-scheme-auto .ap-scheme-art i:first-child {
+    background: linear-gradient(180deg, #ffffff 0 30%, #f0f2f5 30%);
+  }
 
-/* ── 配色方案 ── */
-.color-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(96px, 100%), 1fr));
-  gap: var(--s2);
-}
+  .ap-scheme-dark .ap-scheme-art i,
+  .ap-scheme-auto .ap-scheme-art i:last-child {
+    background: linear-gradient(180deg, #1a1d27 0 30%, #0f1117 30%);
+  }
 
-.color-card {
-  flex-direction: column;
-  align-items: center;
-  gap: var(--s2);
-  padding: var(--s3) var(--s2);
-  border-width: 2px;
-  border-radius: var(--r-card);
-  box-shadow: none;
-}
+  .ap-scheme-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--s1);
+    font-size: var(--fs-hint);
+  }
 
-.color-card.active {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-glow);
-}
+  /* ── 设置行 ── */
+  .setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--s3) var(--s4);
+    padding: var(--s4) 0;
+    border-bottom: 1px solid var(--border);
+  }
 
-.color-dot {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--r-pill);
-  box-shadow: 0 0 0 3px var(--panel), 0 0 0 4px var(--border);
-}
+  .setting-row:last-of-type {
+    border-bottom: none;
+  }
 
-.color-name {
-  font-size: var(--fs-hint);
-}
+  .setting-row.locked {
+    opacity: 0.55;
+  }
 
-.hue-row {
-  display: flex;
-  align-items: center;
-  gap: var(--s3);
-  margin-top: var(--s4);
-}
+  .setting-label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1 1 200px;
+  }
 
-.hue-row .hue-slider {
-  flex: 1;
-  width: auto;
-}
+  .setting-label > span:first-child {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s2);
+    font-weight: 600;
+  }
 
-.preview-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 64px;
-  padding: 6px;
-  background: rgb(255 255 255 / 35%);
-  border: 1px solid rgb(255 255 255 / 55%);
-}
+  .setting-label .hint {
+    margin: 0;
+  }
 
-.preview-card i {
-  height: 4px;
-  border-radius: 2px;
-  background: rgb(255 255 255 / 75%);
-}
+  .setting-control {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s2);
+  }
 
-.preview-card i:nth-child(2) {
-  width: 60%;
-}
+  .option-btn {
+    flex-direction: column;
+    gap: 0;
+    min-width: 72px;
+    padding: var(--s2) var(--s3);
+  }
 
-.preview-card b {
-  align-self: flex-end;
-  width: 22px;
-  height: 8px;
-  background: rgb(255 255 255 / 90%);
-}
+  .option-btn.active {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+    color: var(--accent);
+  }
 
-.preset-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
+  .option-label {
+    font-size: var(--fs-hint);
+  }
 
-.preset-name {
-  display: flex;
-  align-items: center;
-  gap: var(--s1);
-  font-weight: 600;
-  font-size: var(--fs-body);
-}
+  .option-desc {
+    font-size: var(--fs-label);
+    font-weight: 400;
+    color: var(--muted);
+  }
 
-.preset-check {
-  color: var(--accent);
-}
+  /* ── 强调色 ── */
+  .color-dot {
+    width: 28px;
+    height: 28px;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    border-radius: var(--r-pill);
+    box-shadow: 0 0 0 3px var(--panel), 0 0 0 4px var(--border);
+  }
 
-.preset-desc {
-  font-size: var(--fs-label);
-  font-weight: 400;
-  color: var(--muted);
-}
+  .color-dot.active {
+    box-shadow: 0 0 0 3px var(--panel), 0 0 0 5px var(--text);
+  }
 
-/* ── 设置行 ── */
-.setting-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--s3) var(--s4);
-  padding: var(--s4) 0;
-  border-bottom: 1px solid var(--border);
-}
+  .hue-slider {
+    width: 160px;
+    height: 6px;
+    padding: 0;
+    border: none;
+    -webkit-appearance: none;
+    appearance: none;
+    border-radius: var(--r-pill);
+    background: linear-gradient(
+      to right,
+      hsl(0 84% 62%),
+      hsl(60 84% 62%),
+      hsl(120 84% 62%),
+      hsl(180 84% 62%),
+      hsl(240 84% 62%),
+      hsl(300 84% 62%),
+      hsl(360 84% 62%)
+    );
+  }
 
-.setting-row:last-child {
-  border-bottom: none;
-}
+  .hue-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--panel);
+    border: 2px solid var(--accent);
+    cursor: pointer;
+  }
 
-.setting-label {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1 1 200px;
-}
+  .hue-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--panel);
+    border: 2px solid var(--accent);
+    cursor: pointer;
+  }
 
-.setting-label > span:first-child {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s2);
-  font-weight: 600;
-}
-
-.setting-label .hint {
-  margin: 0;
-}
-
-.setting-control {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s2);
-}
-
-.option-btn {
-  flex-direction: column;
-  gap: 0;
-  min-width: 72px;
-  padding: var(--s2) var(--s3);
-  box-shadow: none;
-}
-
-.option-btn.active {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
-  color: var(--accent);
-}
-
-.option-label {
-  font-size: var(--fs-hint);
-}
-
-.option-desc {
-  font-size: var(--fs-label);
-  font-weight: 400;
-  color: var(--muted);
-}
-
-/* ── 色相滑块 ── */
-.hue-slider {
-  width: 140px;
-  height: 6px;
-  padding: 0;
-  border: none;
-  -webkit-appearance: none;
-  appearance: none;
-  border-radius: var(--r-pill);
-  background: linear-gradient(
-    to right,
-    hsl(0 84% 67%),
-    hsl(60 84% 67%),
-    hsl(120 84% 67%),
-    hsl(180 84% 67%),
-    hsl(240 84% 67%),
-    hsl(300 84% 67%),
-    hsl(360 84% 67%)
-  );
-}
-
-.hue-slider:focus {
-  box-shadow: 0 0 0 3px var(--accent-glow);
-}
-
-.hue-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--panel);
-  border: 2px solid var(--accent);
-  cursor: pointer;
-}
-
-.hue-slider::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--panel);
-  border: 2px solid var(--accent);
-  cursor: pointer;
-}
-
-.hue-value {
-  min-width: 40px;
-  font-family: var(--font-mono);
-  font-size: var(--fs-label);
-  color: var(--muted);
-}
-
-/* ── 开关 ── */
-.toggle-btn {
-  gap: var(--s2);
-  padding: var(--s1);
-  border: none;
-  background: transparent;
-  box-shadow: none;
-}
-
-.toggle-btn:hover:not(:disabled) {
-  background: transparent;
-  box-shadow: none;
-}
-
-.toggle-track {
-  position: relative;
-  width: 36px;
-  height: 20px;
-  border-radius: var(--r-pill);
-  background: var(--border-strong);
-  transition: background-color var(--dur-1) var(--ease);
-}
-
-.toggle-btn.active .toggle-track {
-  background: var(--accent-solid);
-}
-
-.toggle-thumb {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--panel);
-  transition: transform var(--dur-2) var(--ease-spring);
-}
-
-.toggle-btn.active .toggle-thumb {
-  transform: translateX(16px);
-}
-
-.toggle-label {
-  font-size: var(--fs-hint);
-  color: var(--muted);
-}
-
-.toggle-btn.active .toggle-label {
-  color: var(--accent);
-}
-
-/* ── 预览 ── */
-.ap-sample {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s3);
-}
-
-.ap-sample .banner {
-  margin: 0;
-}
-
-.actions {
-  display: flex;
-  justify-content: flex-end;
+  .actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: var(--s3);
+  }
 }
 </style>

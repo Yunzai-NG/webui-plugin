@@ -19,6 +19,7 @@
  */
 import { onMounted, onUnmounted, ref } from "vue"
 import { ICONS } from "../icons.js"
+import { runToastAction } from "../toast.js"
 import type { Toast } from "../toast.js"
 import AppIcon from "./AppIcon.vue"
 
@@ -82,6 +83,7 @@ onUnmounted(stop)
   -->
   <div
     class="toast"
+    data-part="toast"
     :class="{ paused }"
     :style="{ '--toast-ms': `${toast.ms}ms` }"
     @mouseenter="pause"
@@ -91,6 +93,9 @@ onUnmounted(stop)
   >
     <AppIcon class="toast-ico" :path="ICONS.check" />
     <p class="toast-text">{{ toast.text }}</p>
+    <button v-if="toast.action" class="toast-act" type="button" @click="void runToastAction(toast.id)">
+      {{ toast.action }}
+    </button>
     <!--
       关闭钮一直在场，不只在悬停时出现：读完就想收走是常事，而一枚要先找才出现的钮
       等于没有。它同时是「暂停」的键盘入口 —— Tab 到它上面，上方的 `focusin` 即停表。

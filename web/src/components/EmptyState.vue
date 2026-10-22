@@ -18,8 +18,8 @@ defineProps<{
 </script>
 
 <template>
-  <div class="empty">
-    <span class="empty-art" aria-hidden="true">
+  <div class="empty" data-part="empty">
+    <span class="empty-art" data-part="empty.art" aria-hidden="true">
       <svg class="empty-orbit" viewBox="0 0 96 96">
         <circle cx="48" cy="48" r="44" />
         <circle cx="48" cy="48" r="32" />

@@ -379,7 +379,7 @@ onUnmounted(() => {
       <p v-if="file" class="hint mono">{{ file }}</p>
     </div>
 
-    <div ref="box" class="logs mono">
+    <div ref="box" class="logs mono" data-part="logs">
       <!-- 量字符步进用的探针：字族字号由 `.logs` 继承而来，不在 JS 里另写一份字体常量 -->
       <span ref="probe" class="log-probe" aria-hidden="true">{{ PROBE_TEXT }}</span>
 
