@@ -71,7 +71,7 @@ const DOC_GROUPS: readonly DocGroup[] = [
       { title: "一览与两个市场", desc: "官方插件有哪些、各自装在哪个市场", path: "official-plugins" },
       { title: "插件商店", desc: "浏览插件索引里的全部插件，与本面板的插件市场同源", path: "store" },
       { title: "webui（面板）", desc: "本面板自身：十个页面、面板插件的宿主与商店", path: "plugins/webui" },
-      { title: "adapter-napcat（QQ）", desc: "经 NapCat 或 LLOneBot 接入 QQ 的适配器", path: "plugins/adapter-napcat" },
+      { title: "adapter-onebot（QQ）", desc: "经 NapCat 或 LLOneBot 接入 QQ 的 OneBot v11 适配器", path: "plugins/adapter-onebot" },
       { title: "adapter-qqbot（QQ 官方）", desc: "QQ 开放平台机器人：群、私聊与频道", path: "plugins/adapter-qqbot" },
       { title: "adapter-stdin（终端调试）", desc: "把终端当账号，没有 QQ 环境时调试命令", path: "plugins/adapter-stdin" },
       { title: "renderer-puppeteer（出图）", desc: "无头浏览器渲染器，模板转图片", path: "plugins/renderer-puppeteer" },

@@ -2,6 +2,12 @@
 
 格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## 0.7.2 — 2026-10-22
+
+### 变更
+
+- OneBot v11 适配器改名 adapter-onebot：帮助页的入口与账号页空状态的提示随之改名，链到新的文档页。
+
 ## 0.7.1 — 2026-10-22
 
 ### 变更

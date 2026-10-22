@@ -30,7 +30,7 @@ describe("judgeRequest", () => {
 
   it("配置不在白名单里", () => {
     // 内核的 GET config/:name 刻意不脱敏，带着面板令牌与适配器的连接密钥
-    for (const path of ["config", "config/yunzai", "config/adapter-napcat"]) {
+    for (const path of ["config", "config/yunzai", "config/adapter-onebot"]) {
       expect(judgeRequest(ask({ path }), "demo").act).toBe("deny")
     }
     expect(allowedPaths().some(item => item.startsWith("config"))).toBe(false)

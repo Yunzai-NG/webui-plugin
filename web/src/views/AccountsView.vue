@@ -559,7 +559,7 @@ onUnmounted(() => {
       <EmptyState
         :icon="ICONS.layers"
         title="还没有可用的适配器"
-        hint="账号要由适配器插件接入。先在插件市场装一个（如 adapter-napcat），在插件页确认已加载后，这里会按适配器分出页签。"
+        hint="账号要由适配器插件接入。先在插件市场装一个（如 adapter-onebot），在插件页确认已加载后，这里会按适配器分出页签。"
       >
         <a class="button primary" :href="hrefOf('market')">去插件市场</a>
       </EmptyState>

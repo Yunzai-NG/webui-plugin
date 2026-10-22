@@ -110,7 +110,7 @@ describe("tagFacets", () => {
 
 describe("initialOf", () => {
   it("按包名取首字母并大写", () => {
-    expect(initialOf("adapter-napcat")).toBe("A")
+    expect(initialOf("adapter-onebot")).toBe("A")
     expect(initialOf("webui")).toBe("W")
   })
 
@@ -143,7 +143,7 @@ describe("initialsOf", () => {
   })
 
   it("同一字母下有多条时只列一次", () => {
-    expect(initialsOf([itemOf({ name: "adapter-napcat" }), itemOf({ name: "adapter-qqbot" })])).toEqual(["A"])
+    expect(initialsOf([itemOf({ name: "adapter-onebot" }), itemOf({ name: "adapter-qqbot" })])).toEqual(["A"])
   })
 })
 

@@ -9,7 +9,7 @@
  *          任意前缀之下，而 History 模式要求在构建期即确定前缀。
  *
  *          查询参数暴露为 `currentQuery`：插件列表跳转至配置页需携带目标配置名
- *          （`#/config?name=adapter-napcat`），丢弃查询串会让跨页跳转只落在第一份配置上。
+ *          （`#/config?name=adapter-onebot`），丢弃查询串会让跨页跳转只落在第一份配置上。
  */
 import { ref, type Ref } from "vue"
 
