@@ -74,7 +74,7 @@ const BEAT_MS = 30_000
 const COLLAPSE_KEY = "yunzai-ng.sidebar-collapsed"
 
 /** 品牌图标，与 index.html 的 favicon 同一个文件 */
-const MARK = "logo.svg"
+const MARK = "logo.png"
 
 /** 清除令牌一项的图标：一支向右的箭头，读作「离开」 */
 const SIGN_OUT = "M13 6l6 6-6 6M19 12H5"

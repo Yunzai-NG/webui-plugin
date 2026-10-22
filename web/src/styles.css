@@ -596,16 +596,10 @@ h3 {
   border-bottom: 1px solid var(--border);
 }
 
-/*
- * 品牌图标：圆角方形 + 柔和阴影 + 渐变底
- *
- * `logo.svg` 自带深色底，压在深色模式的面色上两者相近，只剩中间的图形浮着、
- * 方块边界看不出来。浅色模式下这道描边被深色底盖住，不产生额外观感。
- */
+/* 品牌图标：透明底彩色图形，深浅两底直接用，不加框 */
 .brand-mark {
   flex: none;
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  object-fit: contain;
 }
 
 /* 侧栏内品牌名与版本徽标改为上下两行：220px 一行放不下「名称 + 徽标 + 折叠按钮」 */

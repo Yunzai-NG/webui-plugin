@@ -1,6 +1,6 @@
 {
   "name": "theme-pumpkin",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": true,
   "description": "YUNZAI NG：南瓜橙 + 云青，深夜蓝底",
   "author": "Yunzai-NG",
@@ -30,7 +30,7 @@
       }
     },
     "slots": {
-      "brand.mark": "art/logo-rounded.svg",
+      "brand.mark": "art/logo-mark.png",
       "brand.lockup": { "light": "art/logo-lockup.svg", "dark": "art/logo-lockup-ondark.svg" },
       "frame.card": { "image": "art/frame-card.svg", "slice": 48, "width": "24px" },
       "frame.widget": { "image": "art/frame-widget.svg", "slice": 32, "width": "16px", "outset": "8px" },
