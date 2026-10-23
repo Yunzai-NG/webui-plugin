@@ -16,7 +16,7 @@
  */
 
 /** 地址栏颜色，与 theme.css 的 `--bg` 一致 */
-const BAR = { light: "#faf7f2", dark: "#0b1220" }
+const BAR = { light: "#f7f8fe", dark: "#0a0f1f" }
 
 /** 一次撒几颗种子 */
 const SEEDS = 7

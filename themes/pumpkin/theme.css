@@ -1,8 +1,7 @@
 /*
  * YUNZAI NG（id 为 pumpkin）
  *
- * 南瓜橙主色、云青辅色，取自品牌图标：橙是南瓜台，青是那朵云。深色是主场 —— 深夜蓝底上
- * 暖橙与云青的光晕才「亮」得起来；浅色取暖白。
+ * 南瓜用黄橙红，云与光环用青蓝紫；浅色底偏蓝白，深色底偏靛蓝。
  *
  * 只写与经典不同的地方，其余落回经典（webui 的 styles.css）。整份文件由面板包进 `@layer theme`，
  * 故这里的同名规则盖得过面板默认样式，又盖不过面板插件在自己地盘里写的样式。
@@ -40,32 +39,35 @@
 :root {
   --font-ui: "Nunito", "Manrope", system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
 
-  --bg: #faf7f2;
+  --bg: #f7f8fe;
   --panel: #ffffff;
-  --raise: #f6efe6;
-  --border: #ece3d6;
-  --border-strong: #d9cbb7;
-  --text: #2a211a;
-  --muted: #7b6d5f;
+  --raise: #eff2fc;
+  --border: #e0e5f4;
+  --border-strong: #c4cee6;
+  --text: #252a3b;
+  --muted: #636c82;
 
-  --accent: #d0661f;
-  --accent-solid: #e8792e;
+  --accent: #c24a08;
+  --accent-solid: #ff973c;
   --on-accent: #2a1405;
-  --accent-glow: rgb(232 121 46 / 18%);
-  --accent-2: #2b9ad6;
+  --accent-glow: rgb(255 151 60 / 18%);
+  --accent-2: #0978b8;
+  --pk-violet: #8a44f5;
+  --pk-cloud: linear-gradient(120deg, #10b9f5, #4a5ff0 55%, #a046f7);
+  --pk-ember: linear-gradient(120deg, #ffc94c, #ff973c 55%, #fc5a4f);
 
-  --info: #2b9ad6;
+  --info: #0978b8;
   --ok: #1f9d6b;
   --warn: #c98a12;
   --err: #d64545;
-  --code-bg: #fbf6ef;
+  --code-bg: #f0f3fc;
 
-  --bg-gradient-1: rgb(244 167 98 / 28%);
-  --bg-gradient-2: rgb(140 202 238 / 26%);
-  --bg-gradient-3: rgb(250 247 242 / 0%);
+  --bg-gradient-1: rgb(16 186 245 / 14%);
+  --bg-gradient-2: rgb(160 70 247 / 12%);
+  --bg-gradient-3: rgb(255 151 60 / 8%);
 
-  --scrollbar-thumb: rgb(208 102 31 / 30%);
-  --scrollbar-thumb-hover: rgb(208 102 31 / 60%);
+  --scrollbar-thumb: rgb(194 74 8 / 30%);
+  --scrollbar-thumb-hover: rgb(194 74 8 / 60%);
 
   /* 卡片的描边改由内阴影画（见下），这两枚是它的颜色 */
   --pk-stroke: var(--border);
@@ -73,36 +75,39 @@
 }
 
 :root[data-scheme="dark"] {
-  --bg: #0b1220;
-  --panel: #121b2e;
-  --raise: #18233a;
-  --border: #22304d;
-  --border-strong: #31436a;
-  --text: #edf1f8;
-  --muted: #8e9ab3;
+  --bg: #0a0f1f;
+  --panel: #131b30;
+  --raise: #1c2640;
+  --border: #283353;
+  --border-strong: #3b4b73;
+  --text: #edf1fb;
+  --muted: #a0adc7;
 
-  --accent: #ff9d55;
-  --accent-solid: #f08a3c;
+  --accent: #ffb45c;
+  --accent-solid: #ffa95c;
   --on-accent: #1c0e04;
-  --accent-glow: rgb(255 157 85 / 22%);
-  --accent-2: #63c7f2;
+  --accent-glow: rgb(255 169 92 / 22%);
+  --accent-2: #4fd3fb;
+  --pk-violet: #b98cff;
+  --pk-cloud: linear-gradient(120deg, #4fd3fb, #8a9bff 55%, #c48dff);
+  --pk-ember: linear-gradient(120deg, #ffd36b, #ffa95c 55%, #ff7a6b);
 
-  --info: #63c7f2;
+  --info: #4fd3fb;
   --ok: #4fd39a;
   --warn: #f5c46b;
   --err: #ff7a7a;
   --code-bg: #0e1626;
 
-  --bg-gradient-1: rgb(240 138 60 / 20%);
-  --bg-gradient-2: rgb(79 182 232 / 16%);
-  --bg-gradient-3: rgb(11 18 32 / 0%);
+  --bg-gradient-1: rgb(79 211 251 / 12%);
+  --bg-gradient-2: rgb(196 141 255 / 13%);
+  --bg-gradient-3: rgb(255 169 92 / 8%);
 
-  --scrollbar-thumb: rgb(255 157 85 / 26%);
-  --scrollbar-thumb-hover: rgb(255 157 85 / 55%);
-  --shadow-float: 0 18px 40px -12px rgb(0 0 0 / 70%), 0 0 36px -18px rgb(255 157 85 / 35%);
+  --scrollbar-thumb: rgb(255 169 92 / 26%);
+  --scrollbar-thumb-hover: rgb(255 169 92 / 55%);
+  --shadow-float: 0 18px 40px -12px rgb(0 0 0 / 70%), 0 0 36px -18px rgb(138 155 255 / 25%);
 }
 
-/* 背景档位选「渐变」时：两团光晕（暖橙在左上、云青在右下），正常混合 —— 经典那套 soft-light 会把橙压没 */
+/* 背景渐变沿图标的云从青到紫，卡片面保持实底 */
 :root[data-backdrop="gradient"] body {
   background-image:
     radial-gradient(ellipse 70% 55% at 0% 0%, var(--bg-gradient-1), transparent 70%),
@@ -117,9 +122,9 @@ h2,
   letter-spacing: -0.01em;
 }
 
-/* 主按钮：橙到云青的一道斜渐变，悬停时光晕从橙转青 */
+/* 主按钮取南瓜的黄橙红，不把橙与青混成灰色 */
 button.primary {
-  background: linear-gradient(120deg, var(--accent-solid), color-mix(in srgb, var(--accent-solid) 70%, var(--accent-2)));
+  background: var(--pk-ember);
   border-color: transparent;
   color: var(--on-accent);
   font-weight: 700;
@@ -140,7 +145,7 @@ button.primary:hover:not(:disabled) {
 }
 
 [data-part~="tab.ink"] {
-  background: linear-gradient(120deg, var(--accent-solid), color-mix(in srgb, var(--accent-solid) 70%, var(--accent-2)));
+  background: var(--pk-ember);
   box-shadow: 0 8px 20px -12px var(--accent-2);
 }
 
@@ -170,12 +175,9 @@ button.primary:hover:not(:disabled) {
   box-shadow: inset 0 0 0 1px var(--pk-stroke-hover);
 }
 
-/* 计数块的数字：橙到青的渐变字；出错的那块（.bad）保持错误色，不被渐变盖掉 */
+/* 数字使用南瓜强调色，避免橙与青混合后变灰 */
 .stat:not(.bad) .stat-value {
-  background: linear-gradient(120deg, var(--accent), var(--accent-2));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--accent);
 }
 
 /* 页头图标取辅色，与主色错开 */
@@ -223,10 +225,10 @@ button.primary:hover:not(:disabled) {
   height: 16px;
 }
 
-/* 模态与提示条：上沿一道橙到青的细线 */
+/* 模态与提示条：上沿一道云的青蓝紫细线 */
 [data-part~="modal"],
 [data-part~="toast"] {
-  background-image: linear-gradient(90deg, var(--accent-solid), var(--accent-2));
+  background-image: var(--pk-cloud);
   background-size: 100% 3px;
   background-repeat: no-repeat;
 }
@@ -273,9 +275,9 @@ button.primary:hover:not(:disabled) {
   inset: -20%;
   z-index: -1;
   background:
-    radial-gradient(closest-side at 25% 30%, rgb(240 138 60 / 34%), transparent),
-    radial-gradient(closest-side at 75% 35%, rgb(79 182 232 / 30%), transparent),
-    radial-gradient(closest-side at 50% 80%, rgb(130 110 255 / 20%), transparent);
+    radial-gradient(closest-side at 25% 30%, rgb(16 186 245 / 20%), transparent),
+    radial-gradient(closest-side at 75% 35%, rgb(136 66 248 / 18%), transparent),
+    radial-gradient(closest-side at 50% 80%, rgb(255 151 60 / 14%), transparent);
   animation: pk-aurora 22s ease-in-out infinite alternate;
 }
 

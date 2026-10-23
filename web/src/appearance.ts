@@ -121,8 +121,12 @@ export const CLASSIC_INFO: ActiveThemeInfo = {
   defaultBackdrop: "gradient"
 }
 
+/** 默认色相，与经典主题的 --accent-hue 一致 */
+export const DEFAULT_ACCENT_HUE = 232
+
 /** 配色预设：只是几个常用的色相，点了即写进当前主题的 `accentHue` */
 export const COLOR_PRESETS: readonly { id: string; name: string; hue: number }[] = [
+  { id: "cloud", name: "云蓝", hue: DEFAULT_ACCENT_HUE },
   { id: "indigo", name: "靛紫", hue: 239 },
   { id: "ocean", name: "海湾", hue: 199 },
   { id: "forest", name: "松林", hue: 152 },

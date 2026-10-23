@@ -1,13 +1,13 @@
 {
   "name": "theme-classic",
-  "version": "0.7.0",
+  "version": "0.7.3",
   "private": true,
-  "description": "webui 的经典外观，也是所有主题的兜底层",
+  "description": "webui 的经典外观：云蓝与云青，也是所有主题的兜底层",
   "author": "Yunzai-NG",
   "webuiTheme": {
     "id": "classic",
     "name": "经典",
-    "description": "面板一直以来的样子：干净的浅灰底与深夜底，强调色可随意调。别的主题没写的部分都从这里取。",
+    "description": "新装默认：云蓝主色、云青辅色，蓝白底与深夜靛蓝底，强调色可随意调。别的主题没写的部分都从这里取。",
     "license": "AGPL-3.0-or-later",
     "schemes": ["light", "dark"],
     "preview": "preview.svg",

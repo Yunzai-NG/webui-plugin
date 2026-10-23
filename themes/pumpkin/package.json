@@ -1,13 +1,13 @@
 {
   "name": "theme-pumpkin",
-  "version": "0.7.1",
+  "version": "0.7.3",
   "private": true,
-  "description": "YUNZAI NG：南瓜橙 + 云青，深夜蓝底",
+  "description": "YUNZAI NG：南瓜黄橙红 + 云的青蓝紫",
   "author": "Yunzai-NG",
   "webuiTheme": {
     "id": "pumpkin",
     "name": "YUNZAI NG",
-    "description": "南瓜橙主色、云青辅色，深夜蓝底。整套南瓜图标与插图、睡着与醒来的南瓜开关、组件格子边上长出的芽、南瓜田登录页与终端框日志，拨开关时会撒出几颗种子。",
+    "description": "根据新品牌图标配色：南瓜黄橙红、云与光环青蓝紫，蓝白与深夜靛蓝两套底色。整套导航图标与插图、南瓜开关、藤蔓边框、南瓜田登录页与终端框日志；拨开撒种子、拨关落叶，卡片随鼠标轻轻倾斜。",
     "license": "AGPL-3.0-or-later；字体 Nunito 为 OFL-1.1",
     "schemes": ["light", "dark"],
     "style": "theme.css",

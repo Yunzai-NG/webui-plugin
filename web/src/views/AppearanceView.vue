@@ -16,6 +16,7 @@ import PageHeader from "../components/PageHeader.vue"
 import TabBar from "../components/TabBar.vue"
 import {
   COLOR_PRESETS,
+  DEFAULT_ACCENT_HUE,
   appearance,
   chooseTheme,
   effectiveOverrides,
@@ -275,7 +276,7 @@ function flash(text: string): void {
                 :key="c.id"
                 type="button"
                 class="color-dot"
-                :class="{ active: live.accentHue === c.hue }"
+                :class="{ active: currentTheme.options.accentHue && (live.accentHue ?? DEFAULT_ACCENT_HUE) === c.hue }"
                 :style="{ background: accentColor(c.hue) }"
                 :title="c.name"
                 :aria-label="`强调色：${c.name}`"
@@ -289,7 +290,7 @@ function flash(text: string): void {
                 step="1"
                 class="hue-slider"
                 aria-label="强调色色相"
-                :value="own.accentHue ?? 239"
+                :value="own.accentHue ?? DEFAULT_ACCENT_HUE"
                 :disabled="!currentTheme.options.accentHue"
                 @input="onHue"
               />

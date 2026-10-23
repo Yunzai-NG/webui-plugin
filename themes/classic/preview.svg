@@ -4,31 +4,31 @@
     <clipPath id="r"><rect x="160" width="160" height="180"/></clipPath>
   </defs>
   <g clip-path="url(#l)">
-    <rect width="320" height="180" fill="#f0f2f5"/>
+    <rect width="320" height="180" fill="#f3f5fc"/>
     <rect width="56" height="180" fill="#ffffff"/>
-    <rect x="12" y="14" width="32" height="8" rx="4" fill="#6366f1"/>
-    <rect x="12" y="34" width="32" height="5" rx="2.5" fill="#cdd3dc"/>
-    <rect x="12" y="46" width="26" height="5" rx="2.5" fill="#cdd3dc"/>
-    <rect x="12" y="58" width="30" height="5" rx="2.5" fill="#cdd3dc"/>
-    <rect x="70" y="16" width="236" height="66" rx="10" fill="#ffffff" stroke="#e4e8ed"/>
-    <rect x="82" y="30" width="60" height="7" rx="3.5" fill="#1e2128"/>
-    <rect x="82" y="46" width="110" height="5" rx="2.5" fill="#cdd3dc"/>
-    <rect x="82" y="60" width="44" height="12" rx="6" fill="#6366f1"/>
-    <rect x="70" y="94" width="114" height="70" rx="10" fill="#ffffff" stroke="#e4e8ed"/>
-    <circle cx="127" cy="129" r="20" fill="none" stroke="#e4e8ed" stroke-width="6"/>
-    <path d="M127 109a20 20 0 0 1 19 14" fill="none" stroke="#6366f1" stroke-width="6" stroke-linecap="round"/>
+    <rect x="12" y="14" width="32" height="8" rx="4" fill="#253ff0"/>
+    <rect x="12" y="34" width="32" height="5" rx="2.5" fill="#c5cde6"/>
+    <rect x="12" y="46" width="26" height="5" rx="2.5" fill="#c5cde6"/>
+    <rect x="12" y="58" width="30" height="5" rx="2.5" fill="#c5cde6"/>
+    <rect x="70" y="16" width="236" height="66" rx="10" fill="#ffffff" stroke="#e1e5f3"/>
+    <rect x="82" y="30" width="60" height="7" rx="3.5" fill="#202637"/>
+    <rect x="82" y="46" width="110" height="5" rx="2.5" fill="#c5cde6"/>
+    <rect x="82" y="60" width="44" height="12" rx="6" fill="#253ff0"/>
+    <rect x="70" y="94" width="114" height="70" rx="10" fill="#ffffff" stroke="#e1e5f3"/>
+    <circle cx="127" cy="129" r="20" fill="none" stroke="#e1e5f3" stroke-width="6"/>
+    <path d="M127 109a20 20 0 0 1 19 14" fill="none" stroke="#253ff0" stroke-width="6" stroke-linecap="round"/>
   </g>
   <g clip-path="url(#r)">
-    <rect width="320" height="180" fill="#0f1117"/>
-    <rect x="70" y="16" width="236" height="66" rx="10" fill="#1a1d27" stroke="#2d3348"/>
-    <rect x="82" y="30" width="60" height="7" rx="3.5" fill="#e8eaf0"/>
-    <rect x="82" y="46" width="110" height="5" rx="2.5" fill="#3d4460"/>
-    <rect x="82" y="60" width="44" height="12" rx="6" fill="#818cf8"/>
-    <rect x="192" y="94" width="114" height="70" rx="10" fill="#1a1d27" stroke="#2d3348"/>
-    <rect x="206" y="110" width="50" height="7" rx="3.5" fill="#e8eaf0"/>
-    <rect x="206" y="126" width="86" height="8" rx="4" fill="#232733"/>
-    <rect x="206" y="126" width="56" height="8" rx="4" fill="#818cf8"/>
-    <rect x="206" y="144" width="70" height="8" rx="4" fill="#232733"/>
+    <rect width="320" height="180" fill="#0a0f1f"/>
+    <rect x="70" y="16" width="236" height="66" rx="10" fill="#131b30" stroke="#283353"/>
+    <rect x="82" y="30" width="60" height="7" rx="3.5" fill="#edf1fb"/>
+    <rect x="82" y="46" width="110" height="5" rx="2.5" fill="#3b4b73"/>
+    <rect x="82" y="60" width="44" height="12" rx="6" fill="#8493f5"/>
+    <rect x="192" y="94" width="114" height="70" rx="10" fill="#131b30" stroke="#283353"/>
+    <rect x="206" y="110" width="50" height="7" rx="3.5" fill="#edf1fb"/>
+    <rect x="206" y="126" width="86" height="8" rx="4" fill="#1c2640"/>
+    <rect x="206" y="126" width="56" height="8" rx="4" fill="#8493f5"/>
+    <rect x="206" y="144" width="70" height="8" rx="4" fill="#1c2640"/>
     <rect x="206" y="144" width="30" height="8" rx="4" fill="#fbbf24"/>
   </g>
 </svg>

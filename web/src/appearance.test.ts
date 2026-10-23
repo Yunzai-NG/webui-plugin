@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 import {
   CLASSIC_INFO,
+  COLOR_PRESETS,
+  DEFAULT_ACCENT_HUE,
   DEFAULT_PREFS,
   DEFAULT_THEME,
   backdropOf,
@@ -39,6 +41,13 @@ describe("readAppearance", () => {
   it("新装默认是经典主题", () => {
     expect(readAppearance(null).theme).toBe(DEFAULT_THEME)
     expect(DEFAULT_THEME).toBe("classic")
+  })
+
+  it("默认云蓝预设与默认色相一致，不覆盖已保存的个人色相", () => {
+    expect(DEFAULT_ACCENT_HUE).toBe(232)
+    expect(COLOR_PRESETS.find(p => p.id === "cloud")?.hue).toBe(DEFAULT_ACCENT_HUE)
+    expect(readAppearance(JSON.stringify({ version: 2, theme: "classic", perTheme: { classic: { accentHue: 239 } } })).perTheme.classic)
+      .toEqual({ accentHue: 239 })
   })
 
   it("读回自己写的 v2", () => {

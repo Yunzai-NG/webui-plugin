@@ -106,23 +106,22 @@
  * 全表见 docs 的「设计令牌」一页。
  */
 :root {
-  /* 中性：底 → 面 → 面·浮起 三级层次 - 干净明亮 */
-  --bg: #f0f2f5;
+  /* 中性：蓝白底与独立的卡片面 */
+  --bg: #f3f5fc;
   --panel: #ffffff;
-  --raise: #f6f8fa;
-  --border: #e4e8ed;
-  --border-strong: #cdd3dc;
-  --text: #1e2128;
-  --muted: #6b7280;
+  --raise: #eef1fb;
+  --border: #e1e5f3;
+  --border-strong: #c5cde6;
+  --text: #202637;
+  --muted: #626d83;
 
-  /* 主色：基于色相的优雅蓝紫，可通过 --accent-hue 自定义 */
-  --accent-hue: 239;
-  --accent: hsl(var(--accent-hue), 84%, 67%);
-  --accent-solid: hsl(var(--accent-hue), 78%, 56%);
+  /* 主色取图标的蓝，辅色取云青；色相仍可在外观页调整 */
+  --accent-hue: 232;
+  --accent: hsl(var(--accent-hue), 78%, 45%);
+  --accent-solid: hsl(var(--accent-hue), 78%, 52%);
   --on-accent: #ffffff;
-  --accent-glow: hsla(var(--accent-hue), 84%, 67%, 0.15);
-  /* 辅色：渐变与图表的第二支颜色。经典里取主色相偏 40°，主题可换成一支完全不同的颜色 */
-  --accent-2: hsl(calc(var(--accent-hue) - 40), 78%, 58%);
+  --accent-glow: hsla(var(--accent-hue), 78%, 52%, 0.15);
+  --accent-2: hsl(calc(var(--accent-hue) - 34), 85%, 34%);
 
   /* 语义 - 柔和饱和度 */
   --info: #3b82f6;
@@ -217,9 +216,9 @@
   --line: var(--border);
 
   /* 背景渐变 - 干净明亮 */
-  --bg-gradient-1: #eef1f8;
-  --bg-gradient-2: #f0edf8;
-  --bg-gradient-3: #eaf0f8;
+  --bg-gradient-1: #e2f4ff;
+  --bg-gradient-2: #ece7ff;
+  --bg-gradient-3: #e6edff;
 
   color-scheme: light;
 }
@@ -228,26 +227,25 @@
  * 深色模式：只移动颜色，不改结构
  *
  * 层级关系在两种模式下必须一致 —— 浅色下主按钮显眼，深色下同样显眼。
- * 深色模式的主按钮是**深字压金底**：金底配白字必然不过对比度。
+ * 深色模式的主按钮用深字压亮蓝底。
  *
  * 判据是 `<html data-scheme="dark">`，不是 `prefers-color-scheme`（见文件头）。
  */
 :root[data-scheme="dark"] {
-  /* 深色模式 - 深邃高级感 */
-  --bg: #0f1117;
-  --panel: #1a1d27;
-  --raise: #232733;
-  --border: #2d3348;
-  --border-strong: #3d4460;
-  --text: #e8eaf0;
-  --muted: #8b92a5;
+  --bg: #0a0f1f;
+  --panel: #131b30;
+  --raise: #1c2640;
+  --border: #283353;
+  --border-strong: #3b4b73;
+  --text: #edf1fb;
+  --muted: #a0adc7;
 
-  /* 深色模式主色 - 基于色相的更亮蓝紫 */
-  --accent: hsl(var(--accent-hue), 84%, 74%);
-  --accent-solid: hsl(var(--accent-hue), 84%, 67%);
-  --on-accent: #ffffff;
-  --accent-glow: hsla(var(--accent-hue), 84%, 74%, 0.25);
-  --accent-2: hsl(calc(var(--accent-hue) - 40), 80%, 70%);
+  /* 深色以亮蓝与云青提供对比，按钮用深字 */
+  --accent: hsl(var(--accent-hue), 90%, 79%);
+  --accent-solid: hsl(var(--accent-hue), 85%, 74%);
+  --on-accent: #0a1028;
+  --accent-glow: hsla(var(--accent-hue), 85%, 74%, 0.22);
+  --accent-2: hsl(calc(var(--accent-hue) - 34), 90%, 76%);
 
   /* 深色模式语义色 */
   --info: #60a5fa;
@@ -262,9 +260,9 @@
   --scrim: rgb(0 0 0 / 60%);
 
   /* 深色背景渐变 */
-  --bg-gradient-1: #1e1b4b;
-  --bg-gradient-2: #172554;
-  --bg-gradient-3: #2e1065;
+  --bg-gradient-1: #112e48;
+  --bg-gradient-2: #242052;
+  --bg-gradient-3: #162549;
 
   /* 原生控件（滚动条、日期选择器、表单元件）跟着一起翻 */
   color-scheme: dark;
