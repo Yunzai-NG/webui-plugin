@@ -85,6 +85,8 @@ export interface Overview {
     plugins: number
     /** 其中加载失败的 */
     pluginsFailed: number
+    /** 其中单文件 JS 几个；旧内核不给 */
+    scripts?: number
     /** 命令数 */
     commands: number
     /** 定时任务数 */
@@ -163,6 +165,10 @@ export interface StatsBrief {
   today: { recv: MessageTally; sent: MessageTally }
   /** 今日最活跃的几个会话 */
   peers: { name: string; scene: string; messages: number }[]
+  /** 今日调用最多的命令；旧版 webui 的 node 侧不给 */
+  commands?: { plugin: string; command: string; calls: number }[]
+  /** 今日命令调用总数 */
+  calls?: number
 }
 
 /** `GET /api/config` 的元素 */
@@ -185,6 +191,8 @@ export interface ConfigDetail extends ConfigSummary {
 
 /** `GET /api/adapters` 的元素 */
 export interface AdapterSummary {
+  /** 名下机器人是否接受群配置；旧内核不给 */
+  groupRules?: boolean
   /** 适配器 id */
   id: string
   /** 展示名 */

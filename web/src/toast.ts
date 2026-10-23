@@ -21,6 +21,9 @@
  *          **可以带一枚动作钮**（「撤销」）：删掉之后给几秒反悔，比删之前多问一句更管用 —— 确认框
  *          问多了会被条件反射地点掉，而手滑往往是在点完之后才意识到的。动作函数不放进响应式
  *          状态里，按 id 另存，条子收起时一并丢掉。
+ *
+ *          **每条另记一份进历史**（{@link notices}），存在本浏览器里，右下角的通知按钮据此列出。
+ *          条子来不及读完就收走时，从那里还翻得回来。历史不带动作钮：「撤销」过了时限就不该再点。
  */
 import { ref } from "vue"
 
@@ -66,6 +69,101 @@ const MS_PER_CHAR = 90
 
 /** 当前在场的回执，最新的在最后 */
 export const toasts = ref<Toast[]>([])
+
+/** 历史里的一条 */
+export interface Notice {
+  /** 标识 */
+  id: number
+  /** 文案 */
+  text: string
+  /** 弹出的时刻，毫秒时间戳 */
+  at: number
+  /** 是否已读 */
+  read: boolean
+}
+
+/** 历史存在本浏览器里的键 */
+export const NOTICE_KEY = "yunzai-ng.notices"
+
+/** 历史留多少条 */
+export const NOTICE_MAX = 50
+
+/**
+ * 读回存着的历史
+ *
+ * 存储不可用（隐私模式、被禁）或内容坏了一律当空：历史只是方便回看，不该因此报错。
+ * @returns 历史，新的在前
+ */
+function loadNotices(): Notice[] {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(NOTICE_KEY) ?? "[]")
+    if (!Array.isArray(raw)) return []
+    return raw
+      .filter(
+        (one): one is Notice =>
+          typeof one === "object" && one !== null && typeof one.id === "number" && typeof one.text === "string" && typeof one.at === "number"
+      )
+      .map(one => ({ id: one.id, text: one.text, at: one.at, read: one.read === true }))
+      .slice(0, NOTICE_MAX)
+  } catch {
+    return []
+  }
+}
+
+/** 通知历史，新的在前；条子收起之后仍在这里 */
+export const notices = ref<Notice[]>(loadNotices())
+
+/** 把历史写回本浏览器 */
+function saveNotices(): void {
+  try {
+    localStorage.setItem(NOTICE_KEY, JSON.stringify(notices.value))
+  } catch {
+    // 存不进去就只在这一页里有，刷新即丢
+  }
+}
+
+/** 历史标识的自增源，接着存下来的最大值往上数，免得刷新后撞号 */
+let noticeSeq = notices.value.reduce((max, one) => Math.max(max, one.id), 0)
+
+/**
+ * 记一条进历史
+ * @param text 文案
+ */
+function remember(text: string): void {
+  noticeSeq += 1
+  notices.value = [{ id: noticeSeq, text, at: Date.now(), read: false }, ...notices.value].slice(0, NOTICE_MAX)
+  saveNotices()
+}
+
+/**
+ * 标一条已读
+ * @param id 历史标识
+ */
+export function readNotice(id: number): void {
+  notices.value = notices.value.map(one => (one.id === id ? { ...one, read: true } : one))
+  saveNotices()
+}
+
+/** 全部标为已读 */
+export function readAllNotices(): void {
+  notices.value = notices.value.map(one => (one.read ? one : { ...one, read: true }))
+  saveNotices()
+}
+
+/**
+ * 删一条
+ * @param id 历史标识
+ */
+export function removeNotice(id: number): void {
+  notices.value = notices.value.filter(one => one.id !== id)
+  saveNotices()
+}
+
+/** 全部删掉 */
+export function clearNotices(): void {
+  notices.value = []
+  saveNotices()
+}
 
 /** 回执标识的自增源 */
 let seq = 0
@@ -116,6 +214,7 @@ export function showToast(text: string, action?: ToastAction): void {
     ...kept,
     { id: seq, text: trimmed, ms: dueAt - now, dueAt, ...(action === undefined ? {} : { action: action.label }) }
   ]
+  remember(trimmed)
 }
 
 /**

@@ -59,3 +59,89 @@ export const collapseHooks = {
   afterEnter: onExpandDone,
   leave: onExpandLeave
 } as const
+
+/**
+ * `mode="out-in"` 换内容时让外框的高度跟着过渡：旧的离场前记下高度，新的入场时从那个高度长到自己的
+ *
+ * 钩子挂在 `<Transition>` 上，作用于它的父元素 —— 换的是里面那一块，变高矮的是外面那一圈。
+ */
+export function swapHeightHooks(): { beforeLeave: (el: Element) => void; enter: (el: Element) => void; afterEnter: (el: Element) => void } {
+  let from = 0
+  return {
+    beforeLeave(el) {
+      const box = el.parentElement
+      if (box === null) return
+      from = box.offsetHeight
+      box.style.height = `${from}px`
+    },
+    enter(el) {
+      const box = el.parentElement
+      if (box === null || from === 0) return
+      box.style.height = "auto"
+      const to = box.offsetHeight
+      box.style.height = `${from}px`
+      void box.offsetHeight
+      box.classList.add("swap-box")
+      box.style.height = `${to}px`
+    },
+    afterEnter(el) {
+      const box = el.parentElement
+      if (box === null) return
+      box.style.height = ""
+      box.classList.remove("swap-box")
+      from = 0
+    }
+  }
+}
+
+/** 每个外框上一次 `tweenHeight` 挂的收尾，再来一次时先摘掉 */
+const tweening = new WeakMap<HTMLElement, (e: TransitionEvent) => void>()
+
+/**
+ * 改动前后量一次外框高度，从旧值过渡到新值：给「展开全部」这类一下子多出几行的改动
+ *
+ * 收尾只认外框自己的 `height` 过渡：里面格子的 `transitionend` 也会冒上来。
+ * @param box 外框；没有时只做改动
+ * @param change 改动，须等到 DOM 更新完再返回
+ */
+export async function tweenHeight(box: HTMLElement | undefined, change: () => Promise<void>): Promise<void> {
+  if (box === undefined) return change()
+  const from = box.offsetHeight
+  await change()
+  const old = tweening.get(box)
+  if (old !== undefined) box.removeEventListener("transitionend", old)
+  box.style.height = "auto"
+  const to = box.offsetHeight
+  if (to === from) {
+    box.style.height = ""
+    box.classList.remove("swap-box")
+    return
+  }
+  box.style.height = `${from}px`
+  void box.offsetHeight
+  box.classList.add("swap-box")
+  box.style.height = `${to}px`
+  const done = (e: TransitionEvent): void => {
+    if (e.target !== box || e.propertyName !== "height") return
+    box.removeEventListener("transitionend", done)
+    tweening.delete(box)
+    box.style.height = ""
+    box.classList.remove("swap-box")
+  }
+  tweening.set(box, done)
+  box.addEventListener("transitionend", done)
+}
+
+/**
+ * 离场者脱离文档流之前钉在原位
+ *
+ * 配 `.pin-leave`（`position: absolute`）：只脱流不钉位的话它会跳到容器左上角再淡出；
+ * 不脱流的话余下几枚要等它播完才挪，挪的那一下是硬跳。容器须是定位元素。
+ * @param el 离场的元素
+ */
+export function pinLeaving(el: Element): void {
+  const box = el as HTMLElement
+  box.style.left = `${box.offsetLeft}px`
+  box.style.top = `${box.offsetTop}px`
+  box.style.width = `${box.offsetWidth}px`
+}

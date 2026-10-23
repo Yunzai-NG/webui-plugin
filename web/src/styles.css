@@ -1382,16 +1382,744 @@ h3 {
 }
 
 /*
- * 说明文字限两行
+ * 说明文字限一行，多出的省略
  *
- * 不限行数的话，一个写了三百字说明的插件会把它那一行的卡片全部拉高。两行之外
- * 的内容在「查看 → 基础信息」里完整可见，故此处截断不丢信息。
+ * 限两行时说明短的卡片一行、长的两行，同一排卡片的按钮高低不齐。全文在「查看」里，
+ * 悬停时 title 也给得出，故截断不丢信息。
  */
 .plugin-desc {
-  display: -webkit-box;
   overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * 群配置的一栏：标签、说明、控件上下排
+ *
+ * 间距用外边距而非 gap：栏里有随开关展开收起的一块（`.sc-reveal`），gap 不随高度过渡，
+ * 收到 0 时还剩一截空隙，末了跳一下。`:where` 压低特异性，好让 `.expand-*` 把外边距一起收掉。
+ */
+.sc-field {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+}
+
+:where(.sc-field) > * {
+  margin-block: 0;
+}
+
+:where(.sc-field) > * + * {
+  margin-top: var(--s2);
+}
+
+:where(.sc-field) > .s-label + .hint {
+  margin-top: 2px;
+}
+
+.sc-field > .seg,
+.sc-field > .check {
+  align-self: flex-start;
+}
+
+.sc-field > .check .s-label {
+  display: inline;
+}
+
+.sc-reveal > .hint {
+  margin: var(--s1) 0 0;
+}
+
+/* 配置页「消息」：全局前缀、全局禁用，末了一张通往抽屉的卡 */
+.scope-global {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s6);
+  padding: var(--s4) 0 var(--s2);
+  border-top: 1px solid var(--border);
+}
+
+.scope-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3) var(--s4);
+  flex-wrap: wrap;
+  padding: var(--s4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  background: var(--raise);
+}
+
+.scope-entry-text {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.scope-entry .s-label .tag {
+  margin-left: var(--s2);
+  vertical-align: 1px;
+}
+
+.scope-entry p {
+  margin: var(--s1) 0 0;
+}
+
+/* 群配置抽屉 */
+.scope-pane {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--s4);
+}
+
+:where(.scope-pane) > * {
+  margin-block: 0;
+}
+
+:where(.scope-pane) > * + * {
+  margin-top: var(--s3);
+}
+
+.scope-pane > button.scope-add {
+  align-self: flex-start;
+}
+
+.scope-list {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: 0;
+  list-style: none;
+}
+
+.scope-list:empty {
+  display: none;
+}
+
+.scope-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-ctl);
+  background: var(--panel);
+  transition:
+    border-color var(--dur-1) var(--ease),
+    box-shadow var(--dur-1) var(--ease);
+}
+
+.scope-card.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.scope-list .rowfx-leave-active {
+  position: absolute;
+  margin: 0;
+}
+
+.scope-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.scope-card-main > * {
+  overflow-wrap: anywhere;
+}
+
+.scope-card .row {
+  flex: none;
+  flex-wrap: nowrap;
+}
+
+.scope-empty {
+  padding: var(--s4);
+  border: 1px dashed var(--border);
+  border-radius: var(--r-ctl);
+  text-align: center;
+}
+
+.scope-edit {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-card);
+  background: var(--raise);
+}
+
+.scope-edit-in {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+  padding: var(--s4) var(--s5) var(--s5);
+}
+
+.scope-edit h3 {
+  margin: 0;
+  padding-bottom: var(--s3);
+  border-bottom: 1px solid var(--border);
+}
+
+.scope-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+}
+
+.scope-edit-foot {
+  padding-top: var(--s4);
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 700px) {
+  .scope-card {
+    flex-wrap: wrap;
+  }
+
+  .scope-edit-in {
+    padding: var(--s3) var(--s3) var(--s4);
+  }
+}
+
+/*
+ * 命令胶囊：强调色描边的圆角框，名字后面一枚小圆钮（+ 加 / × 删）
+ *
+ * 未加的取浅描边、已加的取实描边，两种同屏时一眼分得出。
+ */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 4px 0 12px;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: var(--r-pill);
+  background: var(--panel);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  white-space: nowrap;
+}
+
+.pill.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+}
+
+.pill button.pill-btn {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: none;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.pill button.pill-btn:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--on-accent);
+  transform: none;
+}
+
+.pill.on button.pill-btn {
+  background: color-mix(in srgb, var(--err) 14%, transparent);
+  color: var(--err);
+}
+
+.pill.on button.pill-btn:hover:not(:disabled) {
+  background: var(--err);
+  color: #fff;
+}
+
+/* 胶囊进出：加入时从小放大、移走时缩小淡出；其余几枚顺势挪位 */
+.pill-enter-from {
+  opacity: 0;
+  transform: scale(0.6);
+}
+
+.pill-leave-to {
+  opacity: 0;
+  transform: scale(0.6);
+}
+
+.pill-enter-active,
+.pill-leave-active {
+  transition:
+    opacity var(--dur-2) var(--ease-settle),
+    transform var(--dur-2) var(--ease-settle);
+}
+
+/* 离场的那枚脱流、钉在原位（位置由 collapse.ts 的 `pinLeaving` 写上），余下几枚同时挪过去 */
+.pill-leave-active {
+  position: absolute;
+  margin: 0;
+}
+
+.pill-move {
+  transition: transform var(--dur-2) var(--ease-settle);
+}
+
+/* 禁用清单：页签 + 筛选在上，格子多列排开，详情插在所点那一行下面 */
+.dis-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  min-width: 0;
+}
+
+.dis-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+}
+
+.dis-bar .seg {
+  flex: none;
+}
+
+.dis-count {
+  margin-left: 6px;
+  font-size: var(--fs-label);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+input.dis-search {
+  flex: 1 1 200px;
+  width: auto;
+  min-width: 0;
+  max-width: 320px;
+  margin-left: auto;
+  padding-block: 7px;
+}
+
+/* 行距不用 row-gap 而用格子自己的下外边距：详情收起时连这一截一起收，末了不至于再跳一下 */
+.dis-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
+  column-gap: var(--s2);
+  margin: 0 0 calc(-1 * var(--s2));
+  padding: 0;
+  list-style: none;
+}
+
+.dis-tile {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin-bottom: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-ctl);
+  background: var(--panel);
+  transition:
+    border-color var(--dur-1) var(--ease),
+    background-color var(--dur-1) var(--ease),
+    box-shadow var(--dur-1) var(--ease);
+}
+
+.dis-tile:hover {
+  border-color: var(--border-strong);
+}
+
+.dis-tile.some {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.dis-tile.whole {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  background: color-mix(in srgb, var(--accent) 7%, var(--panel));
+}
+
+.dis-tile.open {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* 勾选框那一截单独可点，点到名字是展开详情 */
+.dis-tile > .check {
+  align-self: stretch;
+  padding: 0 var(--s1) 0 var(--s3);
+}
+
+.dis-tile button.dis-open {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+  min-width: 0;
+  min-height: 0;
+  padding: 7px var(--s3) 7px var(--s1);
+  border: none;
+  border-radius: 0 var(--r-ctl) var(--r-ctl) 0;
+  background: none;
+  box-shadow: none;
+  color: var(--text);
+  font-weight: 400;
+  line-height: 1.35;
+  text-align: left;
+}
+
+.dis-tile button.dis-open:hover:not(:disabled),
+.dis-tile button.dis-open:active:not(:disabled) {
+  background: none;
+  box-shadow: none;
+  color: var(--text);
+  transform: none;
+}
+
+.dis-open b {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.dis-open small {
+  color: var(--muted);
+  font-size: var(--fs-label);
+  white-space: nowrap;
+}
+
+.dis-tile.some .dis-open small,
+.dis-tile.whole .dis-open small {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* 详情：占满所在行的下一整行 */
+.dis-detail {
+  grid-column: 1 / -1;
+  margin-bottom: var(--s2);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: var(--r-ctl);
+  background: color-mix(in srgb, var(--accent) 4%, var(--panel));
+}
+
+.dis-detail-in {
+  padding: var(--s3) var(--s4) var(--s4);
+}
+
+.dis-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s2);
+}
+
+.dis-detail-head .link {
+  margin-left: auto;
+}
+
+.dis-note {
+  margin: var(--s1) 0 var(--s3);
+}
+
+.dis-detail-in .dis-note:last-child {
+  margin-bottom: 0;
+}
+
+.dis-pills {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.dis-empty {
+  margin: 0 0 var(--s2);
+}
+
+button.link.dis-all {
+  align-self: flex-start;
+  margin-top: var(--s1);
+}
+
+.dis-stale {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  padding-top: var(--s3);
+  border-top: 1px dashed var(--border);
+}
+
+/* 格子进出：新露出的从略小淡入，离场的钉在原位淡出，其余的顺势挪位 */
+.cellfx-enter-from,
+.cellfx-leave-to {
+  opacity: 0;
+}
+
+.dis-tile.cellfx-enter-from,
+.dis-tile.cellfx-leave-to {
+  transform: scale(0.94);
+}
+
+.cellfx-enter-active,
+.cellfx-leave-active {
+  transition:
+    opacity var(--dur-2) var(--ease-settle),
+    transform var(--dur-2) var(--ease-settle);
+}
+
+.dis-tile.cellfx-leave-active {
+  position: absolute;
+  margin: 0;
+}
+
+.dis-detail.cellfx-enter-active,
+.dis-detail.cellfx-leave-active {
+  overflow: hidden;
+  transition:
+    height var(--dur-2) var(--ease-settle),
+    opacity var(--dur-2) var(--ease),
+    margin-bottom var(--dur-2) var(--ease-settle),
+    border-width var(--dur-2) var(--ease-settle);
+}
+
+.dis-detail.cellfx-enter-from,
+.dis-detail.cellfx-leave-to {
+  margin-bottom: 0;
+  border-width: 0;
+}
+
+.cellfx-move {
+  transition: transform var(--dur-2) var(--ease-settle);
+}
+
+/*
+ * 换内容：旧的淡出、新的淡入，外框高度由 collapse.ts 的 `swapHeightHooks` 写成内联值后过渡
+ *
+ * 两段各取 `--dur-1`：页签、详情换着点是高频操作，等它慢慢换没有信息量。
+ */
+.swap-enter-from {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.swap-leave-to {
+  opacity: 0;
+}
+
+.swap-enter-active,
+.swap-leave-active {
+  transition:
+    opacity var(--dur-1) var(--ease),
+    transform var(--dur-1) var(--ease);
+}
+
+.swap-box {
+  overflow: hidden;
+  transition: height var(--dur-1) var(--ease);
+}
+
+@media (max-width: 700px) {
+  .dis-grid {
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  }
+
+  input.dis-search {
+    flex-basis: 100%;
+    max-width: none;
+    margin-left: 0;
+  }
+}
+
+/* 群配置里的下拉：用配置表单那套（`.cdd`），只是不铺满整行 */
+.cdd.pick {
+  align-self: flex-start;
+  width: auto;
+  min-width: 240px;
+  max-width: 100%;
+}
+
+.cdd .pick-note {
+  margin: 0;
+  padding-left: var(--s2);
+  font-size: var(--fs-label);
+}
+
+/* 单位下拉：跟着时长输入框，宽度只够写下单位 */
+.dur .cdd.pick {
+  flex: none;
+  min-width: 96px;
+}
+
+/* 抽屉底部的按钮不折字；窄屏时提示自占一行 */
+.sheet-foot button {
+  white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+  .sheet-foot {
+    flex-wrap: wrap;
+  }
+
+  .sheet-foot > .hint {
+    flex: 1 0 100%;
+    margin: 0;
+  }
+}
+
+/* 胶囊输入框：已选的一枚一枚排在框里，× 删、+ 加 */
+.chip-box {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1);
+  min-height: 38px;
+  padding: var(--s1) var(--s2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-ctl);
+  background: var(--panel);
+  cursor: text;
+}
+
+.cin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 4px 0 12px;
+  border: 1.5px solid var(--accent);
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+  font-size: var(--fs-hint);
+  white-space: nowrap;
+}
+
+.cin-chip small {
+  font-size: var(--fs-label);
+}
+
+.cin-chip button.chip-x,
+.chip-box button.chip-add {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  min-height: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--err) 14%, transparent);
+  box-shadow: none;
+  color: var(--err);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.cin-chip button.chip-x:hover:not(:disabled) {
+  background: var(--err);
+  color: #fff;
+  transform: none;
+}
+
+.chip-box button.chip-add {
+  width: 26px;
+  height: 26px;
+  margin-left: auto;
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 60%, var(--border));
+  background: none;
+  color: var(--accent);
+}
+
+.chip-box button.chip-add:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-glow);
+  transform: none;
+}
+
+.chip-empty {
+  cursor: pointer;
+}
+
+.chip-pick {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  margin-top: var(--s1);
+  padding: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-ctl);
+  background: var(--panel);
+}
+
+.chip-options:empty {
+  display: none;
+}
+
+.chip-options {
+  max-height: 240px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.chip-options button {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  width: 100%;
+  min-height: 0;
+  padding: var(--s1) var(--s2);
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--text);
+  font-weight: 400;
+  text-align: left;
+}
+
+.chip-options button:hover:not(:disabled) {
+  background: var(--raise);
+  transform: none;
+}
+/* 插件页的筛选框：页签下一行，不跟页签挤 */
+.plugin-search {
+  width: min(100%, 320px);
+  margin: 0 0 var(--s3);
+}
+
+/* 单文件 JS 的表：说明挤在名字下面一行，超出省略 */
+.rows.scripts .script-desc {
+  display: block;
+  max-width: 36ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-label);
+}
+
+.rows.scripts .script-actions {
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+
+.rows.scripts .script-actions button {
+  padding-inline: var(--s3);
 }
 
 /*
@@ -4473,7 +5201,10 @@ table.pairs td {
   background: var(--panel);
   color: var(--muted);
   white-space: nowrap;
-  transition: all var(--dur-1) var(--ease);
+  transition:
+    color var(--dur-1) var(--ease),
+    background-color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease);
 }
 
 .tag.ok {
@@ -5586,6 +6317,7 @@ button.danger.solid:hover:not(:disabled) {
   opacity: 0;
   padding-block: 0;
   border-block-width: 0;
+  margin-block: 0;
 }
 
 .expand-enter-active,
@@ -5595,7 +6327,8 @@ button.danger.solid:hover:not(:disabled) {
     height var(--dur-2) var(--ease-settle),
     opacity var(--dur-2) var(--ease),
     padding-block var(--dur-2) var(--ease-settle),
-    border-block-width var(--dur-2) var(--ease-settle);
+    border-block-width var(--dur-2) var(--ease-settle),
+    margin-block var(--dur-2) var(--ease-settle);
 }
 
 .expand-leave-active {
@@ -6199,11 +6932,13 @@ a.button:active {
 /*
  * 贴右展开的抽屉
  *
+ * 类名不叫 `side`：窄屏下侧栏的 `.side` 带着 `translateX(-100%)`，同名时抽屉会被一并推出屏幕。
+ *
  * 键的详情与整行编辑要与左边的清单对照着看，居中小窗会把清单整块遮住。只在宽屏生效：
  * 窄屏仍按 `.modal.sheet` 的规则贴底（见那一节），贴右在 390px 下等于全屏。
  */
 @media (min-width: 701px) {
-  .modal.sheet.side {
+  .modal.sheet.sheet-side {
     width: min(720px, calc(100vw - 2 * var(--s4)));
     max-width: none;
     max-height: 100dvh;
@@ -6213,9 +6948,14 @@ a.button:active {
     border-radius: var(--r-card) 0 0 var(--r-card);
   }
 
+  /* 内容区撑满整个抽屉：内容少时动作栏也贴在底部，下拉往下展开有地方放 */
+  .modal.sheet.sheet-side .sheet-body {
+    flex: 1 1 auto;
+  }
+
   /* 从右侧推入而非自下浮起：方向感要与它停驻的位置一致 */
-  .pop-enter-from.side,
-  .pop-leave-to.side {
+  .pop-enter-from.sheet-side,
+  .pop-leave-to.sheet-side {
     transform: translateX(24px);
   }
 }
@@ -6250,13 +6990,13 @@ a.button:active {
   flex-direction: column;
   gap: var(--s2);
   /*
-   * 宽度随视口伸缩，不取 `max-content`
+   * 外壳只定上限，每条按自己的文案收宽（见 `.toast` 的 `width: fit-content`）
    *
-   * 按内容撑开的话，「已复制值」这类五个字的回执在 2K 屏上就是一粒小药丸 —— 条子的尺度
-   * 该随页面走，而非随这一条的字数走。下限保证短回执也是一条像样的横条，上限挡住长回执
+   * 统一铺成一条宽横条时，「已复制外观配置」这种几个字的回执两侧空出大半截。上限挡住长回执
    * 铺成一行读不回来的长句。窄屏另有一档（见下方 700px 媒体查询）。
    */
-  width: clamp(400px, 46vw, 680px);
+  width: min(680px, calc(100vw - 2 * var(--s4)));
+  align-items: center;
   margin: 0;
   padding: 0;
   border: none;
@@ -6292,6 +7032,9 @@ a.button:active {
   overflow: hidden;
   /* 外壳让开了指针，条子自己收回来：悬停暂停与那枚关闭钮都要点得到 */
   pointer-events: auto;
+  width: fit-content;
+  min-width: 220px;
+  max-width: 100%;
 }
 
 /* 回执上的动作钮（「撤销」）：取强调色的文字钮，不抢正文，但一眼能找到 */
@@ -6420,8 +7163,9 @@ a.button:active {
  */
 .toast-leave-active {
   position: absolute;
-  /* 脱流之后宽度就按内容算了，两边钉住才不会在渐出的半程里先缩一下 */
+  /* 脱流之后仍按自己的宽度居中：两边钉住、外边距自动，渐出的半程里不会挪位 */
   inset-inline: 0;
+  margin-inline: auto;
   transition:
     opacity var(--dur-2) var(--ease-in),
     transform var(--dur-2) var(--ease-in);
@@ -6444,12 +7188,14 @@ a.button:active {
     inset: var(--s3) var(--s3) auto;
     width: auto;
     transform: none;
+    align-items: stretch;
   }
 
   .toast {
     gap: var(--s2);
     padding: var(--s2) var(--s3) calc(var(--s2) + 3px);
     font-size: var(--fs-hint);
+    min-width: 0;
   }
 
   /* 触摸目标撑到能点准；多出的内边距用负 `margin` 吃掉，不借此撑高整条 */
@@ -7456,7 +8202,8 @@ button.db-chip.on:hover:not(:disabled) {
 .to-top {
   position: fixed;
   right: var(--s5);
-  bottom: var(--s5);
+  /* 让到通知钮上方：两枚圆钮叠在右下角一列 */
+  bottom: calc(var(--s5) + 44px + var(--s3));
   z-index: 25;
   display: grid;
   place-items: center;
@@ -7509,6 +8256,123 @@ button.db-chip.on:hover:not(:disabled) {
 .to-top-ico {
   width: 18px;
   height: 18px;
+}
+
+/* 通知钮：右下角常驻，与回到顶部同一形制 */
+.notice-btn {
+  position: fixed;
+  right: var(--s5);
+  bottom: var(--s5);
+  z-index: 25;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--panel);
+  color: var(--accent);
+  box-shadow: var(--shadow-float);
+}
+
+.notice-ico {
+  width: 18px;
+  height: 18px;
+}
+
+.notice-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--r-pill);
+  background: var(--err);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+
+.notice-tools {
+  justify-content: flex-end;
+  margin-bottom: var(--s3);
+}
+
+.notice-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.notice-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s1);
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  border-radius: var(--r-ctl);
+  background: var(--panel);
+}
+
+.notice-item.unread {
+  border-left-color: var(--accent);
+  background: var(--raise);
+}
+
+/* 正文是一枚钮（点它即已读），把通用按钮的外观全清掉 */
+.notice-item button.notice-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--text);
+  font-weight: 400;
+  text-align: left;
+}
+
+.notice-item button.notice-body:hover:not(:disabled) {
+  border: none;
+  background: none;
+  box-shadow: none;
+  transform: none;
+}
+
+.notice-item.unread .notice-text {
+  font-weight: 600;
+}
+
+.notice-text {
+  overflow-wrap: anywhere;
+}
+
+.notice-item time {
+  font-size: var(--fs-label);
+}
+
+@media (max-width: 700px) {
+  .notice-btn {
+    right: var(--s3);
+    bottom: var(--s3);
+  }
+
+  .to-top {
+    right: var(--s3);
+    bottom: calc(var(--s3) + 44px + var(--s2));
+  }
 }
 
 /* 彩色图片图标：原色显示，与描边图标同尺寸 */

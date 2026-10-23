@@ -12,12 +12,16 @@ import {
   HOUR_KEEP_DAYS,
   KEEP_DAYS,
   StatsBuckets,
+  USER_KEEP,
   aggregate,
   aggregateHours,
+  aggregateUsage,
   dayKey,
+  hourlyGrid,
   emptyTally,
   parseStatsDoc,
   shiftDay,
+  type CommandEntry,
   type Entry,
   type StatsDoc
 } from "./msgstats.js"
@@ -713,5 +717,109 @@ describe("采集侧的账号键", () => {
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
+  })
+})
+
+/**
+ * 造一次命令调用
+ * @param over 要覆盖的字段
+ * @returns 入账内容
+ */
+function cmdOf(over: Partial<CommandEntry> = {}): CommandEntry {
+  return {
+    at: Date.now(),
+    plugin: "genshin",
+    command: "#体力",
+    ok: true,
+    cost: 100,
+    peer: "group:1",
+    name: "测试群",
+    scene: "group",
+    user: { uid: "u1", name: "甲" },
+    account: { platform: "qq", adapter: "", account: "10000" },
+    ...over
+  }
+}
+
+describe("命令与用户统计", () => {
+  it("按命令、插件、用户三个维度聚合，失败与耗时一并计", () => {
+    const b = new StatsBuckets()
+    b.addCommand(cmdOf())
+    b.addCommand(cmdOf({ ok: false, cost: 300, user: { uid: "u2", name: "乙" } }))
+    b.addCommand(cmdOf({ command: "#签到", peer: "group:2", name: "二群" }))
+    b.add(entryOf({ user: { uid: "u1", name: "甲" } }))
+    const today = dayKey(Date.now())
+    const usage = aggregateUsage(b.snapshot(), [today])
+
+    expect(usage.commands.map(c => [c.command, c.calls, c.failed, c.cost])).toEqual([
+      ["#体力", 2, 1, 400],
+      ["#签到", 1, 0, 100]
+    ])
+    expect(usage.commands[1]?.top).toEqual([{ peer: "group:2", name: "二群", calls: 1 }])
+    expect(usage.plugins).toEqual([{ plugin: "genshin", calls: 3, failed: 1, cost: 500, commands: 2 }])
+    expect(usage.users[0]).toEqual({ uid: "u1", name: "甲", messages: 1, commands: 2 })
+    expect(usage.total).toEqual({ calls: 3, failed: 1, cost: 500, callers: 2 })
+  })
+
+  it("筛账号时只算那个号；不在场的号给空", () => {
+    const b = new StatsBuckets()
+    b.addCommand(cmdOf())
+    b.addCommand(cmdOf({ account: { platform: "qq", adapter: "", account: "20000" } }))
+    const today = dayKey(Date.now())
+    expect(aggregateUsage(b.snapshot(), [today], "qq:20000").total.calls).toBe(1)
+    expect(aggregateUsage(b.snapshot(), [today], "qq:30000").commands).toEqual([])
+  })
+
+  it("命令只记进会话名表，不在会话表里多出一行空计数", () => {
+    const b = new StatsBuckets()
+    b.addCommand(cmdOf({ peer: "group:9", name: "九群" }))
+    const doc = b.snapshot()
+    const today = dayKey(Date.now())
+    expect(doc.days[today]?.peers).toEqual({})
+    expect(doc.days[today]?.names).toEqual({ "group:9": "九群" })
+  })
+
+  it("热力图给近几天逐时的收发与命令", () => {
+    const b = new StatsBuckets()
+    const at = new Date().setHours(9, 30, 0, 0)
+    b.add(entryOf({ at }))
+    b.addCommand(cmdOf({ at }))
+    const today = dayKey(at)
+    const grid = hourlyGrid(b.snapshot(), today, 2)
+    expect(grid.map(row => row.day)).toEqual([shiftDay(today, -1), today])
+    expect(grid[1]?.hours[9]).toBe(1)
+    expect(grid[1]?.cmds[9]).toBe(1)
+    expect(grid[0]?.hours.every(n => n === 0)).toBe(true)
+  })
+
+  it("过了当天的用户表只留最活跃的那些", () => {
+    const b = new StatsBuckets()
+    const yesterday = Date.now() - 86_400_000
+    for (let i = 0; i < USER_KEEP + 10; i += 1) b.add(entryOf({ at: yesterday, user: { uid: `u${i}`, name: "" } }))
+    b.add(entryOf({ at: yesterday, user: { uid: "u0", name: "" } }))
+    b.prune(Date.now())
+    const users = b.snapshot().days[dayKey(yesterday)]?.users ?? {}
+    expect(Object.keys(users)).toHaveLength(USER_KEEP)
+    expect(users["u0"]?.messages).toBe(2)
+  })
+
+  it("新字段写盘再读回不丢；旧文档没有这些字段照常读", () => {
+    const b = new StatsBuckets()
+    b.addCommand(cmdOf())
+    const doc = parseStatsDoc(JSON.parse(JSON.stringify(b.snapshot())))
+    const today = dayKey(Date.now())
+    expect(doc?.days[today]?.commands?.["genshin:#体力"]?.total.calls).toBe(1)
+    expect(doc?.days[today]?.users?.["u1"]?.commands).toBe(1)
+    expect(Object.values(doc?.days[today]?.hours ?? {})[0]?.cmds).toBe(1)
+    expect(parseStatsDoc({ version: 2, days: { [today]: { peers: {} } } })?.days[today]?.commands).toBeUndefined()
+  })
+
+  it("记录 id 并回平台 id 时，命令与用户的账号细分一并合并", () => {
+    const b = new StatsBuckets()
+    b.addCommand(cmdOf({ account: { platform: "qq", adapter: "x", account: "uuid-1" } }))
+    b.addCommand(cmdOf())
+    b.remapAccounts(id => (id === "uuid-1" ? "10000" : undefined))
+    const today = dayKey(Date.now())
+    expect(aggregateUsage(b.snapshot(), [today], "qq:10000").total.calls).toBe(2)
   })
 })

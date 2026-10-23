@@ -406,6 +406,123 @@
         clip: rect(0 0 0 0);
         white-space: nowrap;
       }
+
+      /* ── 较上期 ── */
+      .delta {
+        margin-top: 2px;
+        font-size: 11px;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .delta.up {
+        color: var(--ok);
+      }
+
+      .delta.down {
+        color: var(--err);
+      }
+
+      /* ── 两栏：插件排行与活跃用户并排，窄屏叠起 ── */
+      /* 轨道写 minmax(0, 1fr)：缺省的 auto 会被表格的最小宽度撑开，手机上整页横向溢出 */
+      .split {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 14px;
+        margin-top: 14px;
+      }
+
+      .split > .card + .card {
+        margin-top: 0;
+      }
+
+      @media (min-width: 900px) {
+        .split {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      /* 排行表里的占比条：一格里一根横条加数字 */
+      .share {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 6px;
+      }
+
+      .share i {
+        display: block;
+        width: 60px;
+        height: 6px;
+        border-radius: 3px;
+        background: var(--bg);
+        overflow: hidden;
+      }
+
+      .share i b {
+        display: block;
+        height: 100%;
+        background: var(--accent-solid);
+      }
+
+      td.rank {
+        color: var(--muted);
+        width: 2em;
+      }
+
+      .sub-line {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      /* ── 会话类型占比 ── */
+      .scenes {
+        display: flex;
+        height: 10px;
+        margin-top: 14px;
+        border-radius: 5px;
+        overflow: hidden;
+        background: var(--bg);
+      }
+
+      .scenes span {
+        height: 100%;
+      }
+
+      .scene-legend {
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-top: 6px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      /* ── 热力图：首列日期，其后 24 格 ── */
+      .heat {
+        display: grid;
+        grid-template-columns: 3.4em repeat(24, minmax(0, 1fr));
+        gap: 2px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .heat .cell {
+        aspect-ratio: 1;
+        border-radius: 3px;
+        background: var(--bg);
+        cursor: pointer;
+      }
+
+      .heat .day {
+        align-self: center;
+        white-space: nowrap;
+      }
+
+      .heat .hour {
+        text-align: center;
+      }
     </style>
   </head>
   <body>
@@ -454,12 +571,107 @@
         <div class="card-sub" id="countSub"></div>
       </div>
       <div class="tiles" id="tiles"></div>
+      <!-- 收到的消息按会话类型的占比：一眼看出主要是群里在聊还是私聊 -->
+      <div class="scenes" id="scenes" hidden></div>
       <!-- 这句不是可选的说明文字：不写的话，一个天天发表情包的使用者会看到「发出表情包 0」
            而以为统计坏了。见 src/msgstats.ts 文件头 -->
       <div class="note">
         发出的表情包只统计 QQ 原生表情（<code>face</code>）。以图片形式发出的表情包在内核的发送出口处已无从分辨，
         它们计入「发出图片」。收到的一侧不受此限，三项齐全。
       </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">命令使用</div>
+          <div class="card-sub" id="cmdSub"></div>
+        </div>
+      </div>
+      <div class="tiles" id="cmdTiles"></div>
+      <div class="tw" style="margin-top: 14px">
+        <table id="cmdTable">
+          <thead>
+            <tr>
+              <th scope="col">#</th>
+              <th scope="col">命令</th>
+              <th scope="col">调用</th>
+              <th scope="col">占比</th>
+              <th scope="col">成功率</th>
+              <th scope="col">平均耗时</th>
+              <th scope="col">会话</th>
+            </tr>
+          </thead>
+          <tbody id="cmdBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="cmdEmpty" hidden>这段时间没有人用过命令</div>
+      <div class="note" id="cmdNote" hidden>命令统计自 webui 0.8.0 起采集，更早的日子没有这一项。</div>
+    </div>
+
+    <div class="split">
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <div class="card-title">插件排行</div>
+            <div class="card-sub">按命令调用次数</div>
+          </div>
+        </div>
+        <div class="tw">
+          <table id="pluginTable">
+            <thead>
+              <tr>
+                <th scope="col">#</th>
+                <th scope="col">插件</th>
+                <th scope="col">调用</th>
+                <th scope="col">命令数</th>
+                <th scope="col">失败</th>
+              </tr>
+            </thead>
+            <tbody id="pluginBody"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="pluginEmpty" hidden>暂无</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <div class="card-title">活跃用户</div>
+            <div class="card-sub">按发言与命令之和，前 20</div>
+          </div>
+        </div>
+        <div class="tw">
+          <table id="userTable">
+            <thead>
+              <tr>
+                <th scope="col">#</th>
+                <th scope="col">用户</th>
+                <th scope="col">发言</th>
+                <th scope="col">命令</th>
+              </tr>
+            </thead>
+            <tbody id="userBody"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="userEmpty" hidden>暂无</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">活跃时段</div>
+          <div class="card-sub" id="heatSub">近 7 天逐小时的收发消息，颜色越深越忙</div>
+        </div>
+        <div class="seg" role="group" aria-label="热力图统计项">
+          <button type="button" data-heat="msgs" aria-pressed="true">消息</button>
+          <button type="button" data-heat="cmds" aria-pressed="false">命令</button>
+        </div>
+      </div>
+      <div class="heat" id="heat" role="img" aria-labelledby="heatDesc"></div>
+      <p class="sr" id="heatDesc"></p>
+      <p class="readout" id="heatReadout" aria-live="polite"></p>
     </div>
 
     <div class="card">
@@ -484,6 +696,7 @@
         <button type="button" data-metric="messages" aria-pressed="false">消息</button>
         <button type="button" data-metric="images" aria-pressed="false">图片</button>
         <button type="button" data-metric="stickers" aria-pressed="false">表情包</button>
+        <button type="button" data-metric="cmds" aria-pressed="false">命令</button>
       </div>
       <svg class="chart" id="chart" role="img" aria-labelledby="chartDesc"></svg>
       <p class="sr" id="chartDesc"></p>

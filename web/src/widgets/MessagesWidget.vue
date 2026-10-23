@@ -105,6 +105,12 @@ const summary = computed(() => {
           <span v-for="slot in bars" :key="slot.at">{{ slot.tick }}</span>
         </div>
 
+        <p v-if="(brief.commands ?? []).length > 0" class="msgs-peers">
+          <span class="msgs-peers-label">今日命令 {{ fmt.format(brief.calls ?? 0) }} 次</span>
+          <span v-for="cmd in brief.commands" :key="`${cmd.plugin}:${cmd.command}`" class="msgs-peer" :title="cmd.plugin">
+            {{ cmd.command }}<b>{{ fmt.format(cmd.calls) }}</b>
+          </span>
+        </p>
         <p v-if="brief.peers.length > 0" class="msgs-peers">
           <span class="msgs-peers-label">今日最活跃</span>
           <span v-for="peer in brief.peers" :key="peer.name" class="msgs-peer">

@@ -15,6 +15,7 @@
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import AppIcon from "./AppIcon.vue"
+import PickSelect from "./PickSelect.vue"
 import { CRON_FIELDS, explodeCron, joinCron, previewCron } from "../cron.js"
 import { DUR_UNITS, joinDuration, splitDuration } from "../duration.js"
 import { describePattern, lengthLimitOf, normalizeHex, rangeTextOf } from "../field.js"
@@ -807,11 +808,12 @@ function setDuration(text: string, unit: string): void {
           :disabled="locked"
           @input="setDuration(($event.target as HTMLInputElement).value, dur.unit)"
         />
-        <select :aria-label="`${label}的单位`" :disabled="locked" @change="setDuration(String(dur.n), ($event.target as HTMLSelectElement).value)">
-          <option v-for="unit in DUR_UNITS" :key="unit.value" :value="unit.value" :selected="unit.value === dur.unit">
-            {{ unit.label }}
-          </option>
-        </select>
+        <PickSelect
+          :model-value="dur.unit"
+          :options="DUR_UNITS.map(unit => ({ value: unit.value, label: unit.label }))"
+          :label="`${label}的单位`"
+          @update:model-value="(v: string) => setDuration(String(dur?.n ?? ''), v)"
+        />
       </div>
 
       <input

@@ -27,6 +27,7 @@ import { reloadThemes } from "./themes.js"
 import type { IconShape, Overview } from "./types.js"
 import AppIcon from "./components/AppIcon.vue"
 import BackToTop from "./components/BackToTop.vue"
+import NoticeCenter from "./components/NoticeCenter.vue"
 import ThemeIcon from "./components/ThemeIcon.vue"
 import ConfirmDialog from "./components/ConfirmDialog.vue"
 import PathPicker from "./components/PathPicker.vue"
@@ -510,6 +511,8 @@ onUnmounted(() => {
       </Transition>
       <BackToTop :key="currentRoute" />
     </main>
+    <!-- 通知历史：右下角一枚钮，回到顶部钮让到它上方（见 styles.css 的 .to-top） -->
+    <NoticeCenter />
   </div>
 
   <!--

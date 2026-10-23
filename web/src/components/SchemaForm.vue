@@ -48,6 +48,12 @@ const props = defineProps<{
    * `issuePrefix`：服务端错误的路径以它打头时归这一栏（保存失败时据此跳过去、标红角标）。
    */
   extras?: readonly { id: string; label: string; count?: number; issuePrefix?: string }[]
+  /**
+   * 这几个顶层字段不按 schema 画，改由同名插槽（`field-<键>`）给出，仍落在它原本的分区里
+   *
+   * 内核配置的 `scope`（群规则）就是这样：它是一张带层级的规则表，通用表单画出来只是一串嵌套列表。
+   */
+  custom?: readonly string[]
 }>()
 
 const emit = defineEmits<{
@@ -216,7 +222,16 @@ const errorOf = computed<Record<string, string>>(() => {
  * @returns 节点清单
  */
 function nodesIn(section: Section): FormNode[] {
-  return sectionNodes(props.schema, section.keys, props.value)
+  return sectionNodes(props.schema, section.keys.filter(key => !(props.custom ?? []).includes(key)), props.value)
+}
+
+/**
+ * 分区里交给插槽画的字段
+ * @param section 分区
+ * @returns 字段名
+ */
+function customIn(section: Section): string[] {
+  return section.keys.filter(key => (props.custom ?? []).includes(key))
 }
 </script>
 
@@ -282,6 +297,9 @@ function nodesIn(section: Section): FormNode[] {
           :disabled="disabled"
           @update="(path, value) => emit('change', path, value)"
         />
+      </template>
+      <template v-for="key in customIn(active)" :key="`custom:${key}`">
+        <slot :name="`field-${key}`" :value="value[key]" />
       </template>
     </section>
     </Transition>

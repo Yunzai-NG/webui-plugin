@@ -70,7 +70,7 @@ function onClick(event: MouseEvent): void {
       ref="el"
       class="modal sheet"
       data-part="modal"
-      :class="{ wide: wide === true, side: side === true }"
+      :class="{ wide: wide === true, 'sheet-side': side === true }"
       @cancel.prevent="emit('close')"
       @close="emit('close')"
       @click="onClick"

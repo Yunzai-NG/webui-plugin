@@ -24,12 +24,18 @@
  *          `<TransitionGroup>` 一起拆掉，那条正在离场的来不及播完就没了；首条也因与容器同时
  *          首次渲染而不播入场（`<TransitionGroup>` 默认不为首渲染的子节点播入场）。两头都是
  *          硬切 —— 而单条回执恰是最常见的一种。故外壳常驻，只拿 popover 的开合管显隐。
+ *
+ *          **倒排**：新来的插在最上面，旧的依次往下压，最多三条；第四条来时最下面那条渐隐离场。
+ *          新回执落在视线最先到的那一格，不必每次往下找。
  */
-import { onMounted, ref, watch } from "vue"
+import { computed, onMounted, ref, watch } from "vue"
 import { dismissToast, toasts } from "../toast.js"
 import ToastItem from "./ToastItem.vue"
 
 const el = ref<HTMLDivElement | undefined>(undefined)
+
+/** 新的在上、旧的往下压；满三条时最下面那条（最旧的）渐隐离场 */
+const newestFirst = computed(() => [...toasts.value].reverse())
 
 /** 浏览器认不认 popover；不认时整段开合都跳过，元素照常显示 */
 const supported = typeof HTMLElement !== "undefined" && "popover" in HTMLElement.prototype
@@ -91,7 +97,7 @@ function onAfterLeave(): void {
     aria-atomic="false"
   >
     <TransitionGroup name="toast" appear @after-leave="onAfterLeave">
-      <ToastItem v-for="one in toasts" :key="one.id" :toast="one" @done="dismissToast(one.id)" />
+      <ToastItem v-for="one in newestFirst" :key="one.id" :toast="one" @done="dismissToast(one.id)" />
     </TransitionGroup>
   </div>
 </template>

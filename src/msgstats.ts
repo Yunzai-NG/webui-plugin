@@ -62,6 +62,48 @@ export interface HourSlot {
   sent: Tally
   /** 按账号细分，键为 `platform:accountId` */
   by?: Record<string, Pair>
+  /** 这一小时的命令调用次数；没有时缺 */
+  cmds?: number
+  /** 命令调用按账号细分 */
+  cmdBy?: Record<string, number>
+}
+
+/** 命令调用的计数 */
+export interface CmdTally {
+  /** 调用次数 */
+  calls: number
+  /** 其中抛错的次数 */
+  failed: number
+  /** 耗时之和，毫秒；除以 `calls` 即平均耗时 */
+  cost: number
+}
+
+/** 一条命令在某一天的计数 */
+export interface CommandDay {
+  /** 所属插件 */
+  plugin: string
+  /** 命令名 */
+  command: string
+  /** 全部账号之和 */
+  total: CmdTally
+  /** 在各会话里被调用的次数，键为 `peer` */
+  peers?: Record<string, number>
+  /** 按账号细分 */
+  by?: Record<string, CmdTally>
+}
+
+/** 一个用户在某一天的活跃度 */
+export interface UserDay {
+  /** 用户 id */
+  uid: string
+  /** 显示名 */
+  name: string
+  /** 发来的消息条数 */
+  messages: number
+  /** 调用命令的次数 */
+  commands: number
+  /** 按账号细分 */
+  by?: Record<string, { messages: number; commands: number }>
 }
 
 /** 一天的全部计数 */
@@ -77,6 +119,17 @@ export interface DayBucket {
    * 故按小时看只能看近处 —— 而「当日」「1 日」两档本就只问近处。
    */
   hours?: Record<string, HourSlot>
+  /** 该天各命令的调用，键为 `插件:命令`；没人用过命令的天没有这一项 */
+  commands?: Record<string, CommandDay>
+  /**
+   * 该天发过消息或用过命令的用户，键为 uid
+   *
+   * 过了当天只留最活跃的 {@link USER_KEEP} 个：千人群里一天上千个发言人，40 天全留就是几万条，
+   * 而排行榜只看前几十。
+   */
+  users?: Record<string, UserDay>
+  /** 命令所在会话的显示名，键为 `peer`；只为命令排行里显示群名 */
+  names?: Record<string, string>
 }
 
 /** 一个账号的身份，供界面把 `platform:accountId` 显示成人能读的东西 */
@@ -110,6 +163,9 @@ export const KEEP_DAYS = 40
 
 /** 小时桶保留多少天：按小时看的只有「当日」与「1 日」两档，全存 40 天则桶数是 24 倍且读不到 */
 export const HOUR_KEEP_DAYS = 7
+
+/** 过了当天，每天的用户表只留这么多个最活跃的 */
+export const USER_KEEP = 200
 
 /**
  * 求某个时刻的本地日期键
@@ -166,6 +222,65 @@ export interface Entry {
    * 总量会因此少掉一截，而使用者无从知道少了什么。
    */
   account?: AccountRef
+  /** 发消息的人，只有收侧给；发侧是机器人自己，不进用户表 */
+  user?: { uid: string; name: string }
+}
+
+/** 一次命令调用的入账内容 */
+export interface CommandEntry {
+  /** 发生时刻 */
+  at: number
+  /** 所属插件 */
+  plugin: string
+  /** 命令名 */
+  command: string
+  /** 是否正常结束 */
+  ok: boolean
+  /** 耗时毫秒 */
+  cost: number
+  /** 在哪个会话 */
+  peer: string
+  /** 会话显示名 */
+  name: string
+  /** 会话类型 */
+  scene: PeerDay["scene"]
+  /** 谁调用的 */
+  user: { uid: string; name: string }
+  /** 经手的账号 */
+  account?: AccountRef
+}
+
+/**
+ * 造一份空的命令计数
+ * @returns 三项皆 0
+ */
+function emptyCmd(): CmdTally {
+  return { calls: 0, failed: 0, cost: 0 }
+}
+
+/**
+ * 把一次调用加进命令计数
+ * @param into 累加目标
+ * @param ok 是否成功
+ * @param cost 耗时
+ */
+function addCmd(into: CmdTally, ok: boolean, cost: number): void {
+  into.calls += 1
+  if (!ok) into.failed += 1
+  into.cost += Math.max(0, cost)
+}
+
+/**
+ * 取或建一天里的一个用户
+ * @param bucket 天桶
+ * @param user 用户
+ * @returns 用户日计数
+ */
+function userOf(bucket: DayBucket, user: { uid: string; name: string }): UserDay {
+  bucket.users ??= {}
+  const one = (bucket.users[user.uid] ??= { uid: user.uid, name: user.name, messages: 0, commands: 0 })
+  if (user.name !== "" && user.name !== user.uid) one.name = user.name
+  return one
 }
 
 /**
@@ -229,6 +344,23 @@ function mergeBy(holder: { by?: Record<string, Pair> }, rename: ReadonlyMap<stri
     const into = (by[newKey] ??= emptyPair())
     addTally(into.recv, from.recv)
     addTally(into.sent, from.sent)
+  }
+}
+
+/**
+ * 按 `rename` 改写一张以账号为键的表，同键相遇时用 `merge` 合并
+ * @param map 表；缺时什么都不做
+ * @param rename 旧键到新键
+ * @param merge 合并两份值
+ */
+function mergeKeys<V>(map: Record<string, V> | undefined, rename: ReadonlyMap<string, string>, merge: (a: V, b: V) => V): void {
+  if (map === undefined) return
+  for (const [oldKey, newKey] of rename) {
+    const from = map[oldKey]
+    if (from === undefined) continue
+    delete map[oldKey]
+    const into = map[newKey]
+    map[newKey] = into === undefined ? from : merge(into, from)
   }
 }
 
@@ -299,6 +431,62 @@ export class StatsBuckets {
       addToBy(slot, key, entry.dir, entry.tally)
     }
 
+    if (entry.user !== undefined && entry.dir === "recv") {
+      const user = userOf(bucket, entry.user)
+      user.messages += 1
+      if (entry.account !== undefined) {
+        user.by ??= {}
+        const own = (user.by[accountKey(entry.account)] ??= { messages: 0, commands: 0 })
+        own.messages += 1
+      }
+    }
+
+    this.#dirty = true
+  }
+
+  /**
+   * 入账一次命令调用
+   *
+   * 写进四处：命令日（总量与各会话）、命令日的账号细分、调用者的用户日、当时那一小时。
+   * @param entry 本次调用
+   */
+  addCommand(entry: CommandEntry): void {
+    const day = dayKey(entry.at)
+    let bucket = this.#days.get(day)
+    if (bucket === undefined) {
+      bucket = { day, peers: {} }
+      this.#days.set(day, bucket)
+    }
+    bucket.commands ??= {}
+    const key = `${entry.plugin}:${entry.command}`
+    const cmd = (bucket.commands[key] ??= { plugin: entry.plugin, command: entry.command, total: emptyCmd() })
+    addCmd(cmd.total, entry.ok, entry.cost)
+    cmd.peers ??= {}
+    cmd.peers[entry.peer] = (cmd.peers[entry.peer] ?? 0) + 1
+    // 会话名另记一份，不往会话表里塞空计数：那样会话表里会多出一行「0 0 0」
+    if (entry.name !== "" && entry.name !== entry.peer) {
+      bucket.names ??= {}
+      bucket.names[entry.peer] = entry.name
+    }
+
+    const user = userOf(bucket, entry.user)
+    user.commands += 1
+
+    bucket.hours ??= {}
+    const slot = (bucket.hours[hourKey(entry.at)] ??= { recv: emptyTally(), sent: emptyTally() })
+    slot.cmds = (slot.cmds ?? 0) + 1
+
+    if (entry.account !== undefined) {
+      const acct = accountKey(entry.account)
+      this.#accounts.set(acct, this.#accounts.get(acct) ?? entry.account)
+      cmd.by ??= {}
+      addCmd((cmd.by[acct] ??= emptyCmd()), entry.ok, entry.cost)
+      user.by ??= {}
+      ;(user.by[acct] ??= { messages: 0, commands: 0 }).commands += 1
+      slot.cmdBy ??= {}
+      slot.cmdBy[acct] = (slot.cmdBy[acct] ?? 0) + 1
+    }
+
     this.#dirty = true
   }
 
@@ -335,7 +523,16 @@ export class StatsBuckets {
 
     for (const bucket of this.#days.values()) {
       for (const peer of Object.values(bucket.peers)) mergeBy(peer, rename)
-      for (const slot of Object.values(bucket.hours ?? {})) mergeBy(slot, rename)
+      for (const slot of Object.values(bucket.hours ?? {})) {
+        mergeBy(slot, rename)
+        mergeKeys(slot.cmdBy, rename, (a, b) => a + b)
+      }
+      for (const cmd of Object.values(bucket.commands ?? {})) {
+        mergeKeys(cmd.by, rename, (a, b) => ({ calls: a.calls + b.calls, failed: a.failed + b.failed, cost: a.cost + b.cost }))
+      }
+      for (const user of Object.values(bucket.users ?? {})) {
+        mergeKeys(user.by, rename, (a, b) => ({ messages: a.messages + b.messages, commands: a.commands + b.commands }))
+      }
     }
 
     this.#dirty = true
@@ -364,6 +561,14 @@ export class StatsBuckets {
       const bucket = this.#days.get(day)
       if (day < hourFloor && bucket?.hours !== undefined) {
         delete bucket.hours
+        this.#dirty = true
+      }
+      // 当天还在长，不裁；过了当天的用户表只留最活跃的那些
+      if (day < dayKey(now) && bucket?.users !== undefined && Object.keys(bucket.users).length > USER_KEEP) {
+        const keep = Object.values(bucket.users)
+          .sort((a, b) => b.messages + b.commands - (a.messages + a.commands))
+          .slice(0, USER_KEEP)
+        bucket.users = Object.fromEntries(keep.map(user => [user.uid, user]))
         this.#dirty = true
       }
     }
@@ -419,8 +624,15 @@ export function parseStatsDoc(raw: unknown): StatsDoc | undefined {
       if (peer !== undefined) peers[key] = peer
     }
     const bucket: DayBucket = { day, peers }
-    const hours = parseHours((value as { hours?: unknown }).hours)
+    const extra = value as { hours?: unknown; commands?: unknown; users?: unknown; names?: unknown }
+    const hours = parseHours(extra.hours)
     if (hours !== undefined) bucket.hours = hours
+    const commands = parseCommands(extra.commands)
+    if (commands !== undefined) bucket.commands = commands
+    const users = parseUsers(extra.users)
+    if (users !== undefined) bucket.users = users
+    const names = parseNames(extra.names)
+    if (names !== undefined) bucket.names = names
     days[day] = bucket
   }
   const accounts = parseAccounts(record.accounts)
@@ -440,12 +652,116 @@ function parseHours(raw: unknown): Record<string, HourSlot> | undefined {
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
     if (!/^([01]\d|2[0-3])$/.test(key)) continue
     if (typeof value !== "object" || value === null) continue
-    const record = value as { recv?: unknown; sent?: unknown; by?: unknown }
+    const record = value as { recv?: unknown; sent?: unknown; by?: unknown; cmds?: unknown; cmdBy?: unknown }
     const slot: HourSlot = { recv: parseTally(record.recv), sent: parseTally(record.sent) }
     const by = parseBy(record.by)
     if (by !== undefined) slot.by = by
+    const cmds = count(record.cmds)
+    if (cmds > 0) slot.cmds = cmds
+    const cmdBy = parseCounts(record.cmdBy)
+    if (cmdBy !== undefined) slot.cmdBy = cmdBy
     out[key] = slot
   }
+  return Object.keys(out).length === 0 ? undefined : out
+}
+
+/**
+ * 取一个非负整数，不合法时 0
+ * @param raw 值
+ * @returns 整数
+ */
+function count(raw: unknown): number {
+  return typeof raw === "number" && Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 0
+}
+
+/**
+ * 校验一张「键 → 次数」表
+ * @param raw 记录
+ * @returns 表；一项都没有时 undefined
+ */
+function parseCounts(raw: unknown): Record<string, number> | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined
+  const out: Record<string, number> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (key !== "" && count(value) > 0) out[key] = count(value)
+  }
+  return Object.keys(out).length === 0 ? undefined : out
+}
+
+/**
+ * 校验命令计数
+ * @param raw 记录
+ * @returns 计数
+ */
+function parseCmd(raw: unknown): CmdTally {
+  const record = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {}
+  return { calls: count(record.calls), failed: count(record.failed), cost: count(record.cost) }
+}
+
+/**
+ * 校验一天的命令表
+ * @param raw 记录
+ * @returns 命令表；一项都没有时 undefined
+ */
+function parseCommands(raw: unknown): Record<string, CommandDay> | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined
+  const out: Record<string, CommandDay> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value !== "object" || value === null) continue
+    const record = value as { plugin?: unknown; command?: unknown; total?: unknown; peers?: unknown; by?: unknown }
+    if (typeof record.plugin !== "string" || typeof record.command !== "string") continue
+    const one: CommandDay = { plugin: record.plugin, command: record.command, total: parseCmd(record.total) }
+    const peers = parseCounts(record.peers)
+    if (peers !== undefined) one.peers = peers
+    if (typeof record.by === "object" && record.by !== null) {
+      const by: Record<string, CmdTally> = {}
+      for (const [acct, tally] of Object.entries(record.by as Record<string, unknown>)) if (acct !== "") by[acct] = parseCmd(tally)
+      if (Object.keys(by).length > 0) one.by = by
+    }
+    out[key] = one
+  }
+  return Object.keys(out).length === 0 ? undefined : out
+}
+
+/**
+ * 校验一天的用户表
+ * @param raw 记录
+ * @returns 用户表；一项都没有时 undefined
+ */
+function parseUsers(raw: unknown): Record<string, UserDay> | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined
+  const out: Record<string, UserDay> = {}
+  for (const [uid, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (uid === "" || typeof value !== "object" || value === null) continue
+    const record = value as { name?: unknown; messages?: unknown; commands?: unknown; by?: unknown }
+    const one: UserDay = {
+      uid,
+      name: typeof record.name === "string" && record.name !== "" ? record.name : uid,
+      messages: count(record.messages),
+      commands: count(record.commands)
+    }
+    if (typeof record.by === "object" && record.by !== null) {
+      const by: Record<string, { messages: number; commands: number }> = {}
+      for (const [acct, v] of Object.entries(record.by as Record<string, unknown>)) {
+        const r = typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {}
+        if (acct !== "") by[acct] = { messages: count(r.messages), commands: count(r.commands) }
+      }
+      if (Object.keys(by).length > 0) one.by = by
+    }
+    out[uid] = one
+  }
+  return Object.keys(out).length === 0 ? undefined : out
+}
+
+/**
+ * 校验会话名表
+ * @param raw 记录
+ * @returns 表；一项都没有时 undefined
+ */
+function parseNames(raw: unknown): Record<string, string> | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined
+  const out: Record<string, string> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) if (key !== "" && typeof value === "string") out[key] = value
   return Object.keys(out).length === 0 ? undefined : out
 }
 
@@ -560,7 +876,7 @@ export interface Aggregate {
    * 当日那一档甚至只剩 `HH`），而 tooltip 要读一眼就知道是哪天几点，`13` 在「近 7 天」
    * 那个视图里根本读不出是哪天。格式化成人话的活儿留给界面，此处只给不失真的键。
    */
-  series: readonly { label: string; at: string; recv: Tally; sent: Tally }[]
+  series: readonly { label: string; at: string; recv: Tally; sent: Tally; cmds: number }[]
   /** 序列的粒度，界面据此写副标题（「按天」/「按小时」） */
   unit: "day" | "hour"
   /** 各会话合计，按「收发总条数」降序 */
@@ -660,15 +976,17 @@ function sortPeers(peers: Map<string, PeerTotal>): PeerTotal[] {
 export function aggregate(doc: StatsDoc, from: string, to: string, account?: string): Aggregate {
   const lo = from <= to ? from : to
   const hi = from <= to ? to : from
-  const series: { label: string; at: string; recv: Tally; sent: Tally }[] = []
+  const series: { label: string; at: string; recv: Tally; sent: Tally; cmds: number }[] = []
   const peers = new Map<string, PeerTotal>()
   const total = { recv: emptyTally(), sent: emptyTally() }
 
   for (let day = lo; day <= hi; day = shiftDay(day, 1)) {
     const recv = emptyTally()
     const sent = emptyTally()
+    let cmds = 0
     const bucket = doc.days[day]
     if (bucket !== undefined) {
+      for (const cmd of Object.values(bucket.commands ?? {})) cmds += (account === undefined ? cmd.total : cmd.by?.[account])?.calls ?? 0
       for (const item of Object.values(bucket.peers)) {
         addTally(recv, tallyOf(item, "recv", account))
         addTally(sent, tallyOf(item, "sent", account))
@@ -678,12 +996,181 @@ export function aggregate(doc: StatsDoc, from: string, to: string, account?: str
     addTally(total.recv, recv)
     addTally(total.sent, sent)
     // 按天时两者同值；仍各给一份，免得界面去猜「这一格的 label 能不能当身份用」
-    series.push({ label: day, at: day, recv, sent })
+    series.push({ label: day, at: day, recv, sent, cmds })
     // 防串：区间写反或跨度极大时不至于把内存转光
     if (series.length > 400) break
   }
 
   return { from: lo, to: hi, series, unit: "day", peers: sortPeers(peers), total }
+}
+
+/** 命令排行里的一条 */
+export interface CommandTotal {
+  /** 所属插件 */
+  plugin: string
+  /** 命令名 */
+  command: string
+  /** 区间内的调用计数 */
+  calls: number
+  /** 其中失败的 */
+  failed: number
+  /** 耗时之和 */
+  cost: number
+  /** 在几个会话里用过 */
+  peers: number
+  /** 用得最多的几个会话 */
+  top: { peer: string; name: string; calls: number }[]
+}
+
+/** 插件排行里的一条 */
+export interface PluginTotal {
+  /** 插件名 */
+  plugin: string
+  /** 调用次数 */
+  calls: number
+  /** 失败次数 */
+  failed: number
+  /** 耗时之和 */
+  cost: number
+  /** 区间内用到了几条命令 */
+  commands: number
+}
+
+/** 用户排行里的一条 */
+export interface UserTotal {
+  /** 用户 id */
+  uid: string
+  /** 显示名 */
+  name: string
+  /** 发来的消息 */
+  messages: number
+  /** 调用的命令 */
+  commands: number
+}
+
+/** 命令与用户维度的聚合 */
+export interface UsageAggregate {
+  /** 按调用次数降序 */
+  commands: CommandTotal[]
+  /** 按调用次数降序 */
+  plugins: PluginTotal[]
+  /** 按消息与命令之和降序 */
+  users: UserTotal[]
+  /** 合计，`callers` 为用过命令的人数 */
+  total: CmdTally & { callers: number }
+}
+
+/**
+ * 在若干天上聚合命令与用户
+ *
+ * 收日期清单而不是起止：「1 日」那一档跨两天的半截，调用方按窗口覆盖到的天传进来，
+ * 口径与会话表一致（见 `aggregateHours` 末尾）。
+ * @param doc 文档
+ * @param days 日期键
+ * @param account 只看这个账号；不给则全部
+ * @returns 聚合结果
+ */
+export function aggregateUsage(doc: StatsDoc, days: readonly string[], account?: string): UsageAggregate {
+  const commands = new Map<string, CommandTotal & { byPeer: Map<string, number> }>()
+  const users = new Map<string, UserTotal>()
+  const names = new Map<string, string>()
+
+  for (const day of days) {
+    const bucket = doc.days[day]
+    if (bucket === undefined) continue
+    for (const peer of Object.values(bucket.peers)) names.set(peer.peer, peer.name)
+    for (const [peer, name] of Object.entries(bucket.names ?? {})) names.set(peer, name)
+
+    for (const [key, cmd] of Object.entries(bucket.commands ?? {})) {
+      const tally = account === undefined ? cmd.total : cmd.by?.[account]
+      if (tally === undefined || tally.calls === 0) continue
+      let into = commands.get(key)
+      if (into === undefined) {
+        into = { plugin: cmd.plugin, command: cmd.command, calls: 0, failed: 0, cost: 0, peers: 0, top: [], byPeer: new Map() }
+        commands.set(key, into)
+      }
+      into.calls += tally.calls
+      into.failed += tally.failed
+      into.cost += tally.cost
+      // 筛账号时按会话的分布只有总量那一份，按比例摊会编出数来，故只在不筛时给
+      if (account === undefined) {
+        for (const [peer, n] of Object.entries(cmd.peers ?? {})) into.byPeer.set(peer, (into.byPeer.get(peer) ?? 0) + n)
+      }
+    }
+
+    for (const user of Object.values(bucket.users ?? {})) {
+      const own = account === undefined ? user : user.by?.[account]
+      if (own === undefined) continue
+      let into = users.get(user.uid)
+      if (into === undefined) {
+        into = { uid: user.uid, name: user.name, messages: 0, commands: 0 }
+        users.set(user.uid, into)
+      }
+      if (user.name !== user.uid) into.name = user.name
+      into.messages += own.messages
+      into.commands += own.commands
+    }
+  }
+
+  const plugins = new Map<string, PluginTotal>()
+  const total = { ...emptyCmd(), callers: 0 }
+  const commandList = [...commands.values()].map(({ byPeer, ...cmd }) => {
+    const top = [...byPeer]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([peer, calls]) => ({ peer, name: names.get(peer) ?? peer, calls }))
+    const plugin = plugins.get(cmd.plugin) ?? { plugin: cmd.plugin, calls: 0, failed: 0, cost: 0, commands: 0 }
+    plugin.calls += cmd.calls
+    plugin.failed += cmd.failed
+    plugin.cost += cmd.cost
+    plugin.commands += 1
+    plugins.set(cmd.plugin, plugin)
+    total.calls += cmd.calls
+    total.failed += cmd.failed
+    total.cost += cmd.cost
+    return { ...cmd, peers: byPeer.size, top }
+  })
+  total.callers = [...users.values()].filter(user => user.commands > 0).length
+
+  return {
+    commands: commandList.sort((a, b) => b.calls - a.calls),
+    plugins: [...plugins.values()].sort((a, b) => b.calls - a.calls),
+    users: [...users.values()].sort((a, b) => b.messages + b.commands - (a.messages + a.commands)),
+    total
+  }
+}
+
+/**
+ * 近几天逐时的消息量，画热力图用
+ *
+ * 只到小时桶还在的那几天（{@link HOUR_KEEP_DAYS}）；更早的天没有小时分布可画。
+ * @param doc 文档
+ * @param today 服务端的今天
+ * @param days 几天，含今天
+ * @param account 只看这个账号；不给则全部
+ * @returns 每天一行，旧的在前；每行 24 格为收发消息之和
+ */
+export function hourlyGrid(
+  doc: StatsDoc,
+  today: string,
+  days = HOUR_KEEP_DAYS,
+  account?: string
+): { day: string; hours: number[]; cmds: number[] }[] {
+  const span = Math.max(1, Math.min(days, HOUR_KEEP_DAYS))
+  const out: { day: string; hours: number[]; cmds: number[] }[] = []
+  for (let i = span - 1; i >= 0; i -= 1) {
+    const day = shiftDay(today, -i)
+    const slots = doc.days[day]?.hours ?? {}
+    const hours: number[] = []
+    const cmds: number[] = []
+    for (let h = 0; h < 24; h += 1) {
+      const slot = slots[`${h}`.padStart(2, "0")]
+      hours.push(slot === undefined ? 0 : tallyOf(slot, "recv", account).messages + tallyOf(slot, "sent", account).messages)
+      cmds.push(slot === undefined ? 0 : account === undefined ? (slot.cmds ?? 0) : (slot.cmdBy?.[account] ?? 0))
+    }
+    out.push({ day, hours, cmds })
+  }
+  return out
 }
 
 /**
@@ -705,7 +1192,7 @@ export function aggregate(doc: StatsDoc, from: string, to: string, account?: str
  */
 export function aggregateHours(doc: StatsDoc, now: number, hours: number, account?: string): Aggregate {
   const span = Math.max(1, Math.min(Math.floor(hours), 24 * HOUR_KEEP_DAYS))
-  const series: { label: string; at: string; recv: Tally; sent: Tally }[] = []
+  const series: { label: string; at: string; recv: Tally; sent: Tally; cmds: number }[] = []
   const total = { recv: emptyTally(), sent: emptyTally() }
   const peers = new Map<string, PeerTotal>()
   const days = new Set<string>()
@@ -719,6 +1206,7 @@ export function aggregateHours(doc: StatsDoc, now: number, hours: number, accoun
     const slot = doc.days[day]?.hours?.[hour]
     const recv = slot === undefined ? emptyTally() : { ...tallyOf(slot, "recv", account) }
     const sent = slot === undefined ? emptyTally() : { ...tallyOf(slot, "sent", account) }
+    const cmds = slot === undefined ? 0 : account === undefined ? (slot.cmds ?? 0) : (slot.cmdBy?.[account] ?? 0)
     addTally(total.recv, recv)
     addTally(total.sent, sent)
     /*
@@ -729,7 +1217,7 @@ export function aggregateHours(doc: StatsDoc, now: number, hours: number, accoun
      */
     const sameDay = day === dayKey(now)
     // `at` 恒带日期，与 `label` 省不省日期无关 —— tooltip 要的是「哪天几点」
-    series.push({ label: sameDay ? hour : `${day.slice(5)} ${hour}`, at: `${day} ${hour}`, recv, sent })
+    series.push({ label: sameDay ? hour : `${day.slice(5)} ${hour}`, at: `${day} ${hour}`, recv, sent, cmds })
   }
 
   // 会话表按窗口覆盖到的天算：小时槽不带会话维度，这已是能给出的最细口径

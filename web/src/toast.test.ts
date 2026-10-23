@@ -5,12 +5,18 @@
  */
 import { beforeEach, describe, expect, it } from "vitest"
 import {
+  NOTICE_MAX,
   TOAST_ACTION_MIN_MS,
   TOAST_MAX,
   TOAST_MAX_MS,
   TOAST_MIN_MS,
   TOAST_STAGGER_MS,
+  clearNotices,
   dismissToast,
+  notices,
+  readAllNotices,
+  readNotice,
+  removeNotice,
   runToastAction,
   showToast,
   toastDurationOf,
@@ -19,6 +25,40 @@ import {
 
 beforeEach(() => {
   toasts.value = []
+  clearNotices()
+})
+
+describe("通知历史", () => {
+  it("每条回执记一份，新的在前、缺省未读；条子收起后仍在", () => {
+    showToast("已保存 a")
+    showToast("已保存 b")
+    dismissToast(toasts.value[0]?.id ?? 0)
+    expect(notices.value.map(one => [one.text, one.read])).toEqual([
+      ["已保存 b", false],
+      ["已保存 a", false]
+    ])
+    expect(notices.value[0]?.at).toBeTypeOf("number")
+  })
+
+  it("逐条已读、全部已读、逐条删除、全部删除", () => {
+    showToast("a")
+    showToast("b")
+    showToast("c")
+    readNotice(notices.value[1]?.id ?? 0)
+    expect(notices.value.map(one => one.read)).toEqual([false, true, false])
+    removeNotice(notices.value[0]?.id ?? 0)
+    expect(notices.value.map(one => one.text)).toEqual(["b", "a"])
+    readAllNotices()
+    expect(notices.value.every(one => one.read)).toBe(true)
+    clearNotices()
+    expect(notices.value).toEqual([])
+  })
+
+  it(`只留最近 ${NOTICE_MAX} 条`, () => {
+    for (let i = 0; i < NOTICE_MAX + 5; i += 1) showToast(`第 ${i} 条`)
+    expect(notices.value).toHaveLength(NOTICE_MAX)
+    expect(notices.value[0]?.text).toBe(`第 ${NOTICE_MAX + 4} 条`)
+  })
 })
 
 describe("toastDurationOf", () => {

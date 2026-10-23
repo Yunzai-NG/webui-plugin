@@ -25,6 +25,7 @@ import { useAction } from "../action.js"
 import { getAt, postAt } from "../api.js"
 import { askConfirm } from "../confirm.js"
 import { datetime, errorText } from "../format.js"
+import { cardTitle } from "../cardtitle.js"
 import { MARKET_TABS, cardTags, emptyCriteria, gatesOf, tabCounts, visibleItems, type Criteria } from "../filter.js"
 import { setupNotes, storeResultText, storeUrlOf, versionText, willRunPm } from "../panelstore.js"
 import { safeHref } from "../links.js"
@@ -238,15 +239,15 @@ onMounted(() => void load())
     <div class="grid market">
       <article v-for="item in visible" :key="item.name" class="card item">
         <header>
-          <h3>{{ item.title }}</h3>
+          <h3 :title="item.title">{{ cardTitle(item.title) }}</h3>
           <span v-if="item.official" class="tag ok">官方</span>
           <span v-if="item.updatable" class="tag warn">可更新</span>
           <span v-else-if="item.installed" class="tag">已安装</span>
         </header>
 
         <p class="mono hint">{{ item.name }} · {{ versionText(item) }}</p>
-        <!-- 说明限两行、溢出省略；全文在「查看」里，理由见 `.plugin-desc` 的样式注释 -->
-        <p class="plugin-desc">{{ item.description }}</p>
+        <!-- 说明限一行、溢出省略；全文在「查看」里，理由见 `.plugin-desc` 的样式注释 -->
+        <p class="plugin-desc" :title="item.description">{{ item.description }}</p>
 
         <p class="hint">
           <span v-if="item.author">作者 {{ item.author }}</span>

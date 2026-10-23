@@ -18,13 +18,14 @@
  *          是索引声明的 npm script。那是知情同意的「知情」那一半 —— 但它不是一道新的信任边界，
  *          插件入口下一秒就会被内核 `import()` 执行。
  *
- *          **说明限两行、溢出省略**：一个写了三百字说明的条目会把它那一行的卡片全部拉高。全文在
+ *          **说明限一行、溢出省略，标题去掉括号**：说明长短不一时同一排卡片高低不齐。全文在
  *          「查看」里 —— 那个模态同时是「作者、版本、来源索引」这些卡片上摆不下的事实的去处。
  */
 import { computed, onMounted, ref } from "vue"
 import { useAction } from "../action.js"
 import { del, get, post } from "../api.js"
 import { datetime, errorText } from "../format.js"
+import { cardTitle } from "../cardtitle.js"
 import { askConfirm } from "../confirm.js"
 import { MARKET_TABS, cardTags, emptyCriteria, gatesOf, visibleItems, tabCounts, type Criteria } from "../filter.js"
 import { resultText } from "../market.js"
@@ -368,7 +369,7 @@ onMounted(() => {
     <div class="grid market">
       <article v-for="item in visible" :key="item.name" class="card item">
         <header>
-          <h3>{{ item.title }}</h3>
+          <h3 :title="item.title">{{ cardTitle(item.title) }}</h3>
           <span v-if="item.official" class="tag ok">官方</span>
           <!--
             自定义那枚标记不可省：这一条的来历与旁边几条不同
@@ -386,7 +387,7 @@ onMounted(() => {
           ><span v-else-if="item.installedVersion"> · {{ item.installedVersion }}</span
           ><span v-else-if="item.version"> · {{ item.version }}</span>
         </p>
-        <p class="plugin-desc">{{ item.description }}</p>
+        <p class="plugin-desc" :title="item.description">{{ item.description }}</p>
         <p class="hint">
           <span v-if="item.author">作者 {{ item.author }}</span>
           <span v-if="item.minCore"> · 需要内核 {{ item.minCore }} 及以上</span>

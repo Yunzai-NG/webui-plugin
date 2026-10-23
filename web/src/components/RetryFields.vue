@@ -18,6 +18,7 @@ import { computed, useId } from "vue"
 import { DUR_UNITS } from "../duration.js"
 import { globalNote, retryFormOf, retryOverrideOf } from "../retry.js"
 import type { GlobalRetry, RetryForm } from "../retry.js"
+import PickSelect from "./PickSelect.vue"
 
 /**
  * 表单态，四项皆字符串 —— 空串即「跟随全局」（见 `retry.ts` 文件头）
@@ -33,6 +34,9 @@ defineProps<{
   /** 自成一个页签时为真：标题已写在页签上，不再画分隔线与小标题 */
   inTab?: boolean
 }>()
+
+/** 单位下拉的选项 */
+const unitOptions = DUR_UNITS.map(unit => ({ value: unit.value, label: unit.label }))
 
 /** 本组件这一份实例的 id 前缀，避免同页两份表单撞名 */
 const uid = useId()
@@ -70,9 +74,7 @@ function clear(): void {
       <label :for="`${uid}-interval`">首次重连间隔</label>
       <div class="dur">
         <input :id="`${uid}-interval`" v-model="form.interval" type="number" min="0" placeholder="跟随全局" />
-        <select v-model="form.intervalUnit" aria-label="首次重连间隔的单位">
-          <option v-for="unit in DUR_UNITS" :key="unit.value" :value="unit.value">{{ unit.label }}</option>
-        </select>
+        <PickSelect v-model="form.intervalUnit" :options="unitOptions" label="首次重连间隔的单位" />
       </div>
       <p class="hint">{{ globalNote("interval", global) }}。第一次失败之后等多久再试。</p>
     </div>
@@ -81,9 +83,7 @@ function clear(): void {
       <label :for="`${uid}-maxInterval`">重连间隔上限</label>
       <div class="dur">
         <input :id="`${uid}-maxInterval`" v-model="form.maxInterval" type="number" min="0" placeholder="跟随全局" />
-        <select v-model="form.maxIntervalUnit" aria-label="重连间隔上限的单位">
-          <option v-for="unit in DUR_UNITS" :key="unit.value" :value="unit.value">{{ unit.label }}</option>
-        </select>
+        <PickSelect v-model="form.maxIntervalUnit" :options="unitOptions" label="重连间隔上限的单位" />
       </div>
       <p class="hint">{{ globalNote("maxInterval", global) }}。退避增长到此为止，不再变长。</p>
     </div>

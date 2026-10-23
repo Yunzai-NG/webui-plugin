@@ -22,7 +22,7 @@
  */
 import { readFile, mkdir, writeFile, rename } from "node:fs/promises"
 import { dirname, join } from "node:path"
-import type { Disposer, MessageEvent, MessageSentInfo, Segment } from "@yunzai-ng/types"
+import type { CommandDoneInfo, Disposer, MessageEvent, MessageSentInfo, Segment } from "@yunzai-ng/types"
 import { StatsBuckets, dayKey, emptyTally, parseStatsDoc, type Entry, type PeerDay, type Tally } from "./msgstats.js"
 
 /** 统计文件名，落在 webui 的数据目录下 */
@@ -148,7 +148,7 @@ export interface CollectHost {
    * @param handler 处理函数
    * @returns 注销句柄
    */
-  on(event: "message" | "message/sent" | "app/stopping", handler: (...args: never[]) => unknown): Disposer
+  on(event: "message" | "message/sent" | "command/done" | "app/stopping", handler: (...args: never[]) => unknown): Disposer
   /**
    * 把账号**记录 id** 换成**平台 id**
    *
@@ -240,8 +240,32 @@ export async function startCollector(host: CollectHost): Promise<Collector> {
       ...peer,
       dir: "recv",
       tally: tallyOfSegments(e.message),
-      account: { platform: e.platform, adapter: "", account: e.selfId }
+      account: { platform: e.platform, adapter: "", account: e.selfId },
+      user: { uid: e.sender.uid, name: e.sender.name ?? e.sender.uid }
     })
+  }) as (...args: never[]) => unknown)
+
+  /*
+   * 命令调用：埋在 `command/done` 而非 `message` 上的 `e.command`
+   *
+   * 一条消息可能命中几条不阻断的命令，`e.command` 只留着最后那条；且 `command/done` 带耗时与成败，
+   * 失败的那次也计入 —— 成功率要的正是它。
+   */
+  const offCmd = host.on("command/done", ((e: MessageEvent, info: CommandDoneInfo) => {
+    try {
+      buckets.addCommand({
+        at: Date.now(),
+        plugin: info.plugin,
+        command: info.command,
+        ok: info.ok,
+        cost: info.cost,
+        ...peerOfEvent(e),
+        user: { uid: e.sender.uid, name: e.sender.name ?? e.sender.uid },
+        account: { platform: e.platform, adapter: "", account: e.selfId }
+      })
+    } catch (err) {
+      host.logger.debug(`命令统计入账失败：${err instanceof Error ? err.message : String(err)}`)
+    }
   }) as (...args: never[]) => unknown)
 
   const offSent = host.on("message/sent", ((info: MessageSentInfo) => {
@@ -302,6 +326,7 @@ export async function startCollector(host: CollectHost): Promise<Collector> {
       clearInterval(timer)
       offRecv()
       offSent()
+      offCmd()
       offStop()
       await flush()
     }

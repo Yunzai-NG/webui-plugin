@@ -10,7 +10,7 @@
  *          **不把 `StatsBuckets` 实例放进来，只放一个取快照的函数**：放实例的话接口那侧就能
  *          `add()`，等于开了一条从 HTTP 往统计里写数的路。函数只能读。
  */
-import { HOUR_KEEP_DAYS, KEEP_DAYS, aggregate, aggregateHours, dayKey, type StatsDoc, type Tally } from "./msgstats.js"
+import { HOUR_KEEP_DAYS, KEEP_DAYS, aggregate, aggregateHours, aggregateUsage, dayKey, type StatsDoc, type Tally } from "./msgstats.js"
 
 /** 取快照的函数，采集器启动时置入 */
 type Reader = () => StatsDoc
@@ -96,6 +96,10 @@ export interface StatsBrief {
   readonly today: { readonly recv: Tally; readonly sent: Tally }
   /** 今日收发条数最多的会话，至多 {@link BRIEF_PEERS} 个 */
   readonly peers: readonly { readonly name: string; readonly scene: string; readonly messages: number }[]
+  /** 今日调用最多的命令，至多 {@link BRIEF_PEERS} 条；旧数据或没人用过命令时为空 */
+  readonly commands: readonly { readonly plugin: string; readonly command: string; readonly calls: number }[]
+  /** 今日命令调用总数 */
+  readonly calls: number
 }
 
 /** 摘要里列几个会话 */
@@ -116,7 +120,12 @@ export function readBrief(): StatsBrief {
   const doc: StatsDoc = reader === undefined ? { version: 2, days: {} } : reader()
   const last = aggregateHours(doc, now, 24)
   const today = aggregate(doc, dayKey(now), dayKey(now))
+  const usage = aggregateUsage(doc, [dayKey(now)])
   return {
+    commands: usage.commands
+      .slice(0, BRIEF_PEERS)
+      .map(cmd => ({ plugin: cmd.plugin, command: cmd.command, calls: cmd.calls })),
+    calls: usage.total.calls,
     running: reader !== undefined,
     hours: last.series.map(slot => ({ at: slot.at, label: slot.label, recv: slot.recv.messages, sent: slot.sent.messages })),
     last24: last.total,

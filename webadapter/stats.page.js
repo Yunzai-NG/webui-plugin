@@ -28,7 +28,7 @@
  */
 
 /** msgstats 的聚合函数，由 webadapter/msgstats.js 挂在全局上（见 scripts/sync-webadapter.mjs） */
-const { aggregate, aggregateHours, dayKey, shiftDay } = window.YZNG_MSGSTATS
+const { aggregate, aggregateHours, aggregateUsage, dayKey, hourlyGrid, shiftDay } = window.YZNG_MSGSTATS
 
 /** 数据桥的消息类型标识，与 web/src/custombridgegate.ts 的 `BRIDGE_KIND` 一致 */
 const BRIDGE_KIND = "yunzai-ng.custom"
@@ -267,7 +267,7 @@ function labelStep(count) {
  * 而 `const` 有暂时性死区 —— 现在的调用时序侥幸安全（只在 `render()` 里调），
  * 下一个人把 `seriesOf` 挪到模块顶层求值一次就会撞上 ReferenceError。
  */
-const METRIC_NAME = { messages: "消息", images: "图片", stickers: "表情包" }
+const METRIC_NAME = { messages: "消息", images: "图片", stickers: "表情包", cmds: "命令" }
 
 /**
  * 一张图上要画哪几条系列
@@ -281,6 +281,8 @@ const METRIC_NAME = { messages: "消息", images: "图片", stickers: "表情包
  * @returns {{name: string, color: string, dir: string, metric: string}[]} 系列描述
  */
 function seriesOf(key) {
+  // 命令不分收发：一次调用就是一次，只画一条
+  if (key === "cmds") return [{ name: "命令调用", color: "var(--accent-solid)", dir: "cmds", metric: "cmds" }]
   if (key !== "all") {
     return [
       { name: `收到${METRIC_NAME[key]}`, color: "var(--recv)", dir: "recv", metric: key },
@@ -304,6 +306,8 @@ function seriesOf(key) {
  * @returns {number} 数值
  */
 function pickValue(item, def) {
+  // 旧版服务端的序列不带 cmds，按 0 画
+  if (def.dir === "cmds") return item.cmds ?? 0
   return item[def.dir][def.metric]
 }
 
@@ -574,35 +578,306 @@ function drawChart(series, kind, key) {
 const SCENE_NAME = { group: "群", private: "私聊", guild: "频道" }
 
 /**
+ * 上一期：与当前同样长的前一段，算「较上期」用
+ *
+ * 当天对昨天同一时段（00:00 到昨天的此刻），1 日对再往前的 24 小时，按天的几档整段往前挪。
+ * @returns {object} 聚合结果，形如 `aggregate()` 的返回值
+ */
+function previousView() {
+  const acct = account === "" ? undefined : account
+  if (span === "today") return aggregateHours(doc, serverNow - 86_400_000, new Date(serverNow).getHours() + 1, acct)
+  if (span === "1") return aggregateHours(doc, serverNow - 86_400_000, 24, acct)
+  const range = rangeOfDays()
+  const lo = range.from <= range.to ? range.from : range.to
+  const hi = range.from <= range.to ? range.to : range.from
+  let days = 0
+  for (let day = lo; day <= hi && days < 400; day = shiftDay(day, 1)) days += 1
+  return aggregate(doc, shiftDay(lo, -days), shiftDay(lo, -1), acct)
+}
+
+/**
+ * 当前视图覆盖到的日期
+ *
+ * 按小时那两档给窗口跨到的天（「1 日」是两天），与会话表同一口径（见 msgstats.ts 的 `aggregateHours`）。
+ * @param {object} view 聚合结果
+ * @returns {string[]} 日期键
+ */
+function daysOfView(view) {
+  const days = new Set()
+  for (const item of view.series) days.add(String(item.at).slice(0, 10))
+  return [...days]
+}
+
+/**
+ * 较上期的变化，写在计数下面那一行
+ * @param {number} now 本期
+ * @param {number} before 上期
+ * @returns {{text: string, tone: string}} 文案与色调
+ */
+function deltaOf(now, before) {
+  if (before === 0) return { text: now === 0 ? "与上期持平" : "上期为 0", tone: "" }
+  const pct = Math.round(((now - before) / before) * 100)
+  if (pct === 0) return { text: "与上期持平", tone: "" }
+  return { text: `较上期 ${pct > 0 ? "↑" : "↓"} ${Math.abs(pct)}%`, tone: pct > 0 ? "up" : "down" }
+}
+
+/**
+ * 画一格计数
+ * @param {HTMLElement} box 容器
+ * @param {string} label 名称
+ * @param {string} value 大字
+ * @param {string} dir 圆点颜色：recv | sent | 空串
+ * @param {{text: string, tone: string}} [delta] 较上期
+ */
+function addTile(box, label, value, dir, delta) {
+  const tile = document.createElement("div")
+  tile.className = "tile"
+  const head = document.createElement("div")
+  head.className = "tile-label"
+  if (dir !== "") {
+    const dot = document.createElement("i")
+    dot.className = `dot dot-${dir}`
+    head.append(dot)
+  }
+  head.append(document.createTextNode(label))
+  const num = document.createElement("div")
+  num.className = "tile-value"
+  num.textContent = value
+  tile.append(head, num)
+  if (delta !== undefined) {
+    const line = document.createElement("div")
+    line.className = `delta ${delta.tone}`
+    line.textContent = delta.text
+    tile.append(line)
+  }
+  box.append(tile)
+}
+
+/**
  * 画计数卡
  * @param {object} total 区间合计
+ * @param {object} before 上一期合计
  */
-function drawTiles(total) {
+function drawTiles(total, before) {
   const box = el("tiles")
   box.replaceChildren()
   const items = [
-    ["收到消息", total.recv.messages, "recv"],
-    ["发出消息", total.sent.messages, "sent"],
-    ["收到图片", total.recv.images, "recv"],
-    ["发出图片", total.sent.images, "sent"],
-    ["收到表情包", total.recv.stickers, "recv"],
-    ["发出表情包", total.sent.stickers, "sent"]
+    ["收到消息", "recv", "messages"],
+    ["发出消息", "sent", "messages"],
+    ["收到图片", "recv", "images"],
+    ["发出图片", "sent", "images"],
+    ["收到表情包", "recv", "stickers"],
+    ["发出表情包", "sent", "stickers"]
   ]
-  for (const [label, value, dir] of items) {
-    const tile = document.createElement("div")
-    tile.className = "tile"
-    const head = document.createElement("div")
-    head.className = "tile-label"
-    const dot = document.createElement("i")
-    dot.className = `dot dot-${dir}`
-    head.append(dot, document.createTextNode(label))
-    const num = document.createElement("div")
-    num.className = "tile-value"
+  for (const [label, dir, key] of items) {
     // toLocaleString 加千位分隔：五位数以上不分隔时读起来要数位数
-    num.textContent = value.toLocaleString("zh-CN")
-    tile.append(head, num)
-    box.append(tile)
+    addTile(box, label, total[dir][key].toLocaleString("zh-CN"), dir, deltaOf(total[dir][key], before[dir][key]))
   }
+}
+
+/** 会话类型的配色 */
+const SCENE_COLOR = { group: "var(--recv)", private: "var(--sent)", guild: "var(--recv-img)" }
+
+/**
+ * 画收到消息按会话类型的占比
+ * @param {readonly object[]} peers 按会话的合计
+ */
+function drawScenes(peers) {
+  const box = el("scenes")
+  const sums = { group: 0, private: 0, guild: 0 }
+  for (const peer of peers) sums[peer.scene] = (sums[peer.scene] ?? 0) + peer.recv.messages
+  const all = sums.group + sums.private + sums.guild
+  box.hidden = all === 0
+  box.replaceChildren()
+  const legend = box.nextElementSibling?.classList.contains("scene-legend") ? box.nextElementSibling : document.createElement("div")
+  legend.className = "scene-legend"
+  legend.replaceChildren()
+  legend.hidden = all === 0
+  if (all === 0) return
+  for (const scene of ["group", "private", "guild"]) {
+    if (sums[scene] === 0) continue
+    const pct = Math.round((sums[scene] / all) * 100)
+    const part = document.createElement("span")
+    part.style.width = `${(sums[scene] / all) * 100}%`
+    part.style.background = SCENE_COLOR[scene]
+    part.title = `${SCENE_NAME[scene]} ${pct}%`
+    box.append(part)
+    const item = document.createElement("span")
+    item.textContent = `${SCENE_NAME[scene]} ${sums[scene].toLocaleString("zh-CN")}（${pct}%）`
+    legend.append(item)
+  }
+  if (!legend.isConnected) box.after(legend)
+}
+
+/**
+ * 造一行表格
+ * @param {(string|Node)[]} cells 各格内容
+ * @returns {HTMLTableRowElement} 行
+ */
+function rowOf(cells) {
+  const row = document.createElement("tr")
+  cells.forEach((cell, i) => {
+    const td = document.createElement("td")
+    if (i === 0) td.className = "rank"
+    if (typeof cell === "string") td.textContent = cell
+    else td.append(cell)
+    row.append(td)
+  })
+  return row
+}
+
+/**
+ * 名字下面带一行小字
+ * @param {string} main 名字
+ * @param {string} sub 小字；空串则不带
+ * @returns {DocumentFragment} 内容
+ */
+function nameCell(main, sub) {
+  const frag = document.createDocumentFragment()
+  frag.append(document.createTextNode(main))
+  if (sub !== "") {
+    const line = document.createElement("span")
+    line.className = "sub-line"
+    line.textContent = sub
+    frag.append(line)
+  }
+  return frag
+}
+
+/**
+ * 占比条
+ * @param {number} part 本项
+ * @param {number} all 总数
+ * @returns {HTMLElement} 内容
+ */
+function shareCell(part, all) {
+  const box = document.createElement("span")
+  box.className = "share"
+  const pct = all === 0 ? 0 : (part / all) * 100
+  const bar = document.createElement("i")
+  const fill = document.createElement("b")
+  fill.style.width = `${pct}%`
+  bar.append(fill)
+  box.append(bar, document.createTextNode(`${pct.toFixed(pct >= 10 ? 0 : 1)}%`))
+  return box
+}
+
+/**
+ * 一组命令调用的成功率与平均耗时
+ * @param {{calls: number, failed: number, cost: number}} t 计数
+ * @returns {{rate: string, avg: string}} 文案
+ */
+function cmdTexts(t) {
+  if (t.calls === 0) return { rate: "—", avg: "—" }
+  const rate = ((t.calls - t.failed) / t.calls) * 100
+  return { rate: `${rate.toFixed(rate === 100 ? 0 : 1)}%`, avg: `${Math.round(t.cost / t.calls)}ms` }
+}
+
+/**
+ * 画命令使用、插件排行与活跃用户
+ * @param {object} view 当前视图
+ */
+function drawUsage(view) {
+  const acct = account === "" ? undefined : account
+  const usage = aggregateUsage(doc, daysOfView(view), acct)
+  const before = aggregateUsage(doc, daysOfView(previousView()), acct)
+  const total = usage.total
+  const texts = cmdTexts(total)
+
+  el("cmdSub").textContent = `${usage.commands.length} 条命令被用过 · ${daysOfView(view).length > 1 ? `覆盖 ${daysOfView(view).length} 天` : "当天"}`
+  const tiles = el("cmdTiles")
+  tiles.replaceChildren()
+  addTile(tiles, "命令调用", total.calls.toLocaleString("zh-CN"), "", deltaOf(total.calls, before.total.calls))
+  addTile(tiles, "成功率", texts.rate, "", total.failed > 0 ? { text: `失败 ${total.failed} 次`, tone: "down" } : undefined)
+  addTile(tiles, "平均耗时", texts.avg, "")
+  addTile(tiles, "用过命令的人", total.callers.toLocaleString("zh-CN"), "", deltaOf(total.callers, before.total.callers))
+
+  const body = el("cmdBody")
+  body.replaceChildren()
+  usage.commands.slice(0, 30).forEach((cmd, i) => {
+    const t = cmdTexts(cmd)
+    const where = cmd.top.slice(0, 2).map(p => `${p.name} ${p.calls}`).join("、")
+    body.append(
+      rowOf([
+        String(i + 1),
+        nameCell(cmd.command, cmd.plugin),
+        cmd.calls.toLocaleString("zh-CN"),
+        shareCell(cmd.calls, total.calls),
+        t.rate,
+        t.avg,
+        nameCell(String(cmd.peers || "—"), where)
+      ])
+    )
+  })
+  el("cmdEmpty").hidden = usage.commands.length > 0
+  el("cmdTable").hidden = usage.commands.length === 0
+  // 有消息而一条命令都没有：多半是升级前的日子，说一句免得以为统计坏了
+  el("cmdNote").hidden = !(usage.commands.length === 0 && view.total.recv.messages > 0)
+
+  const plugins = el("pluginBody")
+  plugins.replaceChildren()
+  usage.plugins.slice(0, 20).forEach((p, i) => {
+    plugins.append(rowOf([String(i + 1), p.plugin, p.calls.toLocaleString("zh-CN"), String(p.commands), String(p.failed)]))
+  })
+  el("pluginEmpty").hidden = usage.plugins.length > 0
+  el("pluginTable").hidden = usage.plugins.length === 0
+
+  const users = el("userBody")
+  users.replaceChildren()
+  usage.users.slice(0, 20).forEach((user, i) => {
+    users.append(
+      rowOf([
+        String(i + 1),
+        nameCell(user.name, user.name === user.uid ? "" : user.uid),
+        user.messages.toLocaleString("zh-CN"),
+        user.commands.toLocaleString("zh-CN")
+      ])
+    )
+  })
+  el("userEmpty").hidden = usage.users.length > 0
+  el("userTable").hidden = usage.users.length === 0
+}
+
+/** 热力图看消息还是命令 */
+let heatKind = "msgs"
+
+/** 画近几天的活跃时段 */
+function drawHeat() {
+  const grid = hourlyGrid(doc, today, hourKeepDays, account === "" ? undefined : account)
+  const box = el("heat")
+  box.replaceChildren()
+  const pick = row => (heatKind === "cmds" ? row.cmds : row.hours)
+  const peak = Math.max(1, ...grid.flatMap(pick))
+  const corner = document.createElement("span")
+  box.append(corner)
+  for (let h = 0; h < 24; h += 1) {
+    const label = document.createElement("span")
+    label.className = "hour"
+    label.textContent = h % 3 === 0 ? String(h) : ""
+    box.append(label)
+  }
+  let busiest = { n: 0, day: "", hour: 0 }
+  for (const row of grid) {
+    const day = document.createElement("span")
+    day.className = "day"
+    day.textContent = row.day === today ? "今天" : row.day.slice(5)
+    box.append(day)
+    pick(row).forEach((n, h) => {
+      const cell = document.createElement("span")
+      cell.className = "cell"
+      if (n > 0) cell.style.background = `color-mix(in srgb, var(--accent-solid) ${Math.round(15 + (n / peak) * 85)}%, var(--bg))`
+      const text = `${momentLabel(`${row.day} ${String(h).padStart(2, "0")}`)} · ${heatKind === "cmds" ? "命令" : "消息"} ${n}`
+      cell.title = text
+      cell.addEventListener("pointerdown", () => {
+        el("heatReadout").textContent = text
+      })
+      box.append(cell)
+      if (n > busiest.n) busiest = { n, day: row.day, hour: h }
+    })
+  }
+  el("heatSub").textContent = `近 ${grid.length} 天逐小时的${heatKind === "cmds" ? "命令调用" : "收发消息"}，颜色越深越忙`
+  el("heatDesc").textContent =
+    busiest.n === 0 ? "近几天没有记录" : `最忙的是 ${momentLabel(`${busiest.day} ${String(busiest.hour).padStart(2, "0")}`)}，${busiest.n} 条`
 }
 
 /**
@@ -707,10 +982,14 @@ function render() {
   el("chartSub").textContent = `${caps.chart} · ${metricName}`
   el("peerSub").textContent = `${view.peers.length} 个会话，按消息总数排序`
 
-  drawTiles(view.total)
+  const prev = previousView()
+  drawTiles(view.total, prev.total)
+  drawScenes(view.peers)
   drawChart(view.series, chartKind, metric)
   drawLegend(metric)
   drawPeers(view.peers)
+  drawUsage(view)
+  drawHeat()
 
   /*
    * 读屏软件取不到 SVG 里的图形，故把结论写成一句话
@@ -720,7 +999,7 @@ function render() {
    */
   const unitName = view.unit === "hour" ? "小时" : "日"
   const parts = seriesOf(metric).map(def => {
-    const sum = view.total[def.dir][def.metric]
+    const sum = def.dir === "cmds" ? view.series.reduce((n, item) => n + (item.cmds ?? 0), 0) : view.total[def.dir][def.metric]
     return `${def.name} ${sum}`
   })
   const peak = view.series.reduce(
@@ -829,6 +1108,11 @@ bindSeg("chart", value => {
 bindSeg("metric", value => {
   metric = value
   render()
+})
+
+bindSeg("heat", value => {
+  heatKind = value
+  drawHeat()
 })
 
 el("acctPick").addEventListener("change", event => {

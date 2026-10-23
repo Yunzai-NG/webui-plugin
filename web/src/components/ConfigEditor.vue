@@ -27,7 +27,12 @@ import { errorText } from "../format.js"
 import { askConfirm } from "../confirm.js"
 import { showToast } from "../toast.js"
 import SchemaForm from "./SchemaForm.vue"
-import type { ConfigDetail, SchemaIssue } from "../types.js"
+import ScopeDrawer from "./ScopeDrawer.vue"
+import ChipInput from "./ChipInput.vue"
+import DisabledPicker from "./DisabledPicker.vue"
+import { scopeOf } from "../grouprules.js"
+import { loadScopeLists } from "../scopereg.js"
+import type { CommandItem, ConfigDetail, SchemaIssue } from "../types.js"
 
 const props = defineProps<{
   /** 要编辑哪一份配置 */
@@ -144,6 +149,54 @@ async function reset(): Promise<void> {
   }
 }
 
+/**
+ * 自己画的顶层字段：内核配置里有 `scope` 一节时自己画
+ *
+ * 判据取 schema 里有没有这一节而不是配置名：旧内核没有它，表单照旧按 schema 画别的。
+ */
+const custom = computed(() => (props.name === "yunzai" && current.value?.schema.properties?.scope !== undefined ? ["scope"] : []))
+
+/** 群配置抽屉是否打开 */
+const scopeOpen = ref(false)
+
+/** 禁用清单要的命令与插件，打开配置页时读一次 */
+const lists = ref<{ commands: CommandItem[]; plugins: string[]; scripts: string[] }>({ commands: [], plugins: [], scripts: [] })
+watch(
+  custom,
+  keys => {
+    if (keys.length === 0) return
+    loadScopeLists()
+      .then(got => (lists.value = { commands: got.commands, plugins: got.plugins, scripts: got.scripts }))
+      .catch(() => undefined)
+  },
+  { immediate: true }
+)
+
+/**
+ * 群配置的一行摘要
+ * @param raw 配置里的 `scope`
+ * @returns 文案
+ */
+function scopeSummary(raw: unknown): string {
+  const scope = scopeOf(raw)
+  const parts = [`${scope.rules.length} 条群配置`]
+  if (scope.presets.length > 0) parts.push(`${scope.presets.length} 个规则组`)
+  return parts.join(" · ")
+}
+
+/**
+ * 抽屉保存后把那两项写回表单（全局前缀与禁用不动：它们可能有表单里没保存的改动）
+ * @param value 内核回的整份配置
+ */
+function onScopeSaved(value: Record<string, unknown>): void {
+  const detail = current.value
+  if (detail === undefined) return
+  const saved = (value.scope ?? {}) as Record<string, unknown>
+  const scope = { ...((detail.value.scope ?? {}) as Record<string, unknown>), rules: saved.rules, presets: saved.presets }
+  detail.value = { ...detail.value, scope }
+  const before = (pristine.scope ?? {}) as Record<string, unknown>
+  pristine = snapshot({ ...pristine, scope: { ...before, rules: saved.rules, presets: saved.presets } })
+}
 watch(() => props.name, () => void load(), { immediate: true })
 </script>
 
@@ -158,8 +211,51 @@ watch(() => props.name, () => void load(), { immediate: true })
         :value="current.value"
         :issues="issues"
         :dirty="Object.keys(dirty)"
+        :custom="custom"
         @change="onChange"
-      />
+      >
+        <!--
+          群前缀、禁用与群配置：通用表单画出来只是一串嵌套列表，故自己画。全局两项跟着这颗保存钮走，
+          群配置与规则组在右侧抽屉里另存
+        -->
+        <template #field-scope="{ value: scopeValue }">
+          <div class="scope-global">
+            <div class="sc-field">
+              <span class="s-label">全局群前缀</span>
+              <p class="hint">填了之后群里要先带上其中一个：前缀「小云」时发「小云#帮助」才响应，直接发「#帮助」不理。私聊不受影响。</p>
+              <ChipInput
+                :model-value="scopeOf(scopeValue).prefix"
+                :options="[]"
+                label="全局群前缀"
+                placeholder="不要前缀（输入后回车，可加几个）"
+                free
+                @update:model-value="v => onChange('scope.prefix', v)"
+              />
+            </div>
+
+            <div class="sc-field">
+              <span class="s-label">全局禁用</span>
+              <p class="hint">在所有群里都不响应。勾格子禁整个插件，点开格子只禁其中几条命令。</p>
+              <DisabledPicker
+                :model-value="scopeOf(scopeValue).disabled"
+                :commands="lists.commands"
+                :plugins="lists.plugins"
+                :scripts="lists.scripts"
+                @update:model-value="v => onChange('scope.disabled', v)"
+              />
+            </div>
+
+            <div class="scope-entry">
+              <div class="scope-entry-text">
+                <span class="s-label">群配置 <span class="tag">{{ scopeSummary(scopeValue) }}</span></span>
+                <p class="hint">按账号与群改写上面两项，优先于全局；只对声明了群配置的适配器接入的机器人生效。</p>
+              </div>
+              <button @click="scopeOpen = true">编辑群配置</button>
+            </div>
+          </div>
+          <ScopeDrawer :open="scopeOpen" :value="scopeValue" @close="scopeOpen = false" @saved="onScopeSaved" />
+        </template>
+      </SchemaForm>
 
       <div class="row config-actions">
         <button class="primary" :disabled="!hasChanges || saving" @click="void save()">

@@ -74,7 +74,11 @@ export const STATS: readonly StatDef[] = [
     icon: routeIcon("plugins"),
     value: data => String(data.counts.plugins - data.counts.pluginsFailed),
     total: data => `/ ${data.counts.plugins}`,
-    label: data => (data.counts.pluginsFailed > 0 ? `插件已加载（失败 ${data.counts.pluginsFailed}）` : "插件已加载"),
+    label: data => {
+      const scripts = data.counts.scripts ?? 0
+      const parts = [scripts > 0 ? `含 ${scripts} 个单文件 JS` : "", data.counts.pluginsFailed > 0 ? `失败 ${data.counts.pluginsFailed}` : ""].filter(Boolean)
+      return parts.length === 0 ? "插件已加载" : `插件已加载（${parts.join("，")}）`
+    },
     bad: data => data.counts.pluginsFailed > 0
   },
   { id: "overview.commands", title: "命令", icon: ICONS.code, value: data => String(data.counts.commands) },

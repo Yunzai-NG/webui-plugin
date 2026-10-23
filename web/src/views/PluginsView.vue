@@ -18,6 +18,7 @@ import { computed, nextTick, onMounted, ref } from "vue"
 import { useAction } from "../action.js"
 import { del, delAt, get, getAt, post, postAt } from "../api.js"
 import { errorText, statusClass, statusText } from "../format.js"
+import { cardTitle } from "../cardtitle.js"
 import { askConfirm, askConfirm3 } from "../confirm.js"
 import { installDirOf, resultText, setupResultText } from "../market.js"
 import { safeHref } from "../links.js"
@@ -34,6 +35,7 @@ import { ICONS } from "../icons.js"
 import { panelConfigOf } from "../panelconfig.js"
 import { storeEntryOf, storeUrlOf, strayStoreItems, versionText } from "../panelstore.js"
 import { askPanelUpdate, postPanelUpdate } from "../panelupdate.js"
+import { BULK_CONCURRENCY, bulkSummary, runPool, type BulkOutcome } from "../bulkupdate.js"
 import { panelPackages, panelTabs, type PanelPackageView } from "../registry.js"
 import { reloadThemes } from "../themes.js"
 import { showToast } from "../toast.js"
@@ -60,17 +62,52 @@ import type {
 const MENU_GAP = 4
 
 /**
- * 三个内置页签
+ * 四个内置页签
  *
- * 「全部插件」在最前且为默认：它对两类使用者都不会是空的。
+ * 「全部插件」在最前且为默认：它对两类使用者都不会是空的。**单文件 JS 单列一页、不进「全部」**：
+ * 它们不更新、不编译，装上几十个的人不在少数，混在一起时要配置的那个插件就被淹掉了。
  */
 const PAGE_TABS = [
   { id: "all", label: "全部插件" },
   { id: "core", label: "核心插件" },
+  { id: "scripts", label: "单文件 JS" },
   { id: "panel", label: "面板插件" }
 ] as const
 
+/** 全部内核插件，含单文件 JS；页面上分两处列，见 `dirPlugins` 与 `scripts` */
 const plugins = ref<PluginItem[]>([])
+/** 目录插件：有自己的安装目录，可更新、可编译 */
+const dirPlugins = computed(() => plugins.value.filter(p => p.file === undefined))
+/** 单文件 JS 插件 */
+const scripts = computed(() => plugins.value.filter(p => p.file !== undefined))
+
+/** 搜索词；按名字与说明筛，四类页签都认 */
+const query = ref("")
+
+/**
+ * 是否命中搜索词
+ * @param texts 参与匹配的文本
+ * @returns 是否命中；没填搜索词时恒为真
+ */
+function matches(...texts: (string | undefined)[]): boolean {
+  const q = query.value.trim().toLowerCase()
+  return q === "" || texts.some(text => text?.toLowerCase().includes(q) === true)
+}
+
+/** 当前搜索下显示的目录插件 */
+const shownPlugins = computed(() => dirPlugins.value.filter(p => matches(p.name, p.description)))
+/** 当前搜索下显示的单文件 JS */
+const shownScripts = computed(() => scripts.value.filter(p => matches(p.name, p.description, p.file)))
+
+/**
+ * 单文件 JS 的短路径：插件目录之下那一截
+ * @param file 绝对路径
+ * @returns 如 `example/dice.js`
+ */
+function scriptPath(file: string | undefined): string {
+  const parts = (file ?? "").split(/[\\/]/).filter(s => s !== "")
+  return parts.slice(-2).join("/")
+}
 const tasks = ref<TaskItem[]>([])
 const commands = ref<CommandItem[]>([])
 const middlewares = ref<MiddlewareItem[]>([])
@@ -143,17 +180,24 @@ function entryOf(p: PluginItem): MarketItem | undefined {
  */
 const pageTab = ref<string>("all")
 
-/** 页头下那一行：共几个、已加载几个、有几个可更新（两类合计）、有几个出错 */
+/** 可更新的目录插件 */
+const updatableCore = computed(() => dirPlugins.value.filter(p => entryOf(p)?.updatable === true))
+/** 可更新的面板插件（含只带主题、未载入的） */
+const updatablePanels = computed(() => [
+  ...packages.value.map(pkg => storeOf(pkg)).filter((item): item is PanelStoreItem => item?.updatable === true),
+  ...strays.value.filter(item => item.updatable)
+])
+/** 可更新的总数 */
+const updatableCount = computed(() => updatableCore.value.length + updatablePanels.value.length)
+
+/** 页头下那一行：插件与单文件 JS 分开数，已加载、可更新、出错、面板插件包 */
 const meta = computed<MetaItem[]>(() => {
   const list = plugins.value
-  const updatable =
-    list.filter(p => entryOf(p)?.updatable === true).length +
-    packages.value.filter(pkg => storeOf(pkg)?.updatable === true).length +
-    strays.value.filter(item => item.updatable).length
   return [
-    { icon: ICONS.layers, label: "个内核插件", value: list.length },
+    { icon: ICONS.layers, label: "个插件", value: dirPlugins.value.length },
+    { icon: ICONS.code, label: "个单文件 JS", value: scripts.value.length, hideZero: true },
     { icon: ICONS.check, label: "已加载", value: list.filter(p => p.status === "loaded").length, tone: "ok" },
-    { icon: ICONS.refresh, label: "可更新", value: updatable, tone: "warn", hideZero: true },
+    { icon: ICONS.refresh, label: "可更新", value: updatableCount.value, tone: "warn", hideZero: true },
     { icon: ICONS.alert, label: "出错", value: list.filter(p => p.status === "error").length, tone: "err", hideZero: true },
     { icon: ICONS.sparkle, label: "个面板插件包", value: panelCount.value, hideZero: true }
   ]
@@ -174,19 +218,25 @@ const packages = computed(() => registered.filter(pkg => !removedKeys.value.has(
 /** 插件贡献的页签，接在内置三个之后 */
 const pluginTabs = panelTabs()
 
-/** 页级页签：内置三类带条目数，其后接插件贡献的页签 */
+/** 页级页签：内置四类带条目数（单文件 JS 没有时不出），其后接插件贡献的页签 */
 const pageTabs = computed(() => [
-  ...PAGE_TABS.map(item => ({
+  ...PAGE_TABS.filter(item => item.id !== "scripts" || scripts.value.length > 0).map(item => ({
     ...item,
     count:
       item.id === "all"
-        ? plugins.value.length + panelCount.value
+        ? dirPlugins.value.length + panelCount.value
         : item.id === "core"
-          ? plugins.value.length
-          : panelCount.value
+          ? dirPlugins.value.length
+          : item.id === "scripts"
+            ? scripts.value.length
+            : panelCount.value
   })),
   ...pluginTabs.map(item => ({ id: item.id, label: item.title }))
 ])
+
+/** 当前页签下显示哪几类 */
+const showCore = computed(() => pageTab.value === "all" || pageTab.value === "core")
+const showPanel = computed(() => pageTab.value === "all" || pageTab.value === "panel")
 
 /**
  * 包键 → 它在配置这件事上的状况（声明、当前值、声明写错了的原因）
@@ -232,6 +282,9 @@ const strays = computed(() =>
 
 /** 面板插件卡片总数 */
 const panelCount = computed(() => packages.value.length + strays.value.length)
+/** 当前搜索下显示的面板插件 */
+const shownPackages = computed(() => packages.value.filter(pkg => matches(pkg.name, pkg.meta?.description)))
+const shownStrays = computed(() => strays.value.filter(item => matches(item.name, item.title, item.description)))
 
 /**
  * 读面板商店索引；失败不写顶部错误条，理由同 `loadMarket`
@@ -662,6 +715,114 @@ async function remove(p: PluginItem): Promise<void> {
   })
 }
 
+/** 「全部更新」的进度：已完成几个 / 共几个；不在跑时为 undefined */
+const bulk = ref<{ done: number; total: number } | undefined>(undefined)
+
+/**
+ * 把可更新的插件一并更新，最后一起重载
+ *
+ * 三段：先问一次、再一并探测目录改动（有改动的统一问一次怎么办），然后并发更新、最后重载。
+ * - 目录插件逐个更新时带 `load: false`：每个更完就重扫一遍插件目录是 N 次无用功，故留到
+ *   最后一次 `plugins/rescan` 装回。旧内核没有那个端点时退回逐个重载。
+ * - **面板插件先于 webui**：它们的更新接口挂在 webui 自己身上，webui 卸下更新的那段时间里
+ *   这些请求无处可去；webui 本身放在最后单独更新。
+ */
+async function updateAll(): Promise<void> {
+  await flowOf("*", async () => {
+    const core = updatableCore.value
+    const panels = updatablePanels.value
+    if (core.length + panels.length === 0) return
+    const ok = await askConfirm({
+      title: `更新全部 ${core.length + panels.length} 个插件？`,
+      body: `同时最多 ${BULK_CONCURRENCY} 个并行更新，全部完成后一起重载。`,
+      okText: "全部更新",
+      details: [
+        ...[...core.map(p => `${p.name}：${p.version} → ${entryOf(p)?.version ?? "?"}`), ...panels.map(i => `${i.title}：${versionText(i)}`)],
+        "更新期间这些插件处于卸下状态，它们的命令暂不响应",
+        "一个失败不影响其余；失败的那个会装回原来的版本",
+        "webui 在列时放在最后更新，完成后请刷新页面"
+      ]
+    })
+    if (!ok) return
+
+    const probes = await Promise.all(core.map(async p => ({ p, probe: await probeUpdate(dirOf(p)) })))
+    const dirty = probes.filter(x => x.probe?.dirty === true).map(x => x.p)
+    let onDirty: "stash" | "skip" = "skip"
+    if (dirty.length > 0) {
+      const answer = await askConfirm3({
+        title: `${dirty.length} 个插件的目录内有未提交的改动`,
+        body: `${dirty.map(p => p.name).join("、")}。这几个要暂存改动后更新，还是先跳过？`,
+        okText: "暂存并更新",
+        altText: "跳过这几个",
+        cancelText: "取消全部更新",
+        details: ["暂存：改动收进 git 的暂存区，更新完可在各自目录执行 git stash pop 取回", "跳过：这几个这次不更新，其余照常"]
+      })
+      if (answer === "cancel") return
+      onDirty = answer === "ok" ? "stash" : "skip"
+    }
+    const skipped = onDirty === "skip" ? dirty.map(p => p.name) : []
+    const coreTargets = core.filter(p => !skipped.includes(p.name))
+    const isWebui = (p: PluginItem): boolean => dirOf(p) === "webui" || p.name === "webui"
+    const first = coreTargets.filter(p => !isWebui(p))
+    const last = coreTargets.filter(isWebui)
+
+    bulk.value = { done: 0, total: first.length + last.length + panels.length }
+    const tick = (): void => {
+      if (bulk.value !== undefined) bulk.value = { ...bulk.value, done: bulk.value.done + 1 }
+    }
+    /**
+     * 更新一个目录插件，不加载
+     * @param p 插件
+     * @returns 结果
+     */
+    const updateCore = async (p: PluginItem): Promise<BulkOutcome> => {
+      const dir = dirOf(p)
+      const body = { load: false, ...(dirty.includes(p) ? { onDirty: "stash" } : {}) }
+      try {
+        const result = await post<MarketInstallResult>(`market/${encodeURIComponent(dir)}/update`, body)
+        return { name: p.name, ok: true, text: resultText(result) }
+      } finally {
+        tick()
+      }
+    }
+
+    try {
+      const outcomes = await runPool(
+        [...panels.map(item => ({ panel: item })), ...first.map(p => ({ core: p }))],
+        BULK_CONCURRENCY,
+        async job => {
+          if ("core" in job) return updateCore(job.core)
+          try {
+            return { name: job.panel.title, ok: true, text: await postPanelUpdate(job.panel) }
+          } finally {
+            tick()
+          }
+        },
+        job => ("core" in job ? job.core.name : job.panel.title)
+      )
+      outcomes.push(...(await runPool(last, 1, updateCore, p => p.name)))
+
+      const updated = [...first, ...last].filter(p => outcomes.some(o => o.ok && o.name === p.name))
+      if (updated.length > 0) {
+        try {
+          await post("plugins/rescan")
+        } catch {
+          // 旧内核没有 rescan：逐个装回，卸下时它们的候选还在宿主那里
+          for (const p of updated) await post(`plugins/${encodeURIComponent(p.name)}/reload`).catch(() => undefined)
+        }
+      }
+      showToast(bulkSummary(outcomes, skipped) + (last.some(p => updated.includes(p)) ? "webui 已更新，请刷新页面。" : ""))
+    } finally {
+      bulk.value = undefined
+      registriesLoaded.value = false
+      await load()
+      await loadMarket()
+      await loadStore()
+      if (panels.some(item => item.kind !== "widget")) await reloadThemes()
+    }
+  })
+}
+
 /**
  * 打开「查看」模态
  * @param name 插件名
@@ -713,6 +874,9 @@ onMounted(() => {
   <div @click="menuOpen = ''">
     <PageHeader route="plugins" sub="内核之外的全部能力均由插件提供：适配器、渲染器与业务功能。更新与删除都在这一页">
       <template #actions>
+        <button v-if="updatableCount > 0" class="primary" :disabled="locked" @click="void updateAll()">
+          {{ bulk ? `更新中 ${bulk.done}/${bulk.total}` : `全部更新（${updatableCount}）` }}
+        </button>
         <button :disabled="checking" @click="void checkUpdates()">{{ checking ? "检查中…" : "检查更新" }}</button>
       </template>
     </PageHeader>
@@ -721,6 +885,14 @@ onMounted(() => {
     <p v-if="error" class="banner">{{ error }}</p>
 
     <TabBar v-model="pageTab" :items="pageTabs" label="插件分类" />
+    <input
+      v-if="!activePluginTab"
+      v-model="query"
+      class="plugin-search"
+      type="search"
+      placeholder="按名字或说明筛选"
+      aria-label="筛选插件"
+    />
 
     <!--
       插件贡献的页签：整块内容区交给它，与内置三类互斥（`v-else` 那一路）
@@ -738,11 +910,11 @@ onMounted(() => {
 
     <div v-else :key="pageTab">
       <!-- 「全部」下两类并列，故各带一个小标题；单看一类时标题与页签重复，故只在 all 出 -->
-      <h2 v-if="pageTab === 'all'">核心插件（{{ plugins.length }}）</h2>
-      <div v-if="pageTab !== 'panel'" class="grid plugins">
-        <article v-for="p in plugins" :key="p.name" class="card item plugin">
+      <h2 v-if="pageTab === 'all'">核心插件（{{ shownPlugins.length }}）</h2>
+      <div v-if="showCore" class="grid plugins">
+        <article v-for="p in shownPlugins" :key="p.name" class="card item plugin">
           <header>
-            <h3>{{ p.name }}</h3>
+            <h3 :title="p.name">{{ cardTitle(p.name) }}</h3>
             <span class="tag" :class="statusClass(p.status)">{{ statusText(p.status) }}</span>
             <span v-if="entryOf(p)?.updatable" class="tag warn">可更新</span>
           </header>
@@ -751,9 +923,9 @@ onMounted(() => {
           <p class="mono hint">
             {{ p.version
             }}<span v-if="entryOf(p)?.updatable"> → {{ entryOf(p)?.version }}</span
-            ><span v-if="p.file"> · 单文件</span><span v-if="p.builtin"> · 随发行版预置</span>
+            ><span v-if="p.builtin"> · 随发行版预置</span>
           </p>
-          <p v-if="p.description" class="plugin-desc">{{ p.description }}</p>
+          <p v-if="p.description" class="plugin-desc" :title="p.description">{{ p.description }}</p>
           <p v-else class="plugin-desc hint">该插件未声明说明</p>
           <p v-if="p.error" class="err">{{ p.error }}</p>
 
@@ -797,18 +969,14 @@ onMounted(() => {
                     索引没拉到、或这个插件压根不在索引里时，同样只在菜单里 —— 那时判不出
                     该不该更新，而按钮点下去内核会照旧试一次。
                   -->
-                  <!--
-                    单文件插件只留查看、重载、卸载：更新、重装、装依赖、删除目录都按安装目录动手，
-                    而它没有自己的目录（`plugins/example/` 里装着好几个）。增删改直接动那个 js
-                  -->
                   <button
-                    v-if="p.file === undefined && !entryOf(p)?.updatable"
+                    v-if="!entryOf(p)?.updatable"
                     :disabled="locked"
                     @click="void update(p)"
                   >
                     更新
                   </button>
-                  <button v-if="p.file === undefined" :disabled="locked" @click="void setup(p)">装依赖并编译</button>
+                  <button :disabled="locked" @click="void setup(p)">装依赖并编译</button>
                   <a
                     v-if="safeHref(p.homepage)"
                     class="button"
@@ -826,10 +994,8 @@ onMounted(() => {
                   >
                     卸载
                   </button>
-                  <template v-if="p.file === undefined">
-                    <button class="danger" :disabled="locked" @click="void reinstall(p)">重装</button>
-                    <button class="danger" :disabled="locked" @click="void remove(p)">删除目录</button>
-                  </template>
+                  <button class="danger" :disabled="locked" @click="void reinstall(p)">重装</button>
+                  <button class="danger" :disabled="locked" @click="void remove(p)">删除目录</button>
                 </div>
               </Transition>
             </div>
@@ -837,12 +1003,64 @@ onMounted(() => {
         </article>
       </div>
 
-      <p v-if="pageTab !== 'panel' && plugins.length === 0" class="card hint">
+      <p v-if="showCore && dirPlugins.length > 0 && shownPlugins.length === 0" class="card hint">没有匹配「{{ query }}」的插件。</p>
+      <p v-if="showCore && plugins.length === 0" class="card hint">
         插件目录为空。内核默认不携带任何插件，可在<a :href="hrefOf('market')">插件市场</a>安装，
         执行 <code>yzng plugin new 名称</code> 生成开发骨架，或把单个 js 放进 <code>plugins/example/</code>。
       </p>
 
-      <p v-if="pageTab !== 'panel'" class="hint">
+      <p v-if="pageTab === 'all' && scripts.length > 0" class="hint">
+        另有 {{ scripts.length }} 个单文件 JS，在「单文件 JS」页签。
+      </p>
+
+      <!--
+        单文件 JS：一行一个的表，不用卡片
+
+        它们没有安装目录，不更新、不编译，能做的只有配置、查看、重载与卸载；装上几十个时，
+        卡片网格要翻好几屏才找得到一个。增删改直接动文件，内核盯着插件目录会自动同步。
+      -->
+      <div v-if="pageTab === 'scripts'" class="card">
+        <table class="rows scripts">
+          <thead>
+            <tr>
+              <th>名字</th>
+              <th>文件</th>
+              <th>状态</th>
+              <th>命令</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="p in shownScripts" :key="p.name">
+              <td data-label="名字">
+                <b>{{ p.name }}</b>
+                <span v-if="p.description" class="hint script-desc" :title="p.description">{{ p.description }}</span>
+                <span v-if="p.error" class="err script-desc" :title="p.error">{{ p.error }}</span>
+              </td>
+              <td data-label="文件" class="mono">{{ scriptPath(p.file) }}</td>
+              <td data-label="状态"><span class="tag" :class="statusClass(p.status)">{{ statusText(p.status) }}</span></td>
+              <td data-label="命令" class="mono">{{ p.commands }}</td>
+              <td class="row script-actions">
+                <button v-if="p.configured" class="primary" @click="configuring = p.name">配置</button>
+                <button @click="void view(p.name)">查看</button>
+                <button :disabled="locked" @click="void act(p.name, 'reload')">重载</button>
+                <button class="danger" :disabled="locked || p.status !== 'loaded'" @click="void act(p.name, 'unload')">
+                  卸载
+                </button>
+              </td>
+            </tr>
+            <tr v-if="shownScripts.length === 0">
+              <td colspan="5" class="hint">{{ scripts.length === 0 ? "没有单文件 JS" : `没有匹配「${query}」的` }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="hint">
+          放进 <code>plugins/</code> 或 <code>plugins/example/</code> 即加载，拿走即卸载，改了即重载，不用重启
+          （内核配置「插件 → 单文件插件热加载」，缺省开启）。
+        </p>
+      </div>
+
+      <p v-if="showCore" class="hint">
         重载通过绕过模块缓存实现，旧模块对象仍驻留于内存，此为 Node ESM 的固有限制。该方式适用于开发调试；
         生产环境更新插件应重启进程。
       </p>
@@ -855,15 +1073,15 @@ onMounted(() => {
         同为「我装的一个插件」；差别在计数与动作：这里给组件数与页签数，且没有重载与卸载
         —— 那两个动作对浏览器侧的包无意义，摆一排灰按钮比不列出来更难解释。
       -->
-      <h2 v-if="pageTab === 'all'">面板插件（{{ panelCount }}）</h2>
-      <div v-if="pageTab !== 'core'" class="grid plugins">
+      <h2 v-if="pageTab === 'all'">面板插件（{{ shownPackages.length + shownStrays.length }}）</h2>
+      <div v-if="showPanel" class="grid plugins">
         <!--
           形制与上方核心插件卡片逐项对齐：标题旁先状态后徽标，一行版本，两行说明，一排计数，
           盒子外「配置 / 更新」，其余进「更多」。菜单键加 `pkg:` 前缀，免得与同名核心插件撞上
         -->
-        <article v-for="pkg in packages" :key="pkg.key" class="card item plugin">
+        <article v-for="pkg in shownPackages" :key="pkg.key" class="card item plugin">
           <header>
-            <h3>{{ pkg.name }}</h3>
+            <h3 :title="pkg.name">{{ cardTitle(pkg.name) }}</h3>
             <span v-if="pkg.failures.length > 0" class="tag err">{{ pkg.failures.length }} 枚未装上</span>
             <span v-else class="tag ok">{{ statusText("loaded") }}</span>
             <span v-if="storeOf(pkg)?.updatable" class="tag warn">可更新</span>
@@ -876,7 +1094,7 @@ onMounted(() => {
               v-if="pkg.kind !== 'multi'"
             > · 单文件</span><span v-if="pkg.meta?.author"> · {{ pkg.meta.author }}</span>
           </p>
-          <p v-if="pkg.meta?.description" class="plugin-desc">{{ pkg.meta.description }}</p>
+          <p v-if="pkg.meta?.description" class="plugin-desc" :title="pkg.meta.description">{{ pkg.meta.description }}</p>
           <p v-else class="plugin-desc hint">该插件未声明说明</p>
 
           <dl class="counts">
@@ -945,16 +1163,16 @@ onMounted(() => {
         </article>
 
         <!-- 商店装上、注册表里却没有的包：只带主题的，或还没刷新、入口没跑起来的 -->
-        <article v-for="item in strays" :key="`store:${item.name}`" class="card item plugin">
+        <article v-for="item in shownStrays" :key="`store:${item.name}`" class="card item plugin">
           <header>
-            <h3>{{ item.name }}</h3>
+            <h3 :title="item.name">{{ cardTitle(item.name) }}</h3>
             <span v-if="item.kind === 'theme'" class="tag">主题</span>
             <span v-else class="tag warn">未载入</span>
             <span v-if="item.updatable" class="tag warn">可更新</span>
           </header>
 
           <p class="mono hint">{{ versionText(item) }} · 面板插件<span v-if="item.author"> · {{ item.author }}</span></p>
-          <p class="plugin-desc">{{ item.description }}</p>
+          <p class="plugin-desc" :title="item.description">{{ item.description }}</p>
           <p v-if="item.kind !== 'theme'" class="hint">
             {{ item.server ? "带 node 侧，须重载 webui 后刷新页面" : "刷新页面后载入" }}；仍不出现时到浏览器控制台看报错
           </p>
@@ -998,11 +1216,11 @@ onMounted(() => {
         </article>
       </div>
 
-      <p v-if="pageTab !== 'core' && panelCount === 0" class="card hint">
+      <p v-if="showPanel && panelCount === 0" class="card hint">
         尚未装任何面板插件。
       </p>
 
-      <p v-if="pageTab !== 'core'" class="hint">
+      <p v-if="showPanel" class="hint">
         面板插件装在 <code>plugins/webui/plugins/</code>，单文件或多文件包均可；从<a :href="hrefOf('store')">面板商店</a>装来的包在此更新与删除。
         仅浏览器侧的包刷新页面生效；带 node 侧的包还须重载 webui。
         更新 webui 时，git 安装的面板包会保留，其余文件被暂存；本机没有 git 或卸载 webui 时整目录删除，请保留自己的备份。
