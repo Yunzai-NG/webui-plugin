@@ -147,6 +147,18 @@ describe("loadPanelServer", () => {
     expect(rec.handlers.get("/papi/panels/demo/hardware")?.()).toEqual({ ok: 1 })
   })
 
+  it("包更新后再加载拿到的是新代码，而不是 ESM 缓存里的旧模块", async () => {
+    const pkg = await makePackage(`export default { setup(ctx) { ctx.route("v", () => 1) } }`)
+    const first = recorder()
+    await loadPanelServer(hostOf(first), pkg)
+
+    // 换一份长度不同的内容：大小进版本号，不依赖文件系统的时间精度
+    await writeFile(join(pkg.dir, pkg.serverEntry!), `export default { setup(ctx) { ctx.route("v", () => 22) } }`, "utf8")
+    const second = recorder()
+    await loadPanelServer(hostOf(second), pkg)
+    expect(second.handlers.get("/papi/panels/demo/v")?.()).toBe(22)
+  })
+
   it("受限上下文只给五项，拿不到内核的东西", async () => {
     const rec = recorder()
     const pkg = await makePackage(

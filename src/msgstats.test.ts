@@ -93,12 +93,15 @@ describe("StatsBuckets", () => {
     expect(Object.keys(buckets.snapshot().days)).toEqual(["2026-09-11", "2026-09-12"])
   })
 
-  it("dirty 在入账后为真、取快照后转假", () => {
+  it("dirty 在入账后为真；取快照不动它，markClean 才转假", () => {
     const buckets = new StatsBuckets()
     expect(buckets.dirty).toBe(false)
     buckets.add(entryOf())
     expect(buckets.dirty).toBe(true)
+    // 面板读接口也取快照：它若清了 dirty，落盘那一侧就会以为没东西可写
     buckets.snapshot()
+    expect(buckets.dirty).toBe(true)
+    buckets.markClean()
     expect(buckets.dirty).toBe(false)
   })
 
@@ -141,7 +144,7 @@ describe("StatsBuckets", () => {
     const now = Date.now()
     const buckets = new StatsBuckets()
     buckets.add(entryOf({ at: now }))
-    buckets.snapshot()
+    buckets.markClean()
     expect(buckets.prune(now)).toBe(0)
     expect(buckets.dirty).toBe(false)
   })
@@ -622,7 +625,12 @@ describe("peerOfEvent 与 peerOfTarget", () => {
 
   it("群名缺失时给兜底名，且该名字不会盖掉已有的真名", () => {
     const e = { scene: "group", group: { gid: "123" }, sender: { uid: "7" } } as unknown as MessageEvent
-    expect(peerOfEvent(e).name).toBe("群 123")
+    const buckets = new StatsBuckets()
+    const at = Date.now()
+    buckets.add(entryOf({ at, peer: "group:123", name: "真名" }))
+    buckets.add(entryOf({ at, ...peerOfEvent(e) }))
+    buckets.add(entryOf({ at, ...peerOfTarget({ scene: "group", gid: "123" }), dir: "sent" }))
+    expect(buckets.snapshot().days[dayKey(at)]?.peers["group:123"]?.name).toBe("真名")
   })
 
   it("场景说是群但没有群信息时退回私聊，不至于丢掉这一条", () => {

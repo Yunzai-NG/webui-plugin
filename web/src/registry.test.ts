@@ -1,8 +1,8 @@
 /**
  * 模块职责：注册表的用例 —— 按包归并、页签注册、重复标识不被覆盖
- * 依赖方向：测试文件，依赖 registry.ts（它只有 type import，故在 node 环境下可跑）
+ * 依赖方向：测试文件，依赖 registry.ts 与 vue 的响应式（不涉及 DOM，故在 node 环境下可跑）
  * 生命周期：一次性
- * 注意事项：**注册表是模块级单例，且没有清空的入口**（注册在模块加载期一次完成，运行期不再变），
+ * 注意事项：**注册表是模块级单例，且没有清空的入口**，
  *          故用例之间共享一份状态。每条用例各用一套独有的 id 与包键，断言一律按自己的键过滤，
  *          不比 `panelPackages().length` 这类全局的数 —— 否则加一条用例就会改掉另一条的结果。
  *
@@ -10,7 +10,8 @@
  *          九张卡片」或「两个插件并成了一张」，而那要靠肉眼看图才发现。
  */
 import { describe, expect, it, vi } from "vitest"
-import { panelPackages, panelTabs, panelTabsOf, registerTab, registerWidget, type WidgetDef } from "./registry.js"
+import { computed } from "vue"
+import { panelPackages, panelTabs, panelTabsOf, registerTab, registerWidget, widgetsOf, type WidgetDef } from "./registry.js"
 
 /** 造一枚面板插件组件 */
 function widget(patch: Partial<WidgetDef> & Pick<WidgetDef, "id">): WidgetDef {
@@ -119,5 +120,20 @@ describe("registerTab", () => {
     const before = panelTabs().length
     panelTabs().push({ id: "t10.injected", title: "外部塞的", pkg: "x", component: {} })
     expect(panelTabs()).toHaveLength(before)
+  })
+})
+
+// 面板插件可能过了令牌闸门才装上，那时页面早已渲染：读注册表的 computed 必须随之重算
+describe("注册表是响应式的", () => {
+  it("晚到的注册让已有的 computed 重算", () => {
+    const onPage = computed(() => widgetsOf("late-page").map(w => w.id))
+    const tabs = computed(() => panelTabs().filter(t => t.pkg === "panels/late").map(t => t.id))
+    expect(onPage.value).toEqual([])
+    expect(tabs.value).toEqual([])
+
+    registerWidget(widget({ id: "late.a", page: "late-page", pkg: "panels/late" }))
+    registerTab({ id: "late.tab", title: "晚到", pkg: "panels/late", component: {} })
+    expect(onPage.value).toEqual(["late.a"])
+    expect(tabs.value).toEqual(["late.tab"])
   })
 })

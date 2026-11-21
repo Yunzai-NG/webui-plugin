@@ -10,7 +10,7 @@ import { get } from "../api.js"
 import { dbPath, execOn, useDbPage } from "../dbpage.js"
 import { bytes, errorText } from "../format.js"
 import { ICONS } from "../icons.js"
-import { countAllSqlOf, sharesOf } from "../storage.js"
+import { countAllSqlOf, kvDriverLabel, sharesOf } from "../storage.js"
 import AppIcon from "./AppIcon.vue"
 import CountUp from "./CountUp.vue"
 import DonutChart from "./DonutChart.vue"
@@ -116,7 +116,7 @@ onMounted(() => void load())
         <span class="db-stat-ico"><AppIcon :path="ICONS.key" /></span>
         <h2>KV 键数</h2>
         <b><CountUp :value="kvTotal" /></b>
-        <p class="hint">驱动 {{ root?.driver ?? "—" }}</p>
+        <p class="hint">{{ kvDriverLabel(root?.driver, root?.engine) }}</p>
       </div>
       <div class="card stat db-stat">
         <span class="db-stat-ico"><AppIcon :path="ICONS.folder" /></span>

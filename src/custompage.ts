@@ -19,11 +19,11 @@
  *          坏插件逐个 try 隔离：语法错、`init` 抛错、import 到不存在的文件，任何一条冒到 webui 的
  *          `setup()` 都会让整个面板打不开，使用者眼里是「装了个插件，面板没了」。
  */
-import { readdir } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { join } from "node:path"
-import { pathToFileURL } from "node:url"
-import { isSafeRoutePath } from "./panelserver.js"
+import { readPageFile } from "./panelfiles.js"
+import { listDirDirs } from "./panelscan.js"
+import { freshImportUrl, isSafeRoutePath } from "./panelserver.js"
 import { parseIcon } from "./pageicon.js"
 import type { IconShape } from "./pageicon.js"
 
@@ -100,8 +100,12 @@ const ENTRY = "index.js"
 
 /** 本模块用到的 webui 上下文子集，只列真正调用的四项 */
 interface Ctx {
-  static(path: string, dir: string): unknown
-  route(method: "GET", path: string, handler: (req: { params: Record<string, string> }) => unknown): unknown
+  route(
+    method: "GET",
+    path: string,
+    handler: (req: { params: Record<string, string>; headers?: Record<string, string | string[] | undefined> }) => unknown,
+    opts?: { auth?: boolean }
+  ): unknown
   logger: { warn(msg: string): void }
   app: { paths: { config: string } }
 }
@@ -129,13 +133,8 @@ function isSafeSrc(src: string): boolean {
  */
 export async function mountCustomPages(ctx: Ctx, pluginsDir: string): Promise<void> {
   const pages: CustomPage[] = []
-  let dirs: string[] = []
-  // 目录读不到就是没有插件可扫（全新安装尚未建 plugins 目录），不是错误
-  try {
-    dirs = (await readdir(pluginsDir, { withFileTypes: true })).filter(item => item.isDirectory()).map(item => item.name)
-  } catch {
-    dirs = []
-  }
+  // 目录读不到就是没有插件可扫（全新安装尚未建 plugins 目录），不是错误；链进来的插件目录同样要扫
+  const dirs = await listDirDirs(pluginsDir)
 
   for (const plugin of dirs) {
     const dir = join(pluginsDir, plugin, "webadapter")
@@ -149,7 +148,7 @@ export async function mountCustomPages(ctx: Ctx, pluginsDir: string): Promise<vo
     }
 
     try {
-      const mod = (await import(pathToFileURL(entry).href)) as {
+      const mod = (await import(await freshImportUrl(entry))) as {
         init?: (context: CustomPageContext) => void | Promise<void>
         default?: CustomPageInput
         page?: CustomPageInput
@@ -229,7 +228,25 @@ export async function mountCustomPages(ctx: Ctx, pluginsDir: string): Promise<vo
 
       if (page !== undefined) {
         pages.push(page)
-        ctx.static(`custom/${plugin}`, dir)
+        // 不用 ctx.static：那一路整个目录对外、放行点文件，连 node 侧入口 index.js 都交得出去。
+        // 也不鉴权：iframe 与 <script> 带不上令牌，页面与脚本本身不是机密
+        ctx.route(
+          "GET",
+          `/custom/${plugin}/*file`,
+          async req => {
+            const got = await readPageFile(dir, req.params.file ?? "")
+            if (got.status === 404) return { status: 404, body: { error: "文件不存在" } }
+            const headers = {
+              "content-type": got.type,
+              etag: got.etag,
+              "cache-control": "no-cache",
+              ...(got.csp === undefined ? {} : { "content-security-policy": got.csp })
+            }
+            if (req.headers?.["if-none-match"] === got.etag) return { status: 304, headers }
+            return { status: 200, headers, body: got.body }
+          },
+          { auth: false }
+        )
       }
     } catch (error) {
       ctx.logger.warn(`自定义页面 ${plugin} 加载失败：${error instanceof Error ? error.message : String(error)}`)

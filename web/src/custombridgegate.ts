@@ -30,6 +30,26 @@ const ALLOWED = new Set([
   "server"
 ])
 
+/**
+ * 把面板接口的返回体整理成能交给插件页面的样子
+ *
+ * `accounts` 的每一项带着 `record.config`（内核刻意不脱敏，里面是适配器的连接密钥），
+ * 交给页面前剥掉；其余字段（状态、selfId、备注）照给。其他路径原样返回。
+ * @param path 已过白名单的路径
+ * @param data 接口返回体
+ * @returns 可交给页面的数据
+ */
+export function scrubPanelData(path: string, data: unknown): unknown {
+  if (path !== "accounts" || !Array.isArray(data)) return data
+  return data.map(item => {
+    if (item === null || typeof item !== "object") return item
+    const record = (item as { record?: unknown }).record
+    if (record === null || typeof record !== "object") return item
+    const { config: _config, ...rest } = record as Record<string, unknown>
+    return { ...(item as Record<string, unknown>), record: rest }
+  })
+}
+
 /** 消息类型标识，避免与页面自己的 postMessage 相混 */
 export const BRIDGE_KIND = "yunzai-ng.custom"
 

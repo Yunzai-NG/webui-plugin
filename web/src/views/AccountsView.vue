@@ -2,7 +2,7 @@
 /**
  * 模块职责：账号页 —— 按适配器分页签，每枚页签下是该适配器的账号；添加、改配置都在弹窗里
  * 依赖方向：依赖 api / accountview / format / retry / toast 与 SchemaForm、LoginSession 等组件
- * 生命周期：挂载时拉取一次；存在进行中的登录会话时按秒轮询
+ * 生命周期：挂载时拉取一次，之后随共享节拍刷新账号状态；存在进行中的登录会话时按秒轮询
  * 注意事项：添加账号两条路径，取决于适配器声明的能力：声明了 `loginModes` 的走交互式登录（会话由
  *          内核驱动，面板只渲染 steps 并回送 prompt 答案），未声明者手工填配置、表单由
  *          `accountSchema` 驱动。两条路径都在「添加账号」弹窗里，适配器就是当前页签那个。
@@ -21,6 +21,7 @@ import { globalRetryOf, isRetryCustom, retryCountOf, retryFormOf, retryOverrideO
 import { askConfirm } from "../confirm.js"
 import { currentQuery, hrefOf } from "../router.js"
 import { showToast } from "../toast.js"
+import { onTick } from "../tick.js"
 import EmptyState from "../components/EmptyState.vue"
 import LoginSession from "../components/LoginSession.vue"
 import Modal from "../components/Modal.vue"
@@ -540,9 +541,24 @@ async function saveEdit(): Promise<void> {
   }
 }
 
-onMounted(() => void load())
+/** 跟着共享节拍刷新状态；失败静默，不盖掉页面上已有的错误 */
+async function tickAccounts(): Promise<void> {
+  try {
+    accounts.value = await get<AccountItem[]>("accounts")
+  } catch {
+    /* 下一拍再试 */
+  }
+}
+
+let stopTick: (() => void) | undefined
+onMounted(() => {
+  void load()
+  // 账号会自己掉线、重连，不跟着刷的话页上的「在线」要等手动刷新才变
+  stopTick = onTick(() => void tickAccounts())
+})
 onUnmounted(() => {
   if (timer !== undefined) window.clearInterval(timer)
+  stopTick?.()
 })
 </script>
 

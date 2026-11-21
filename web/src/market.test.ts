@@ -98,6 +98,12 @@ describe("就地拉取", () => {
     expect(text).not.toContain("已就地更新")
   })
 
+  // 早先只回一个空的 loaded：提示说「已更新」，插件却没起来
+  it("装完加载失败时把原因说出来", () => {
+    const text = resultText(make({ changed: true, loaded: [], failed: [{ name: "demo", reason: "setup 抛错：缺少配置" }] }))
+    expect(text).toContain("加载失败：setup 抛错：缺少配置")
+  })
+
   it("旧版本号缺失或与新版本相同时只报一个版本，不写出「1.1.0 → 1.1.0」", () => {
     expect(resultText(make({ changed: true }))).toContain("已就地更新：1.1.0。")
     expect(resultText(make({ changed: true, fromVersion: "1.1.0" }))).toContain("已就地更新：1.1.0。")

@@ -311,15 +311,21 @@ export function pickPanelFiles(names: readonly string[], where: string, warn: (m
  * @returns 子目录名数组，已排序
  */
 export async function listDirDirs(dir: string): Promise<string[]> {
+  let items
   try {
-    const items = await readdir(dir, { withFileTypes: true })
-    return items
-      .filter(item => item.isDirectory())
-      .map(item => item.name)
-      .sort()
+    items = await readdir(dir, { withFileTypes: true })
   } catch {
     return []
   }
+  const out: string[] = []
+  for (const item of items) {
+    if (item.isDirectory()) out.push(item.name)
+    // 链进来的目录（Windows 目录联接、符号链接）也算：Dirent.isDirectory() 对它们给假
+    else if (item.isSymbolicLink() && (await stat(join(dir, item.name)).then(s => s.isDirectory(), () => false))) {
+      out.push(item.name)
+    }
+  }
+  return out.sort()
 }
 
 /**

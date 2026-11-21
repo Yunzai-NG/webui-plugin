@@ -133,13 +133,17 @@ async function runScript(theme: ThemeInfo, gen: number): Promise<void> {
       lowPower: () => appearance.value.prefs.lowPower,
       motion: motionEnabled,
       onSchemeChange: fn => {
+        if (gen !== generation) return
         teardown.push(watch(schemeMode, value => fn(value)))
       }
     }
     const done = await (mod.default as (ctx: ThemeScriptContext) => unknown)(ctx)
-    if (typeof done === "function") teardown.push(done as () => void)
-    if (gen !== generation) stopScript()
+    if (typeof done === "function") {
+      if (gen === generation) teardown.push(done as () => void)
+      else done()
+    }
   } catch (err) {
+    if (gen !== generation) return
     themeError.value = `主题 ${theme.name} 的脚本出错，已停用：${err instanceof Error ? err.message : String(err)}`
     console.error(themeError.value, err)
     stopScript()
@@ -150,7 +154,11 @@ async function runScript(theme: ThemeInfo, gen: number): Promise<void> {
  * 换上样式表：换成新的 `<link>`，等它加载完再拆旧的 —— 中间不留一帧没样式
  * @param href 样式表地址；经典为 undefined
  */
+let pendingStyle: HTMLLinkElement | undefined
+
 function swapStyle(href: string | undefined): void {
+  pendingStyle?.remove()
+  pendingStyle = undefined
   const old = document.getElementById(LINK_ID)
   if (href === undefined) {
     old?.remove()
@@ -162,14 +170,19 @@ function swapStyle(href: string | undefined): void {
     return
   }
   const link = document.createElement("link")
+  pendingStyle = link
   link.rel = "stylesheet"
   link.href = href
   link.addEventListener("load", () => {
+    if (link !== pendingStyle) return
+    pendingStyle = undefined
     old?.remove()
     link.id = LINK_ID
     themeRevision.value += 1
   })
   link.addEventListener("error", () => {
+    if (link !== pendingStyle) return
+    pendingStyle = undefined
     themeError.value = `主题样式表 ${href} 取不到，暂用经典外观`
     link.remove()
     old?.remove()

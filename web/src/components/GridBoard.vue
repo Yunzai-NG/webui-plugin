@@ -678,7 +678,11 @@ onUnmounted(() => {
         :key="cell.slot.id"
         class="witem"
         data-part="widget.frame"
-        :class="{ dragging: drag?.id === cell.slot.id, fit: fitIds.has(cell.slot.id) }"
+        :class="{
+          dragging: drag?.id === cell.slot.id,
+          fit: fitIds.has(cell.slot.id),
+          half: stacked && cell.slot.w <= 2 && cell.slot.h <= SUB_ROWS
+        }"
         :style="styleOf(cell.slot)"
         :data-widget="cell.slot.id"
         :data-panel="cell.def.pkg"

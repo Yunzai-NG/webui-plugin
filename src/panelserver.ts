@@ -19,6 +19,7 @@
  */
 import { pathToFileURL } from "node:url"
 import { join } from "node:path"
+import { stat } from "node:fs/promises"
 import { configKeyOf } from "./panelconfig.js"
 import { PANEL_API_PREFIX, apiBaseOf, type PanelPackage } from "./panelscan.js"
 
@@ -141,6 +142,26 @@ export function checkPanelServer(mod: unknown): { ok: true; server: PanelServer 
 }
 
 /**
+ * 带文件版本的 import 地址
+ *
+ * ESM 按 URL 缓存模块，同一地址再 import 拿到的还是第一次那份 —— 更新包之后重载 webui
+ * 仍跑旧代码。按修改时间与大小拼进查询串：文件没变时仍命中缓存，不会每次重载多留一份模块。
+ * 只管入口这一个文件，它再 import 的同包文件不在此列。
+ * @param file 绝对路径
+ * @returns 可直接传给 `import()` 的地址
+ */
+export async function freshImportUrl(file: string): Promise<string> {
+  const url = pathToFileURL(file)
+  try {
+    const info = await stat(file)
+    url.searchParams.set("v", `${Math.floor(info.mtimeMs)}-${info.size}`)
+  } catch {
+    // 读不到就用原地址，让 import 自己报出那条更准确的错误
+  }
+  return url.href
+}
+
+/**
  * 加载一个包的 node 侧入口
  *
  * 返回是否加载成功，供调用方计数与用例断言。**不抛错**：理由见文件头。
@@ -154,7 +175,7 @@ export async function loadPanelServer(host: ServerHost, pkg: PanelPackage): Prom
   const file = join(pkg.dir, pkg.serverEntry)
   let mod: unknown
   try {
-    mod = await import(pathToFileURL(file).href)
+    mod = await import(await freshImportUrl(file))
   } catch (err) {
     host.logger.error(
       `面板插件包 ${pkg.owner}/${pkg.name} 的 node 侧入口加载失败（${pkg.serverEntry}）：` +

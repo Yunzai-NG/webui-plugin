@@ -209,14 +209,15 @@ const meta = computed<MetaItem[]>(() => {
  * **取自注册表而非某个端点**：「装上了」的判据是它在浏览器里被 `import()` 到并通过校验，
  * 只有注册表知道这件事 —— node 侧的清单只知道磁盘上有哪些文件，其中一项可能语法错到根本没跑起来。
  *
- * 注册表在模块加载期一次填满、此后不变；本页删掉的包记在 `removedKeys`，刷新前先从列表里拿掉。
+ * 注册表是响应式的：晚到的面板插件（过了令牌闸门才装上）注册后这里随之重算。本页删掉的包记在
+ * `removedKeys`，刷新前先从列表里拿掉。
  */
-const registered = panelPackages()
+const registered = computed(() => panelPackages())
 const removedKeys = ref<Set<string>>(new Set())
-const packages = computed(() => registered.filter(pkg => !removedKeys.value.has(pkg.key)))
+const packages = computed(() => registered.value.filter(pkg => !removedKeys.value.has(pkg.key)))
 
 /** 插件贡献的页签，接在内置三个之后 */
-const pluginTabs = panelTabs()
+const pluginTabs = computed(() => panelTabs())
 
 /** 页级页签：内置四类带条目数（单文件 JS 没有时不出），其后接插件贡献的页签 */
 const pageTabs = computed(() => [
@@ -231,7 +232,7 @@ const pageTabs = computed(() => [
             ? scripts.value.length
             : panelCount.value
   })),
-  ...pluginTabs.map(item => ({ id: item.id, label: item.title }))
+  ...pluginTabs.value.map(item => ({ id: item.id, label: item.title }))
 ])
 
 /** 当前页签下显示哪几类 */
@@ -241,10 +242,9 @@ const showPanel = computed(() => pageTab.value === "all" || pageTab.value === "p
 /**
  * 包键 → 它在配置这件事上的状况（声明、当前值、声明写错了的原因）
  *
- * 只算一次：配置在装载期（`loadPanelPlugins`，早于挂载）就登记好，此后只有值会变，
- * 而值是一个 `Ref` —— 用到它的地方自会重算。
+ * 配置随包一起在装载期登记，故跟着包列表重算；值本身是一个 `Ref`，用到它的地方自会重算。
  */
-const configs = new Map(registered.map(pkg => [pkg.key, panelConfigOf(pkg.key)]))
+const configs = computed(() => new Map(registered.value.map(pkg => [pkg.key, panelConfigOf(pkg.key)])))
 
 /** 正在配置哪个包；空串意为配置模态未开 */
 const pkgConfiguring = ref("")
@@ -378,7 +378,7 @@ async function removePanel(item: PanelStoreItem): Promise<void> {
 }
 
 /** 当前页签对应的插件贡献页签定义；内置页签时为 undefined */
-const activePluginTab = computed(() => pluginTabs.find(t => t.id === pageTab.value))
+const activePluginTab = computed(() => pluginTabs.value.find(t => t.id === pageTab.value))
 
 /** 读取插件与定时任务清单 */
 async function load(): Promise<void> {
@@ -583,6 +583,11 @@ async function update(p: PluginItem): Promise<void> {
     if (!ok) return
 
     const probe = await probeUpdate(dir)
+    if (probe?.blocked !== undefined) {
+      // 内核会拒绝：目录是 git 仓库却拉不了，整目录重装会连 .git 与本地改动一起删掉
+      error.value = `「${p.name}」的目录是一个 git 仓库，而${probe.blocked}，没法就地拉取。到该目录自行 git pull；确认不要本地改动时用「整份重装」`
+      return
+    }
     let onDirty: "stash" | "discard" | undefined
     if (probe?.dirty === true) {
       /*

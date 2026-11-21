@@ -11,6 +11,7 @@
 import { computed, ref, watch } from "vue"
 import { collapseHooks, onExpandDone, onExpandEnter, onExpandLeave, pinLeaving } from "../collapse.js"
 import { get, patch } from "../api.js"
+import { askConfirm } from "../confirm.js"
 import { errorText } from "../format.js"
 import {
   blankPreset,
@@ -263,7 +264,10 @@ function commitRule(): void {
  */
 function dropRule(at: number): void {
   draft.value = { ...draft.value, rules: draft.value.rules.filter((_, i) => i !== at) }
-  if (editingRule.value?.at === at) editingRule.value = undefined
+  const editing = editingRule.value
+  if (editing?.at === at) editingRule.value = undefined
+  // 删的是编辑中那条之前的：下标跟着前移，否则「确定」写到后一条上
+  else if (editing !== undefined && at < editing.at) editing.at -= 1
   dirty.value = true
 }
 
@@ -305,8 +309,11 @@ function commitPreset(): void {
  * @param name 规则组名
  */
 function dropPreset(name: string): void {
+  const at = draft.value.presets.findIndex(p => p.name === name)
   draft.value = removePreset(draft.value, name)
-  if (editingPreset.value?.from === name) editingPreset.value = undefined
+  const editing = editingPreset.value
+  if (editing?.from === name) editingPreset.value = undefined
+  else if (editing !== undefined && at >= 0 && at < editing.at) editing.at -= 1
   dirty.value = true
 }
 
@@ -317,6 +324,23 @@ function dropPreset(name: string): void {
  */
 function usersOf(name: string): number {
   return draft.value.rules.filter(r => r.preset === name).length
+}
+
+/** 关抽屉；有没保存的改动或正在编辑的一条时先问一句，误点遮罩不该丢掉几条配置 */
+async function requestClose(): Promise<void> {
+  if (dirty.value || editingRule.value !== undefined || editingPreset.value !== undefined) {
+    const ok = await askConfirm({
+      title: "放弃未保存的群配置？",
+      body: "关掉之后这些改动不会留下。",
+      okText: "放弃",
+      cancelText: "继续编辑",
+      danger: true
+    })
+    if (!ok) return
+  }
+  editingRule.value = undefined
+  editingPreset.value = undefined
+  emit("close")
 }
 
 /** 保存群配置与规则组 */
@@ -389,7 +413,7 @@ watch(accountRows, rows => {
 </script>
 
 <template>
-  <Modal :open="open" side title="群配置" sub="按账号与群设前缀、禁用插件或命令，优先于全局；私聊不受影响" @close="emit('close')">
+  <Modal :open="open" side title="群配置" sub="按账号与群设前缀、禁用插件或命令，优先于全局；私聊不受影响" @close="void requestClose()">
     <p v-if="error" class="banner">{{ error }}</p>
     <TabBar v-model="tab" :items="TABS" label="群配置分区" />
 
@@ -533,7 +557,7 @@ watch(accountRows, rows => {
       <span v-if="dirty || editingRule || editingPreset" class="hint">
         {{ editingRule || editingPreset ? "先点「确定」收下正在编辑的那条，再保存" : "有未保存的改动" }}
       </span>
-      <button @click="emit('close')">关闭</button>
+      <button @click="void requestClose()">关闭</button>
       <button class="primary" :disabled="saving || !dirty || editingRule !== undefined || editingPreset !== undefined" @click="void save()">
         {{ saving ? "保存中…" : "保存" }}
       </button>

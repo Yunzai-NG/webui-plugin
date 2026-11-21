@@ -17,6 +17,21 @@ const SENSITIVE = ["accounts:", "adapter:"]
 /** 浏览表时 rowid 列的别名，避免与业务列重名 */
 export const ROWID_ALIAS = "__rowid__"
 
+/**
+ * KV 驱动的显示名
+ *
+ * 新内核只有 sqlite 与 memory；旧内核还会报 level / json，原样显示。
+ * @param driver 驱动 id
+ * @param engine SQLite 绑定名
+ * @returns 显示名
+ */
+export function kvDriverLabel(driver: string | undefined, engine?: string): string {
+  if (driver === undefined) return "—"
+  if (driver === "sqlite") return engine === undefined ? "SQLite" : `SQLite · ${engine}`
+  if (driver === "memory") return "仅内存（重启即丢）"
+  return driver
+}
+
 /** 值大类的中文名 */
 export const KV_TYPE_LABEL: Record<KvValueType, string> = {
   string: "字符串",

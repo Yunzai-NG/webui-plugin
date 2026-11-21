@@ -85,6 +85,8 @@ export function tallyOfKinds(kinds: Readonly<Record<string, number>>): Tally {
 
 /** 一次收发所属的会话 */
 export interface Peer {
+  /** 平台没有提供名称时只能用作首次显示。 */
+  fallbackName?: true
   /** 会话标识 */
   peer: string
   /** 显示名 */
@@ -102,17 +104,18 @@ export interface Peer {
  */
 export function peerOfEvent(e: MessageEvent): Peer {
   if (e.scene === "group" && e.group !== undefined) {
-    return { peer: `group:${e.group.gid}`, name: e.group.name ?? `群 ${e.group.gid}`, scene: "group" }
+    return { peer: `group:${e.group.gid}`, name: e.group.name ?? `群 ${e.group.gid}`, ...(e.group.name ? {} : { fallbackName: true as const }), scene: "group" }
   }
   if (e.scene === "guild" && e.channel !== undefined) {
     return {
       peer: `guild:${e.channel.guildId}/${e.channel.channelId}`,
       name: e.channel.name ?? `子频道 ${e.channel.channelId}`,
+      ...(e.channel.name ? {} : { fallbackName: true as const }),
       scene: "guild"
     }
   }
   const uid = e.sender.uid
-  return { peer: `private:${uid}`, name: e.sender.name ?? `用户 ${uid}`, scene: "private" }
+  return { peer: `private:${uid}`, name: e.sender.name ?? `用户 ${uid}`, ...(e.sender.name ? {} : { fallbackName: true as const }), scene: "private" }
 }
 
 /**
@@ -291,8 +294,12 @@ export async function startCollector(host: CollectHost): Promise<Collector> {
    * 先写临时文件再改名：整份文档几十到几百 KB，直接覆盖时若在写入中途断电，留下的是一个
    * 截断的 JSON，下次启动只能整份丢弃。改名在同一目录内是原子的。
    */
-  const flush = async (): Promise<void> => {
+  /** 上一次落盘；串起来，免得定时那次与停机那次同写一个临时文件 */
+  let writing: Promise<void> = Promise.resolve()
+  const flushOnce = async (): Promise<void> => {
     if (!buckets.dirty) return
+    // 先清再取快照：写盘期间新进来的消息会重新置脏，不会被这次的「已保存」吞掉
+    buckets.markClean()
     const doc = buckets.snapshot()
     const temp = `${file}.tmp`
     try {
@@ -300,8 +307,13 @@ export async function startCollector(host: CollectHost): Promise<Collector> {
       await writeFile(temp, JSON.stringify(doc), "utf8")
       await rename(temp, file)
     } catch (err) {
+      buckets.markDirty()
       host.logger.warn(`消息统计写入失败：${err instanceof Error ? err.message : String(err)}`)
     }
+  }
+  const flush = (): Promise<void> => {
+    writing = writing.then(flushOnce)
+    return writing
   }
 
   let lastDay = dayKey(Date.now())

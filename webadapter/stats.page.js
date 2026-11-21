@@ -1188,8 +1188,14 @@ async function load() {
 
 void load()
 
-// 数据每半分钟落一次盘，页面跟着这个节奏刷：更密只是重复取同一份快照
-setInterval(() => void load(), 30_000)
+// 数据每半分钟落一次盘，页面跟着这个节奏刷：更密只是重复取同一份快照。
+// 每次取的是全量（会话多时上 MB），页面看不见时不取，切回来补一次
+setInterval(() => {
+  if (document.visibilityState !== "hidden") void load()
+}, 30_000)
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") void load()
+})
 
 /*
  * 宽度变了就重画

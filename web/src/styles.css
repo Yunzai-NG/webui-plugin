@@ -928,6 +928,16 @@ h3 {
 }
 
 /*
+ * 窄屏下页面由 window 滚，`height: 100%` 落不到实数上，iframe 停在 360px 的下限，
+ * 屏幕下半截空着、页面却在 iframe 里头滚。改为按视口算：减去顶栏与页头约 140px
+ */
+@media (max-width: 859px) {
+  .custom-frame {
+    min-height: calc(100dvh - 140px);
+  }
+}
+
+/*
  * 宽屏增强：侧栏贴左边占满整屏高，内容区自己滚
  *
  * **只有内容区滚，侧栏与它的品牌区都不动。** 三条互相牵连的规则，缺一条就退化：
@@ -1594,15 +1604,17 @@ h3 {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 28px;
-  padding: 0 4px 0 12px;
+  /* 长正则在窄屏上要能折行：定高 + nowrap 会让它顶出卡片被裁掉 */
+  min-height: 28px;
+  max-width: 100%;
+  padding: 3px 4px 3px 12px;
   border: 1.5px solid color-mix(in srgb, var(--accent) 45%, var(--border));
-  border-radius: var(--r-pill);
+  border-radius: 14px;
   background: var(--panel);
   color: var(--text);
   font-family: var(--font-mono);
   font-size: var(--fs-hint);
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .pill.on {
@@ -2930,10 +2942,28 @@ button.link.dis-all {
   margin-bottom: var(--grid-gap);
 }
 
-/* 窄屏：忽略 x/y/w 一律单列顺排（顺序由 grid.ts 的 visibleOf 给出），行高改为按内容 */
+/*
+ * 窄屏：忽略 x/y/w 顺排（顺序由 grid.ts 的 visibleOf 给出），行高改为按内容。
+ * 计数块这类一格的小组件两两并排（`.half`），其余占满一行 —— 六个计数各占一整行太费屏
+ */
 .board.stacked {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-auto-rows: auto;
+}
+
+.board.stacked .witem:not(.half) {
+  grid-column: 1 / -1;
+}
+
+/* 半宽时图标让出位置给小字，「插件已加载（失败 1）」不至于只剩前几个字 */
+.board.stacked .witem.half .stat-ico {
+  width: 14px;
+  height: 14px;
+  padding: 6px;
+}
+
+.board.stacked .witem.half .stat-label {
+  white-space: normal;
 }
 
 /*
@@ -4267,7 +4297,9 @@ textarea {
   color: var(--fg);
   font-weight: 600;
   font-size: var(--fs-hint);
-  white-space: nowrap;
+  /* 索引地址一类的长值在窄屏上折行，否则整页被撑出横向滚动 */
+  max-width: 100%;
+  overflow-wrap: anywhere;
   transition: border-color var(--dur-1) var(--ease);
 }
 
@@ -4305,6 +4337,18 @@ textarea {
 .tagpill:hover button,
 .tagpill button:focus-visible {
   opacity: 1;
+}
+
+/* 触屏没有悬停：× 一直显形，否则手机上删不掉；药丸里的小钮放大到手指点得中 */
+@media (hover: none) {
+  .tagpill button {
+    opacity: 0.7;
+  }
+
+  .pill button.pill-btn {
+    width: 26px;
+    height: 26px;
+  }
 }
 
 .tagpill button:hover {
@@ -4967,6 +5011,23 @@ textarea {
   gap: var(--s3);
 }
 
+.log-filter input.log-scope {
+  width: 200px;
+}
+
+.log-filter input.log-keyword {
+  width: 160px;
+}
+
+/* 窄屏：两个输入框各占一整行，按钮与开关并排在下面 */
+@media (max-width: 700px) {
+  .log-filter input.log-scope,
+  .log-filter input.log-keyword {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+}
+
 .log-filter .hint {
   margin-top: var(--s3);
   margin-bottom: 0;
@@ -5523,6 +5584,8 @@ button.log-more:active:not(:disabled) {
  * 一律经令牌取用，`.log` 的级别色与 `.tag` 的语义色由此不可能分叉 ——
  * 各写一套取值时，同为「警告」而两处颜色不同。
  */
+.log-mark .log-msg,
+.log .lv.mark,
 .log .lv.trace,
 .log .lv.debug {
   color: var(--muted);
@@ -5592,6 +5655,41 @@ button.log-more:active:not(:disabled) {
   .log .sc {
     display: block;
   }
+}
+
+/*
+ * 手机：时间与级别一行，正文另起一行占满宽度
+ *
+ * 并排时时间戳与级别吃掉三分之一宽，正文被挤成一列短句。列宽由 LogsView 实测 `.log-msg`
+ * 的宽度算截断，故正文换行后照样截得准。
+ */
+@media (max-width: 700px) {
+  .logs {
+    padding: var(--s2);
+    font-size: 12px;
+  }
+
+  .log {
+    grid-template-columns: max-content 1fr;
+    row-gap: 0;
+    padding: 3px 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  }
+
+  .log > :nth-child(n + 4) {
+    grid-column: 1 / -1;
+  }
+}
+
+/* 与终端一致：本地毫秒时间、级别、作用域、正文。 */
+.logs-fixed .log {
+  grid-template-columns: 12ch 5ch 14ch minmax(0, 1fr);
+  font-variant-numeric: tabular-nums;
+}
+.logs-fixed .log .sc { display: block; }
+@media (max-width: 700px) {
+  .logs-fixed .log { grid-template-columns: 12ch 5ch minmax(0, 1fr); }
+  .logs-fixed .log > :nth-child(4) { grid-column: 1 / -1; }
 }
 
 /* ─────────────── 登录会话 ─────────────── */
@@ -8364,14 +8462,67 @@ button.db-chip.on:hover:not(:disabled) {
 }
 
 @media (max-width: 700px) {
+  /* 悬浮钮缩小、贴边：44px 两枚叠在右下，正好压住卡片右栏的按钮与文字 */
+  .notice-btn,
+  .to-top {
+    width: 36px;
+    height: 36px;
+  }
+
   .notice-btn {
-    right: var(--s3);
-    bottom: var(--s3);
+    right: var(--s2);
+    bottom: var(--s2);
   }
 
   .to-top {
+    right: var(--s2);
+    bottom: calc(var(--s2) + 36px + var(--s2));
+  }
+
+  /* 留出右下两枚悬浮钮的位置，页尾那张卡片的按钮不被挡住 */
+  .main {
+    padding-bottom: calc(var(--s8) + 36px);
+  }
+}
+
+/* ─────────────── 窄屏通用 ─────────────── */
+@media (max-width: 700px) {
+  /* 360px 宽的屏上两侧各 24px 内边距吃掉一成多宽度 */
+  .card {
+    padding: var(--s4);
+  }
+
+  /* 工具条里的筛选框独占一行，后面的勾选与按钮另起一行，不挤到屏幕边缘 */
+  .toolbar input[type="search"] {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
+  /* 数据库页四个计数两两并排；图标贴右上，标题给它让出位置 */
+  .db-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s3);
+  }
+
+  .db-stat-ico {
+    top: var(--s3);
     right: var(--s3);
-    bottom: calc(var(--s3) + 44px + var(--s2));
+    width: 28px;
+    height: 28px;
+  }
+
+  .db-stat h2 {
+    padding-right: 32px;
+  }
+
+  /* 卡片自带内边距，打头的标题再叠 24px 上边距，手机上顶部空出一大截 */
+  .card > h2:first-child,
+  .card > .db-stat-ico + h2 {
+    margin-top: 0;
+  }
+
+  .db-stats > .card {
+    margin-bottom: 0;
   }
 }
 

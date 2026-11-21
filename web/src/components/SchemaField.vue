@@ -150,7 +150,7 @@ const options = computed<readonly SchemaEnumItem[]>(() => props.schema.enum ?? [
  * 枚举是否改用分段单选
  *
  * 候选不超过四項、且每項文案不超過六字時才分段：候選一多分段就窄到讀不出文案，
- * 「內嵌 LevelDB」一類的長文案在 260px 裡並排四項每項只剩十幾像素。其餘情形用下拉。
+ * 七八字的長文案在 260px 裡並排四項每項只剩十幾像素。其餘情形用下拉。
  */
 const segmented = computed(
   () =>

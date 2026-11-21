@@ -71,7 +71,8 @@ function setupText(result: SetupOutcome, dir: string): string {
  * @returns 提示文案
  */
 export function resultText(result: MarketInstallResult): string {
-  const tail = setupText(result, result.dir)
+  const broke = result.failed?.[0]
+  const tail = setupText(result, result.dir) + (broke === undefined ? "" : `但加载失败：${broke.reason}`)
   if (result.via === "pull") {
     if (result.changed === false) return `${result.name} 已是最新版本 ${result.version}，远端没有新提交。${tail}`
     const step =

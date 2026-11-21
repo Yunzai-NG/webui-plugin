@@ -9,11 +9,12 @@
  *          「被挡下的要出声」同样有断言：静默跳过之后使用者看到的是「文件放进去了
  *          但没反应」，而改名与先编译是两种完全不同的处置。
  */
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import {
+  listDirDirs,
   MULTI_ENTRY,
   PANELS_OWNER,
   entryOf,
@@ -652,5 +653,18 @@ describe("packageInfoFrom", () => {
     expect(info.serverEntry).toBe("dist/x.js")
     expect(info.meta?.version).toBe("1.0.0")
     expect(info.styleError).toBeDefined()
+  })
+})
+
+describe("listDirDirs", () => {
+  it("链进来的目录也算 —— 开发时常把仓库 junction 进 plugins/", async () => {
+    const root = await mkdtemp(join(tmpdir(), "yzng-listdirs-"))
+    dirs.push(root)
+    await mkdir(join(root, "src", "real"), { recursive: true })
+    await mkdir(join(root, "plugins", "plain"), { recursive: true })
+    await writeFile(join(root, "plugins", "file.txt"), "", "utf8")
+    await symlink(join(root, "src", "real"), join(root, "plugins", "linked"), "junction")
+    await symlink(join(root, "src", "gone"), join(root, "plugins", "broken"), "junction")
+    expect(await listDirDirs(join(root, "plugins"))).toEqual(["linked", "plain"])
   })
 })

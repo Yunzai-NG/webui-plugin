@@ -275,17 +275,22 @@ async function loadOne(entry: PanelEntry, turn: Promise<void>): Promise<void> {
   }
 }
 
+/** 清单是否已成功取到并装载过；取不到（多为还没有令牌）时下次再调会重试 */
+let manifestLoaded = false
+
 /**
  * 拉清单、装载全部面板插件
  *
  * **清单取不到时静默返回**：最常见的情形是 node 侧还没起来，那时画一格占位会出现在
- * 每一个没装任何面板插件的人的概览页上。
+ * 每一个没装任何面板插件的人的概览页上。清单要令牌，首次打开面板时也是取不到的 ——
+ * App.vue 过了令牌闸门会再调一次，已成功装载过的不再重复。
  *
  * 全部项**并发**装载：逐个 await 就是 n 趟往返串起来，而挂载前的等待有 3 秒上限
  * （见 main.ts）。
  * @returns 无
  */
 export async function loadPanelPlugins(): Promise<void> {
+  if (manifestLoaded) return
   let manifest: unknown
   try {
     manifest = await getAt<unknown>(MANIFEST_URL)
@@ -293,6 +298,7 @@ export async function loadPanelPlugins(): Promise<void> {
     console.error("面板插件清单取不到，本次不装载任何面板插件", err)
     return
   }
+  manifestLoaded = true
 
   const entries = parseManifest(manifest)
   let turn: Promise<void> = Promise.resolve()

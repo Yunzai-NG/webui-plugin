@@ -24,6 +24,7 @@ import {
   isDestructiveSql,
   isSensitive,
   jsonBytes,
+  kvDriverLabel,
   kvTypeOf,
   parentOf,
   parseValueText,
@@ -340,5 +341,15 @@ describe("导出", () => {
       { rowid: 1, a: 'x,"y"' },
       { rowid: 2, a: null }
     ])
+  })
+})
+
+describe("kvDriverLabel", () => {
+  it("新内核给出绑定名，旧内核的驱动名原样显示", () => {
+    expect(kvDriverLabel("sqlite", "node:sqlite")).toBe("SQLite · node:sqlite")
+    expect(kvDriverLabel("sqlite")).toBe("SQLite")
+    expect(kvDriverLabel("memory")).toBe("仅内存（重启即丢）")
+    expect(kvDriverLabel("level")).toBe("level")
+    expect(kvDriverLabel(undefined)).toBe("—")
   })
 })

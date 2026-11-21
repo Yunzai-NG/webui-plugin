@@ -205,6 +205,7 @@
         gap: 12px;
       }
 
+
       .tile {
         padding: 14px;
         background: var(--bg);
@@ -522,6 +523,26 @@
 
       .heat .hour {
         text-align: center;
+      }
+
+      /* 手机上 iframe 内只剩不到 300px：外边距收紧，计数卡两两并排 */
+      @media (max-width: 480px) {
+        body {
+          padding: 8px;
+        }
+
+        .card {
+          padding: 12px;
+        }
+
+        .tiles {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 8px;
+        }
+
+        .tile {
+          padding: 10px;
+        }
       }
     </style>
   </head>

@@ -29,6 +29,7 @@ import {
   parseValueText,
   reformatJson,
   resolveExpireAt,
+  kvDriverLabel,
   sortKvItems,
   ttlText,
   valueTextOf,
@@ -605,7 +606,7 @@ defineExpose({ refresh: reloadKv })
 
       <section class="db-main">
         <p v-if="page" class="hint">
-          驱动 <span class="mono">{{ page.driver }}</span>。当前前缀
+          存储 <span class="mono">{{ kvDriverLabel(page.driver, page.engine) }}</span>。当前前缀
           <span class="mono">{{ prefix || "（根）" }}</span>，直属 {{ page.total }} 个键，连子命名空间共 {{ countHere }} 个。
         </p>
 

@@ -138,6 +138,26 @@ describe("processThemeCss", () => {
     expect(css).not.toContain("fonts.example")
     expect(warnings.length).toBe(1)
   })
+
+  // image-set 里的裸字符串不经 url() 也会发请求，只按 url( 过滤就漏了
+  it("image-set 里的裸字符串同样只收包内地址", () => {
+    const src = [
+      `.a{background:image-set("https://evil.example/p.png" 1x, "art/hi.png" 2x)}`,
+      `.b{background:-webkit-image-set('//evil.example/q.png' 1x)}`,
+      `.c{background:image-set(url("art/x.png") type("image/png") 1x)}`
+    ].join("\n")
+    const { css, warnings } = processThemeCss(src, "theme.css", base, false)
+    expect(css).not.toContain("evil")
+    expect(css).toContain(`url("${base}/art/hi.png") 2x`)
+    expect(css).toContain(`url("${base}/art/x.png") type("image/png") 1x`)
+    expect(warnings.length).toBe(2)
+  })
+
+  it("src() 写法剔除并提示改用 url()", () => {
+    const { css, warnings } = processThemeCss(`.a{background:src("https://evil.example/p.png")}`, "theme.css", base, false)
+    expect(css).not.toContain("evil")
+    expect(warnings.length).toBe(1)
+  })
 })
 
 describe("scanThemes", () => {

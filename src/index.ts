@@ -18,6 +18,7 @@ import { CORE_CONFIG_NAME, definePlugin, parseDuration, parseYaml } from "@yunza
 import { readCoreSettings } from "./coreconfig.js"
 import { PanelConfigStore, configKeyOf } from "./panelconfig.js"
 import { panelsDir, scanPanels, type PanelEntry, type PanelPackage } from "./panelscan.js"
+import { SVG_CSP, readPanelFile } from "./panelfiles.js"
 import { loadPanelServers } from "./panelserver.js"
 import { PanelStore, STORE_CACHE_FILE, type PanelStoreSettings } from "./panelstore.js"
 import { DEFAULT_STORE_INDEX, webuiConfigSchema, type WebuiConfig } from "./storeconfig.js"
@@ -341,7 +342,24 @@ export async function mountPanelPlugins(ctx: PanelHost, webuiRoot: string): Prom
   const mounted = new Set<string>()
   for (const mount of first.mounts) {
     try {
-      ctx.static(mount.urlPath, mount.dir)
+      // 不用 ctx.static：那一路放行包目录里的 .git / node_modules / 源码，见 panelfiles.ts
+      ctx.route(
+        "GET",
+        `/${mount.urlPath}/*file`,
+        async req => {
+          const got = await readPanelFile(mount.dir, req.params.file ?? "")
+          if (got.status === 404) return { status: 404, body: { error: "文件不存在" } }
+          const headers = {
+            "content-type": got.type,
+            etag: got.etag,
+            "cache-control": "no-cache",
+            ...(got.csp === undefined ? {} : { "content-security-policy": got.csp })
+          }
+          if (req.headers?.["if-none-match"] === got.etag) return { status: 304, headers }
+          return { status: 200, headers, body: got.body }
+        },
+        { auth: false }
+      )
       mounted.add(mount.owner)
     } catch (err) {
       ctx.logger.error(`面板插件目录 ${mount.dir} 挂载失败：${err instanceof Error ? err.message : String(err)}`)
@@ -514,7 +532,13 @@ export function mountThemes(ctx: PanelHost, webuiRoot: string): void {
       const asset = await readThemeAsset(theme, file)
       if (asset.status === 404) return { status: 404, headers: cors, body: { error: asset.error } }
       for (const w of asset.warnings ?? []) ctx.logger.warn(`主题 ${id}：${w}`)
-      const headers = { ...cors, "content-type": asset.type, etag: asset.etag, "cache-control": "no-cache" }
+      const headers = {
+        ...cors,
+        "content-type": asset.type,
+        etag: asset.etag,
+        "cache-control": "no-cache",
+        ...(asset.type.startsWith("image/svg") ? { "content-security-policy": SVG_CSP } : {})
+      }
       const seen = req.headers?.["if-none-match"]
       if (seen === asset.etag) return { status: 304, headers }
       return { status: 200, headers, body: asset.body }
@@ -543,6 +567,7 @@ const plugin: PluginDefinition<WebuiConfig> = definePlugin({
      * 反过来的话 hub 还是空的 —— 不报错，只是统计页永远显示「统计尚未开始」。
      * 采集失败只是没有统计，故与面板本身隔开一次 try。
      */
+    let stopCollector: (() => Promise<void>) | undefined
     try {
       const collector = await startCollector({
         dataDir: ctx.dataDir,
@@ -554,10 +579,16 @@ const plugin: PluginDefinition<WebuiConfig> = definePlugin({
         selfIdOf: id => ctx.app.accounts.get(id)?.record.selfId
       })
       setStatsReader(() => collector.read())
-      ctx.signal.addEventListener("abort", () => {
-        clearStatsReader()
-        void collector.stop()
-      })
+      let stopping: Promise<void> | undefined
+      stopCollector = () => {
+        if (!stopping) {
+          clearStatsReader()
+          stopping = collector.stop()
+        }
+        return stopping
+      }
+      if (ctx.signal.aborted) await stopCollector()
+      else ctx.signal.addEventListener("abort", stopCollector, { once: true })
     } catch (err) {
       ctx.logger.error(`消息统计启动失败，面板本身不受影响：${err instanceof Error ? err.message : String(err)}`)
     }
@@ -569,7 +600,6 @@ const plugin: PluginDefinition<WebuiConfig> = definePlugin({
       await mountCustomPages(
         {
           route: ctx.route.bind(ctx),
-          static: ctx.static.bind(ctx),
           logger: ctx.logger,
           app: ctx.app
         },
@@ -603,6 +633,7 @@ const plugin: PluginDefinition<WebuiConfig> = definePlugin({
     } catch (err) {
       ctx.logger.error(`面板插件商店开启失败，已装的面板插件不受影响：${err instanceof Error ? err.message : String(err)}`)
     }
+    return stopCollector
   }
 })
 

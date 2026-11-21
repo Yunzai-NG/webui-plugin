@@ -5,7 +5,7 @@
  * 生命周期：随数据库页常驻；首次显示时读库清单，`target` 给出时直接打开那个库
  * 注意事项：删行与删改类语句一律经确认；控制台的结果不对应某张表，其中的行不可改
  */
-import { computed, ref, watch } from "vue"
+import { computed, onBeforeUnmount, ref, watch } from "vue"
 import { get } from "../api.js"
 import { askConfirm } from "../confirm.js"
 import { dbPath, execOn, useDbPage } from "../dbpage.js"
@@ -99,15 +99,17 @@ const templates = computed(() => sqlTemplatesOf(browsing.value?.name))
 
 /* ────────────────────────────── 取数 ────────────────────────────── */
 
-/**
- * 在当前库上执行一条语句
- * @param text SQL
- * @param params 绑定参数
- * @param limit 行数上限
- * @returns 执行结果
- */
-function run(text: string, params: (string | number | null)[], limit: number): Promise<SqlResult> {
-  return execOn(db.value, text, params, limit)
+let generation = 0
+let selection = 0
+onBeforeUnmount(() => { generation++; selection++ })
+
+/** 每个操作固定库键；后发操作会使先发结果和待确认操作失效。 */
+function begin() {
+  const key = db.value
+  const id = ++generation
+  busy.value = false
+  rowDraft.value = undefined
+  return { key, current: () => id === generation, run: (text: string, params: (string | number | null)[], limit: number) => execOn(key, text, params, limit) }
 }
 
 /** 读库清单 */
@@ -122,8 +124,9 @@ async function loadSql(): Promise<void> {
 }
 
 /** 重读当前库的表清单 */
-async function loadTables(): Promise<void> {
-  tables.value = (await get<{ tables: SqlTable[] }>(`storage/sql/${dbPath(db.value)}/tables`)).tables
+async function loadTables(key: string, current: () => boolean): Promise<void> {
+  const got = await get<{ tables: SqlTable[] }>(`storage/sql/${dbPath(key)}/tables`)
+  if (current()) tables.value = got.tables
 }
 
 /**
@@ -131,14 +134,23 @@ async function loadTables(): Promise<void> {
  * @param key 库键
  */
 async function pickDb(key: string): Promise<void> {
+  const id = ++selection
   db.value = key
+  begin()
+  tables.value = []
+  indexes.value = []
+  ddl.value = ""
+  query.value = ""
+  tableView.value = "data"
   browsing.value = undefined
   result.value = undefined
   rowTotal.value = undefined
   try {
-    await loadTables()
+    await loadTables(key, () => selection === id)
+    if (selection !== id) return
     error.value = ""
   } catch (err) {
+    if (selection !== id) return
     tables.value = []
     error.value = errorText(err)
   }
@@ -146,8 +158,9 @@ async function pickDb(key: string): Promise<void> {
 
 /** 页头的刷新：重读库清单，已选库时连同它的表 */
 async function refresh(): Promise<void> {
+  const id = selection
   await loadSql()
-  if (db.value !== "") await pickDb(db.value)
+  if (selection === id && db.value !== "") await pickDb(db.value)
 }
 
 /**
@@ -156,27 +169,34 @@ async function refresh(): Promise<void> {
  * @param at 起始行
  */
 async function browse(table: SqlTable, at = 0): Promise<void> {
+  const op = begin()
+  result.value = undefined
+  rowTotal.value = undefined
   busy.value = true
   try {
-    result.value = await run(
-      browseSqlOf(table, { where: where.value, orderBy: orderBy.value, desc: orderDesc.value }),
+    const filter = where.value
+    const rows = await op.run(
+      browseSqlOf(table, { where: filter, orderBy: orderBy.value, desc: orderDesc.value }),
       [SQL_PAGE, at],
       SQL_PAGE
     )
+    if (!op.current()) return
+    result.value = rows
     browsing.value = table
     offset.value = at
     error.value = ""
     try {
-      const counted = await run(countSqlOf(table, where.value), [], 1)
+      const counted = await op.run(countSqlOf(table, filter), [], 1)
+      if (!op.current()) return
       rowTotal.value = Number(counted.rows?.[0]?.[0] ?? 0)
     } catch {
       // 视图上的 count 可能很慢或失败，缺了它仍可翻页
-      rowTotal.value = undefined
+      if (op.current()) rowTotal.value = undefined
     }
   } catch (err) {
-    error.value = errorText(err)
+    if (op.current()) error.value = errorText(err)
   } finally {
-    busy.value = false
+    if (op.current()) busy.value = false
   }
 }
 
@@ -225,14 +245,18 @@ function clearWhere(): void {
 async function loadStruct(): Promise<void> {
   const table = browsing.value
   if (table === undefined) return
+  const op = begin()
+  indexes.value = []
   tableView.value = "struct"
   try {
-    const got = await run(INDEX_SQL, [table.name], 100)
+    const got = await op.run(INDEX_SQL, [table.name], 100)
+    if (!op.current()) return
     indexes.value = (got.rows ?? []).map(row => ({ name: String(row[0] ?? ""), sql: String(row[1] ?? "") }))
     error.value = ""
   } catch (err) {
+    if (!op.current()) return
     indexes.value = []
-    error.value = errorText(err)
+    if (op.current()) error.value = errorText(err)
   }
 }
 
@@ -240,14 +264,18 @@ async function loadStruct(): Promise<void> {
 async function loadDdl(): Promise<void> {
   const table = browsing.value
   if (table === undefined) return
+  const op = begin()
+  ddl.value = ""
   tableView.value = "ddl"
   try {
-    const got = await run(DDL_SQL, [table.name], 1)
+    const got = await op.run(DDL_SQL, [table.name], 1)
+    if (!op.current()) return
     ddl.value = String(got.rows?.[0]?.[0] ?? "")
     error.value = ""
   } catch (err) {
+    if (!op.current()) return
     ddl.value = ""
-    error.value = errorText(err)
+    if (op.current()) error.value = errorText(err)
   }
 }
 
@@ -275,7 +303,7 @@ interface CellDraft {
   blob: boolean
 }
 
-const rowDraft = ref<{ rowid: string | number | undefined; cells: CellDraft[] } | undefined>(undefined)
+const rowDraft = ref<{ db: string; table: SqlTable; generation: number; rowid: string | number | undefined; cells: CellDraft[] } | undefined>(undefined)
 
 /**
  * 打开一行的编辑框
@@ -292,7 +320,7 @@ function openRow(index: number): void {
     const cell = row[i]
     cells.push({ name, text: cellEditText(cell), isNull: cell === null, blob: isBlobCell(cell) })
   })
-  rowDraft.value = { rowid: row[0] as string | number, cells }
+  rowDraft.value = { db: db.value, table, generation, rowid: row[0] as string | number, cells }
 }
 
 /** 打开插入新行的编辑框 */
@@ -300,7 +328,7 @@ function openInsert(): void {
   const table = browsing.value
   if (table === undefined) return
   rowDraft.value = {
-    rowid: undefined,
+    db: db.value, table, generation, rowid: undefined,
     cells: table.columns.map(c => ({ name: c.name, text: "", isNull: !c.notnull && c.pk === 0, blob: false }))
   }
 }
@@ -308,25 +336,28 @@ function openInsert(): void {
 /** 保存整行 */
 async function saveRow(): Promise<void> {
   const draft = rowDraft.value
-  const table = browsing.value
-  if (draft === undefined || table === undefined) return
+  if (!draft || draft.db !== db.value || draft.generation !== generation || busy.value) return
+  const table = draft.table
+  const op = { current: () => generation === draft.generation }
   const cells = draft.cells.filter(c => !c.blob)
   const params = cells.map(c => cellParamOf(c.text, table.columns.find(d => d.name === c.name), c.isNull))
   busy.value = true
   try {
     if (draft.rowid === undefined) {
-      await run(insertSqlOf(table.name, cells.map(c => c.name)), params, 1)
+      await execOn(draft.db, insertSqlOf(table.name, cells.map(c => c.name)), params, 1)
+      if (!op.current()) return
       showToast("已插入 1 行")
     } else {
-      await run(updateRowSqlOf(table.name, cells.map(c => c.name)), [...params, draft.rowid], 1)
+      await execOn(draft.db, updateRowSqlOf(table.name, cells.map(c => c.name)), [...params, draft.rowid], 1)
+      if (!op.current()) return
       showToast("已更新 1 行")
     }
     rowDraft.value = undefined
     await browse(table, offset.value)
   } catch (err) {
-    error.value = errorText(err)
+    if (op.current()) error.value = errorText(err)
   } finally {
-    busy.value = false
+    if (op.current()) busy.value = false
   }
 }
 
@@ -338,19 +369,21 @@ async function removeRow(index: number): Promise<void> {
   const table = browsing.value
   const rowid = result.value?.rows?.[index]?.[0] as string | number | undefined
   if (table === undefined || rowid === undefined) return
+  const op = begin()
   const ok = await askConfirm({
-    title: `删除 ${table.name} 中 rowid 为 ${rowid} 的行？`,
+    title: `删除 ${op.key} / ${table.name} 中 rowid 为 ${rowid} 的行？`,
     body: "该行将从表中移除，此操作无法撤销。若外键设有级联删除，关联行会一并删除。",
     okText: "删除",
     danger: true
   })
-  if (!ok) return
+  if (!ok || !op.current()) return
   try {
-    await run(deleteSqlOf(table.name), [rowid], 1)
+    await op.run(deleteSqlOf(table.name), [rowid], 1)
+    if (!op.current()) return
     showToast("已删除 1 行")
     await browse(table, offset.value)
   } catch (err) {
-    error.value = errorText(err)
+    if (op.current()) error.value = errorText(err)
   }
 }
 
@@ -383,11 +416,12 @@ function writeHistory(): void {
 /** 执行控制台里的语句 */
 async function runQuery(): Promise<void> {
   const text = query.value.trim()
-  if (text === "") return
+  if (text === "" || busy.value) return
+  const op = begin()
   if (
     isDestructiveSql(text) &&
     !(await askConfirm({
-      title: "执行这条语句？",
+      title: `在 ${op.key} 执行这条语句？`,
       body: "该语句会改动表中的数据或结构，执行后无法撤销。",
       okText: "执行",
       danger: true,
@@ -397,9 +431,11 @@ async function runQuery(): Promise<void> {
     return
   }
 
+  if (!op.current()) return
   busy.value = true
   try {
-    const done = await run(text, [], QUERY_LIMIT)
+    const done = await op.run(text, [], QUERY_LIMIT)
+    if (!op.current()) return
     result.value = done
     browsing.value = undefined
     rowTotal.value = undefined
@@ -409,12 +445,12 @@ async function runQuery(): Promise<void> {
     if (!done.readonly) {
       showToast(`已执行，影响 ${done.changes ?? 0} 行`)
       // 语句可能增删表，重读表清单
-      await loadTables()
+      await loadTables(op.key, op.current)
     }
   } catch (err) {
-    error.value = errorText(err)
+    if (op.current()) error.value = errorText(err)
   } finally {
-    busy.value = false
+    if (op.current()) busy.value = false
   }
 }
 
@@ -441,8 +477,9 @@ function exportResult(as: "csv" | "json"): void {
 watch(
   () => props.target,
   async target => {
+    const id = ++selection
     if (sql.value === undefined) await loadSql()
-    if (target !== undefined) await pickDb(target.db)
+    if (selection === id && target !== undefined) await pickDb(target.db)
   },
   { immediate: true }
 )

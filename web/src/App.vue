@@ -16,13 +16,14 @@
  *          **底部的连接状态由一条独立心跳维持**（闸门那次探测只说明进入面板那一刻内核是活的）。心跳失败
  *          **不退回闸门** —— 那会连带丢掉使用者正在读的内容；唯一的例外是 401/403，那时留在外壳里做什么都不会成功。
  */
-import { computed, onMounted, onUnmounted, ref, watch, type Component } from "vue"
+import { computed, nextTick, onMounted, onUnmounted, ref, watch, type Component } from "vue"
 import { get, getAt, getToken, post, setToken } from "./api.js"
 import { ApiError } from "./api.js"
 import { errorText } from "./format.js"
 import { ROUTES, currentQuery, currentRoute, hrefOf, type RouteDef } from "./router.js"
 import { SCHEME_ICON } from "./icons.js"
 import { SCHEME_LABEL, cycleScheme, schemeChoice, supportedSchemes } from "./scheme.js"
+import { loadPanelPlugins } from "./panelload.js"
 import { reloadThemes } from "./themes.js"
 import type { IconShape, Overview } from "./types.js"
 import AppIcon from "./components/AppIcon.vue"
@@ -121,6 +122,39 @@ const message = ref("")
 const version = ref("")
 /** 窄屏抽屉是否展开 */
 const drawer = ref(false)
+const navButton = ref<HTMLButtonElement>()
+const navPanel = ref<HTMLElement>()
+const wide = window.matchMedia("(min-width: 860px)")
+const narrow = ref(!wide.matches)
+function resizeNav(): void {
+  narrow.value = !wide.matches
+  if (!narrow.value) drawer.value = false
+}
+function drawerKeys(event: KeyboardEvent): void {
+  if (!drawer.value || !narrow.value) return
+  if (event.key === "Escape") {
+    event.preventDefault()
+    drawer.value = false
+    return
+  }
+  if (event.key !== "Tab") return
+  const items = [...(navPanel.value?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], [tabindex="0"]') ?? [])]
+    .filter(el => el.getClientRects().length > 0)
+  const first = items[0]
+  const last = items.at(-1)
+  const inside = navPanel.value?.contains(document.activeElement)
+  if (!inside || (event.shiftKey ? document.activeElement === first : document.activeElement === last)) {
+    event.preventDefault()
+    ;(event.shiftKey ? last : first)?.focus()
+  }
+}
+watch(drawer, async open => {
+  await nextTick()
+  if (!narrow.value || drawer.value !== open) return
+  if (open) [...(navPanel.value?.querySelectorAll<HTMLElement>('a[href],button:not(:disabled)') ?? [])]
+    .find(el => el.getClientRects().length > 0)?.focus()
+  else navButton.value?.focus()
+})
 /** 宽屏侧栏是否折叠为窄条 */
 const collapsed = ref(localStorage.getItem(COLLAPSE_KEY) === "1")
 /** 最近一次请求内核是否成功 */
@@ -171,8 +205,9 @@ async function probe(): Promise<void> {
     online.value = true
     state.value = "open"
     message.value = ""
-    // 主题表要令牌，闸门之前那次取不到；过了闸门再取一次
+    // 主题表与面板插件清单都要令牌，闸门之前那次取不到；过了闸门再取一次（注册表是响应式的，装上即出现）
     void reloadThemes()
+    void loadPanelPlugins()
     await loadMountedPages()
   } catch (err) {
     if (err instanceof ApiError && err.isAuth) {
@@ -266,11 +301,15 @@ watch(currentRoute, id => {
 })
 
 onMounted(() => {
+  wide.addEventListener("change", resizeNav)
+  document.addEventListener("keydown", drawerKeys)
   void probe()
   beat = window.setInterval(() => void tick(), BEAT_MS)
 })
 
 onUnmounted(() => {
+  wide.removeEventListener("change", resizeNav)
+  document.removeEventListener("keydown", drawerKeys)
   if (beat !== undefined) window.clearInterval(beat)
 })
 </script>
@@ -362,14 +401,14 @@ onUnmounted(() => {
       故在 860 以上整条隐去（见 styles.css 的 `.topbar` 媒体查询）。
     -->
     <header class="topbar" data-part="topbar">
-      <button class="icon" aria-label="导航" :aria-expanded="drawer" @click="drawer = !drawer">☰</button>
+      <button ref="navButton" class="icon" aria-controls="side-navigation" aria-label="导航" :aria-expanded="drawer" @click="drawer = !drawer">☰</button>
       <span class="brand">
         Yunzai NG
         <small>{{ version }}</small>
       </span>
     </header>
 
-    <aside class="side" data-part="sidebar">
+    <aside id="side-navigation" ref="navPanel" class="side" data-part="sidebar" :inert="narrow && !drawer">
       <!-- 一：品牌区 -->
       <div class="side-brand" data-part="sidebar.brand">
         <img class="brand-mark" :src="MARK" alt="" width="22" height="22" />
@@ -503,7 +542,7 @@ onUnmounted(() => {
       各页的间距全部读 `--s1..--s8` 与 `--gutter`，在这个类下重声明令牌即可，见 styles.css 末尾
       「按页覆盖」一节。本仓自己的规则一律不写 `.page-*`，否则又回到「改一页牵连另一页」。
     -->
-    <main class="main" data-part="main" :class="`page-${currentRoute}`">
+    <main class="main" data-part="main" :inert="narrow && drawer" :class="`page-${currentRoute}`">
       <!-- `mode="out-in"` 而非默认的同时进出：两个视图重叠期间页面高度会先叠加再收回，
            在长页面之间切换时表现为内容跳一下 -->
       <Transition name="page" mode="out-in">

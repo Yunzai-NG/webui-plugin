@@ -8,7 +8,7 @@
  *          用例跑在 node 环境（无 jsdom）测不到 —— 它只是把这里的判定原样执行。
  */
 import { describe, it, expect } from "vitest"
-import { judgeRequest, allowedPaths } from "./custombridgegate.js"
+import { judgeRequest, allowedPaths, scrubPanelData } from "./custombridgegate.js"
 
 /** 一条合规的请求外壳，各用例只改自己关心的字段 */
 const ask = (extra: Record<string, unknown>): Record<string, unknown> => ({ kind: "yunzai-ng.custom", id: 1, ...extra })
@@ -96,5 +96,17 @@ describe("judgeRequest", () => {
     const first = allowedPaths() as string[]
     first.length = 0
     expect(allowedPaths().length).toBeGreaterThan(0)
+  })
+})
+
+describe("scrubPanelData", () => {
+  it("accounts 的每一项剥掉 record.config，其余字段照给", () => {
+    const data = [{ record: { id: "a", adapterId: "qqbot", selfId: "1", config: { appSecret: "s" } }, status: "online" }]
+    expect(scrubPanelData("accounts", data)).toEqual([{ record: { id: "a", adapterId: "qqbot", selfId: "1" }, status: "online" }])
+  })
+
+  it("其他路径原样返回", () => {
+    const data = { version: "0.7.1" }
+    expect(scrubPanelData("overview", data)).toBe(data)
   })
 })

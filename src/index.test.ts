@@ -76,6 +76,8 @@ interface RecordingOptions {
   onPanel?: (dir: string) => void
   /** static() 的行为，缺省什么都不做；抛错即模拟「该目录挂不上」 */
   onStatic?: (urlPath: string, dir: string) => void
+  /** route() 的行为，缺省什么都不做；抛错即模拟「该路由注册不上」 */
+  onRoute?: (path: string) => void
   /** 本插件数据目录，缺省一个不存在的路径 */
   dataDir?: string
   /**
@@ -120,6 +122,7 @@ function recording(opts: RecordingOptions = {}): Recorded {
       return () => undefined
     },
     route: (method, path, handler) => {
+      opts.onRoute?.(path)
       // 键带上方法：商店的 `GET panelstore` 与 `POST panelstore/install` 之外，
       // 还有 `DELETE panelstore/:name` 与 `POST panelstore/:name/update` —— 只按路径
       // 记会让后注册的顶掉前一个，而顶掉之后用例仍能跑，只是验的不是它以为的那条
@@ -252,7 +255,35 @@ describe("mountPanelPlugins", () => {
 
     // 目录不存在也要挂：使用者放进第一个文件后只需刷新页面，不必重载插件
     expect(mounted.has("panels")).toBe(true)
-    expect(r.statics).toEqual([{ urlPath: "pp/panels", dir: join(root, "plugins") }])
+    expect(r.routes.has("GET /pp/panels/*file")).toBe(true)
+    expect(r.statics).toEqual([])
+  })
+
+  it("文件路由只交出浏览器要的文件，.git、node_modules、源码与锁文件一律 404", async () => {
+    const root = await webuiRootWithPanels()
+    const pkg = join(root, "plugins", "hw")
+    await mkdir(join(pkg, ".git"), { recursive: true })
+    await mkdir(join(pkg, "node_modules", "x"), { recursive: true })
+    await mkdir(join(pkg, "src"), { recursive: true })
+    await writeFile(join(pkg, "index.js"), "export default {}", "utf8")
+    await writeFile(join(pkg, "style.css"), "a{}", "utf8")
+    await writeFile(join(pkg, ".git", "config"), "url = https://token@github.com/x", "utf8")
+    await writeFile(join(pkg, ".env"), "SECRET=1", "utf8")
+    await writeFile(join(pkg, "node_modules", "x", "index.js"), "", "utf8")
+    await writeFile(join(pkg, "src", "redis.ts"), "", "utf8")
+    await writeFile(join(pkg, "pnpm-lock.yaml"), "", "utf8")
+    const r = recording({ dataDir: await tempDir() })
+    await mountPanelPlugins(r.ctx, root)
+    const serve = r.routes.get("GET /pp/panels/*file")
+    if (serve === undefined) throw new Error("文件路由未注册")
+    const status = async (file: string): Promise<number> =>
+      ((await serve({ params: { file }, body: undefined })) as { status: number }).status
+
+    expect(await status("hw/index.js")).toBe(200)
+    expect(await status("hw/style.css")).toBe(200)
+    for (const file of ["hw/.git/config", "hw/.env", "hw/node_modules/x/index.js", "hw/src/redis.ts", "hw/pnpm-lock.yaml", "hw/../../x.js", "hw/nope.js"]) {
+      expect(await status(file)).toBe(404)
+    }
   })
 
   it("主路的单文件进清单且记作 single", async () => {
@@ -333,8 +364,8 @@ describe("mountPanelPlugins", () => {
     const root = await webuiRootWithPanels()
     await writeFile(join(root, "plugins", "a.js"), "export default {}", "utf8")
     const r = recording({
-      onStatic: urlPath => {
-        if (urlPath === "pp/panels") throw new Error("该模式已注册")
+      onRoute: path => {
+        if (path === "/pp/panels/*file") throw new Error("该模式已注册")
       }
     })
 

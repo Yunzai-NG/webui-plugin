@@ -203,6 +203,8 @@ function addTally(a: Tally, b: Tally): void {
 
 /** 一次收发的入账内容 */
 export interface Entry {
+  /** 平台没有给出会话名。 */
+  fallbackName?: true
   /** 发生时刻，毫秒时间戳 */
   at: number
   /** 会话标识 */
@@ -390,9 +392,19 @@ export class StatsBuckets {
     }
   }
 
-  /** 自上次 `snapshot()` 起是否有新数据 */
+  /** 自上次 `markClean()` 起是否有新数据 */
   get dirty(): boolean {
     return this.#dirty
+  }
+
+  /** 即将落盘：清掉 dirty。只由落盘那一侧调 —— 读接口取快照不算「已保存」 */
+  markClean(): void {
+    this.#dirty = false
+  }
+
+  /** 落盘失败：标回脏，下一轮再写 */
+  markDirty(): void {
+    this.#dirty = true
   }
 
   /**
@@ -415,7 +427,7 @@ export class StatsBuckets {
       bucket.peers[entry.peer] = peer
     }
     // 名字每次都更新：群改名之后，统计里该显示新名字，而首次入账时那个名字可能还是空的
-    if (entry.name !== "" && entry.name !== entry.peer) peer.name = entry.name
+    if (entry.dir === "recv" && !entry.fallbackName && entry.name !== "" && entry.name !== entry.peer) peer.name = entry.name
     addTally(entry.dir === "recv" ? peer.recv : peer.sent, entry.tally)
 
     // 小时槽：与会话无关，只按时刻归集
@@ -577,11 +589,10 @@ export class StatsBuckets {
   }
 
   /**
-   * 取一份可落盘、可直接送给前端的快照，顺带清掉 dirty 标记
+   * 取一份可落盘、可直接送给前端的快照；不动 dirty，见 `markClean`
    * @returns 文档
    */
   snapshot(): StatsDoc {
-    this.#dirty = false
     const days: Record<string, DayBucket> = {}
     for (const day of [...this.#days.keys()].sort()) {
       const bucket = this.#days.get(day)

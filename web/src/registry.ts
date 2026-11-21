@@ -10,7 +10,7 @@
  *          **注册顺序即默认版面顺序**（没有落盘布局时按此顺序补空位），故内置组件的
  *          注册顺序不可随手调整 —— 否则升级一次面板，使用者眼里是「卡片自己重排了」。
  */
-import type { Component } from "vue"
+import { shallowRef, type Component } from "vue"
 import type { WidgetSpec } from "./grid.js"
 import type { PanelMeta } from "./panelcheck.js"
 
@@ -76,6 +76,14 @@ export interface WidgetDef {
 const REGISTRY: WidgetDef[] = []
 
 /**
+ * 注册表的版本号，每次注册加一
+ *
+ * 读函数都先读它一下，于是 `computed` 里调这些函数会随注册重算：面板插件晚到（超过挂载前的等待、
+ * 或过了令牌闸门才装上）时，已打开的页面不必刷新就能看到。
+ */
+const version = shallowRef(0)
+
+/**
  * 注册一个组件
  * @param def 组件定义
  * @returns 是否注册成功；标识重复时为 false
@@ -86,6 +94,7 @@ export function registerWidget(def: WidgetDef): boolean {
     return false
   }
   REGISTRY.push(def)
+  version.value++
   return true
 }
 
@@ -95,6 +104,7 @@ export function registerWidget(def: WidgetDef): boolean {
  * @returns 该页的组件定义
  */
 export function widgetsOf(page: string): WidgetDef[] {
+  void version.value
   return REGISTRY.filter(item => item.page === page)
 }
 
@@ -107,6 +117,7 @@ export function widgetsOf(page: string): WidgetDef[] {
  * @returns 面板插件的组件定义
  */
 export function panelWidgets(): WidgetDef[] {
+  void version.value
   return REGISTRY.filter(item => item.source === "plugin")
 }
 
@@ -210,6 +221,7 @@ export function registerTab(def: TabDef): boolean {
     return false
   }
   TABS.push(def)
+  version.value++
   return true
 }
 
@@ -218,6 +230,7 @@ export function registerTab(def: TabDef): boolean {
  * @returns 页签定义
  */
 export function panelTabs(): TabDef[] {
+  void version.value
   return [...TABS]
 }
 
@@ -227,6 +240,7 @@ export function panelTabs(): TabDef[] {
  * @returns 该包的页签定义
  */
 export function panelTabsOf(pkg: string): TabDef[] {
+  void version.value
   return TABS.filter(item => item.pkg === pkg)
 }
 

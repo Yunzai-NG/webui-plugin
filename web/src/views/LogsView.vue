@@ -20,7 +20,7 @@
  *          **列宽只量一次，不逐行量**（窗口尺寸变化时重量）：两千行逐行比对 `scrollHeight` 是两千次
  *          布局读取，且每来一条新日志就要重做一遍。
  */
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue"
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from "vue"
 import { get, openSocket } from "../api.js"
 import { clock, errorText } from "../format.js"
 import { elide } from "../logline.js"
@@ -45,14 +45,39 @@ const PROBE_TEXT = "0000000000"
 const LEVELS: readonly { value: string; label: string }[] = [
   { value: "trace", label: "追踪" },
   { value: "debug", label: "调试" },
+  { value: "mark", label: "日常" },
   { value: "info", label: "信息" },
   { value: "warn", label: "警告" },
   { value: "error", label: "错误" },
   { value: "fatal", label: "致命" }
 ]
 
-const records = ref<LogRecord[]>([])
+// 整体替换、从不原地改，故用 shallowRef：省掉给两千条记录各套一层代理
+const records = shallowRef<LogRecord[]>([])
 const file = ref("")
+
+/**
+ * 每条记录一个稳定的行键
+ *
+ * 不能用「时间 + 下标」：缓冲区满了之后每来一条就从头部丢一条，下标整体前移，
+ * 两千行的键全变，等于每条推送都重建整个列表。
+ */
+const rowIds = new WeakMap<LogRecord, number>()
+let nextRowId = 0
+
+/**
+ * 取一条记录的行键
+ * @param rec 记录
+ * @returns 行键
+ */
+function rowId(rec: LogRecord): number {
+  let id = rowIds.get(rec)
+  if (id === undefined) {
+    id = ++nextRowId
+    rowIds.set(rec, id)
+  }
+  return id
+}
 const error = ref("")
 const scope = ref("")
 const keyword = ref("")
@@ -65,7 +90,7 @@ let socket: WebSocket | undefined
  * 已勾选的级别
  *
  * 空集表示不限级别，而非"一条都不要"：筛选器的空状态应当等同于"未筛选"，
- * 这也使首次进入页面时无须预先勾上全部六项。
+ * 这也使首次进入页面时无须预先勾上全部级别。
  */
 const picked = ref<string[]>([])
 
@@ -174,12 +199,29 @@ interface Row {
 /** 待渲染的行 */
 const rows = computed<Row[]>(() =>
   shown.value.map(rec => {
-    // 堆栈接在正文之后：它与正文同属一条记录，分成两个元素会各自算一次两行上限
-    const full = rec.stack === undefined || rec.stack === "" ? rec.msg : `${rec.msg}\n${rec.stack}`
-    const brief = elide(full, cols.value)
+    const { full, brief } = textOf(rec, cols.value)
     return { rec, full, brief, clipped: brief !== full, open: opened.value.has(rec) }
   })
 )
+
+/** 按记录缓存的正文与截断结果；列宽变了才重算 */
+const texts = new WeakMap<LogRecord, { cols: number; full: string; brief: string }>()
+
+/**
+ * 一条记录的完整正文与折叠正文
+ * @param rec 记录
+ * @param width 列宽
+ * @returns 两种正文
+ */
+function textOf(rec: LogRecord, width: number): { full: string; brief: string } {
+  const hit = texts.get(rec)
+  if (hit !== undefined && hit.cols === width) return hit
+  // 堆栈接在正文之后：它与正文同属一条记录，分成两个元素会各自算一次两行上限
+  const full = rec.stack === undefined || rec.stack === "" ? rec.msg : `${rec.msg}\n${rec.stack}`
+  const entry = { cols: width, full, brief: elide(full, width) }
+  texts.set(rec, entry)
+  return entry
+}
 
 /**
  * 展开或收起一行
@@ -265,6 +307,7 @@ async function loadHistory(): Promise<void> {
 
 /** 关闭现有连接 */
 function closeSocket(): void {
+  dropPending()
   if (socket === undefined) return
   // 先摘除 onclose 再 close：否则 close() 触发的回调会将 connected 置为 false，
   // 随后又被新建的连接改回，状态指示灯将出现一次闪烁
@@ -287,14 +330,46 @@ function openLive(): void {
   }
   ws.onmessage = event => {
     try {
-      const rec = JSON.parse(String(event.data)) as LogRecord
       // 原样入缓冲，不在此处按级别筛：筛选是显示层的事（见 `shown`）
-      records.value = [...records.value.slice(-(MAX_LINES - 1)), rec]
-      scrollDown()
+      queue(JSON.parse(String(event.data)) as LogRecord)
     } catch {
       // 推送内容非 JSON 时只可能是中间层插入的数据，丢弃即可
     }
   }
+}
+
+/** 本帧收到、尚未并入缓冲的记录 */
+let pending: LogRecord[] = []
+let flushHandle: number | undefined
+
+/**
+ * 收一条推送，同一帧内的合成一次更新
+ *
+ * 刷屏时一秒几百条，逐条替换数组就是逐条重算筛选与渲染。用 setTimeout 而非
+ * requestAnimationFrame：后者在标签页隐藏时停摆，挂在后台的页面会把推送越攒越多。
+ * @param rec 记录
+ */
+function queue(rec: LogRecord): void {
+  pending.push(rec)
+  if (pending.length > MAX_LINES) pending = pending.slice(-MAX_LINES)
+  if (flushHandle === undefined) flushHandle = window.setTimeout(flushPending, 16)
+}
+
+/** 把攒下的记录并入缓冲 */
+function flushPending(): void {
+  flushHandle = undefined
+  if (pending.length === 0) return
+  const merged = records.value.concat(pending)
+  pending = []
+  records.value = merged.length > MAX_LINES ? merged.slice(-MAX_LINES) : merged
+  scrollDown()
+}
+
+/** 丢掉尚未并入的推送，换连接或卸载时用 */
+function dropPending(): void {
+  if (flushHandle !== undefined) window.clearTimeout(flushHandle)
+  flushHandle = undefined
+  pending = []
 }
 
 /** 重新按当前条件加载 */
@@ -367,8 +442,8 @@ onUnmounted(() => {
       </div>
 
       <div class="row">
-        <input v-model="scope" placeholder="作用域，如 kernel / plugin" style="width: 200px" />
-        <input v-model="keyword" placeholder="关键字" style="width: 160px" @keyup.enter="void apply()" />
+        <input v-model="scope" class="log-scope" placeholder="作用域，如 kernel / plugin" />
+        <input v-model="keyword" class="log-keyword" placeholder="关键字" @keyup.enter="void apply()" />
         <button class="primary" @click="void apply()">应用</button>
         <label class="check">
           <input v-model="live" type="checkbox" />
@@ -379,18 +454,18 @@ onUnmounted(() => {
       <p v-if="file" class="hint mono">{{ file }}</p>
     </div>
 
-    <div ref="box" class="logs mono" data-part="logs">
+    <div ref="box" class="logs mono logs-fixed" data-part="logs">
       <!-- 量字符步进用的探针：字族字号由 `.logs` 继承而来，不在 JS 里另写一份字体常量 -->
       <span ref="probe" class="log-probe" aria-hidden="true">{{ PROBE_TEXT }}</span>
 
-      <div v-for="(row, i) in rows" :key="`${row.rec.time}-${i}`" class="log">
+      <div v-for="row in rows" :key="rowId(row.rec)" class="log" :class="{ 'log-mark': row.rec.level === 'mark' }">
         <span class="t">{{ clock(row.rec.time) }}</span>
         <span class="lv" :class="row.rec.level">{{ row.rec.level }}</span>
         <!--
           作用域超出列宽时由 CSS 省略，完整值放在 `title` 里 —— 该列定宽而文案由插件决定长度。
           行展开时一并展开（`open` 类改为折行），故「单击看全文」对这一列同样成立。
         -->
-        <span class="sc" :class="{ open: row.open }" :title="row.rec.scope ?? ''">{{ row.rec.scope ?? "" }}</span>
+        <span class="sc" :class="{ open: row.open }" :title="row.rec.scope ?? ''">{{ row.rec.scope || "—" }}</span>
         <!--
           截断的行做成按钮：点击展开，键盘同样可达。未截断的行仍是普通文本 ——
           给一个点了没有反应的按钮比不给更费解。

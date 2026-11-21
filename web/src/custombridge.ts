@@ -23,7 +23,7 @@
  *          且只回给 `event.source` 这一个窗口，故不构成额外泄露。
  */
 import { get, getAt, ApiError } from "./api.js"
-import { judgeRequest, BRIDGE_KIND, type BridgeRequest } from "./custombridgegate.js"
+import { judgeRequest, scrubPanelData, BRIDGE_KIND, type BridgeRequest } from "./custombridgegate.js"
 
 export { allowedPaths } from "./custombridgegate.js"
 
@@ -71,7 +71,10 @@ export function attachBridge(frame: () => HTMLIFrameElement | null, plugin: () =
       return
     }
 
-    const task = verdict.act === "self" ? getAt<unknown>(verdict.url) : get<unknown>(verdict.path)
+    const task =
+      verdict.act === "self"
+        ? getAt<unknown>(verdict.url)
+        : get<unknown>(verdict.path).then(data => scrubPanelData(verdict.path, data))
     void task.then(
       data => send({ ok: true, data }),
       (err: unknown) => send({ ok: false, error: err instanceof ApiError ? err.message : String(err) })

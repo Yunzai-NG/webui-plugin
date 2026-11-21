@@ -469,6 +469,8 @@ export interface MarketInstallResult extends SetupOutcome {
   unloaded: boolean
   /** 本次加载成功的插件名 */
   loaded: string[]
+  /** 这个插件装完之后加载失败的原因；旧内核不给 */
+  failed?: { name: string; reason: string }[]
 }
 
 /**
@@ -487,6 +489,12 @@ export interface UpdateProbe {
    * **只在 `willPull` 为真时才可能为真**：整目录重装根本不碰 git，那条路上无所谓暂存。
    */
   dirty: boolean
+  /**
+   * 更新会被内核拒绝的原因：目录是 git 仓库却拉不了（本机没有 git、索引里它不是 git 来源）
+   *
+   * 内核不再替你整目录重装（那会连 `.git` 与本地改动一起删掉），只有「整份重装」能走。旧内核不给这一项。
+   */
+  blocked?: string
 }
 
 /**
@@ -699,8 +707,10 @@ export interface KvItem {
 
 /** `GET /api/storage/kv` */
 export interface KvPage {
-  /** 实际生效的驱动 id */
+  /** 实际生效的驱动 id：sqlite / memory（旧内核还会报 level / json） */
   driver: string
+  /** SQLite 绑定名（better-sqlite3 / node:sqlite）；内存驱动与旧内核不给 */
+  engine?: string
   /** 面板是否只读 */
   readonly: boolean
   /** 本次的前缀 */

@@ -2,6 +2,7 @@ import { existsSync } from "node:fs"
 import { createRequire } from "node:module"
 import { dirname, resolve } from "node:path"
 import process from "node:process"
+import vue from "@vitejs/plugin-vue"
 import { defineConfig } from "vitest/config"
 
 /**
@@ -44,6 +45,7 @@ if (core === undefined || types === undefined) {
 }
 
 export default defineConfig({
+  plugins: [vue()],
   resolve: {
     alias: [
       // 具体子路径要排在裸包名之前，否则 `@yunzai-ng/core` 会先把它匹配掉
@@ -60,6 +62,7 @@ export default defineConfig({
     // 一类的纯函数 —— 它们算错不会报错，只会表现为版面不对，非有用例钉住不可。
     // 组件本身不进用例：那需要 jsdom 与 @vue/test-utils 两份依赖，而组件的验收
     // 走的是 temp/ 下针对真实实例的浏览器脚本，比在 jsdom 里模拟更接近实情。
+    testTransformMode: { web: ["**/DbSql.test.ts"] },
     include: ["src/**/*.test.ts", "web/src/**/*.test.ts"],
     environment: "node",
     /*
@@ -81,7 +84,8 @@ export default defineConfig({
     pool: "forks",
     coverage: {
       provider: "v8",
-      include: ["src/**"],
+      testTransformMode: { web: ["**/DbSql.test.ts"] },
+    include: ["src/**"],
       reporter: ["text", "html"]
     }
   }

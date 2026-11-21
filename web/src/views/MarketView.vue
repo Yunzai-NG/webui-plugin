@@ -182,6 +182,7 @@ const form = ref({ url: "", name: "", branch: "", build: false, scripts: "", tit
 
 /** 自定义安装的模态是否开着 */
 const adding = ref(false)
+const addError = ref("")
 
 /** 正在装（那一趟可能要几分钟，期间按钮要锁住） */
 const installing = ref(false)
@@ -210,6 +211,7 @@ const canSubmit = computed(() => form.value.url.trim() !== "" && !installing.val
  */
 function openAdd(): void {
   form.value = { url: "", name: "", branch: "", build: false, scripts: "", title: "", description: "" }
+  addError.value = ""
   adding.value = true
 }
 
@@ -239,6 +241,7 @@ async function submitCustom(): Promise<void> {
   })
   if (!ok) return
 
+  addError.value = ""
   installing.value = true
   try {
     const result = await post<MarketInstallResult>("market/custom", {
@@ -256,8 +259,8 @@ async function submitCustom(): Promise<void> {
     adding.value = false
     await load()
   } catch (err) {
-    // 不关模态：报错多半是地址或目录名要改，关掉就得重填一遍
-    error.value = errorText(err)
+    // 保留表单，在当前弹窗内说明原因。
+    addError.value = errorText(err)
   } finally {
     installing.value = false
   }
@@ -503,6 +506,7 @@ onMounted(() => {
       撞了已有目录），其余各项填错最多是装完少跑一个脚本，可以再来一次。
     -->
     <Modal :open="adding" wide title="从 git 地址安装插件" @close="adding = false">
+      <p v-if="addError" class="banner bad" role="alert">{{ addError }}</p>
       <p class="hint">
         这个地址不来自任何索引，没有经过审核。仓库里的代码装完即被内核 import() 执行，
         其 install 脚本与装后步骤同样在这台机器上运行 —— 请只填你信任的仓库。

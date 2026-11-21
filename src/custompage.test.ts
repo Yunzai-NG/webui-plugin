@@ -38,8 +38,8 @@ interface Recorder {
   routes: string[]
   /** 路径 → 处理函数 */
   handlers: Map<string, (req: { params: Record<string, string> }) => unknown>
-  /** 静态挂载的前缀 */
-  statics: string[]
+  /** 不要令牌的路由 */
+  open: string[]
 }
 
 /**
@@ -47,7 +47,7 @@ interface Recorder {
  * @returns 记录器
  */
 function recorder(): Recorder {
-  return { warns: [], routes: [], handlers: new Map(), statics: [] }
+  return { warns: [], routes: [], handlers: new Map(), open: [] }
 }
 
 /**
@@ -57,13 +57,10 @@ function recorder(): Recorder {
  */
 function ctxOf(rec: Recorder): Parameters<typeof mountCustomPages>[0] {
   return {
-    static: (path, _dir) => {
-      rec.statics.push(path)
-      return undefined
-    },
-    route: (_method, path, handler) => {
+    route: (_method, path, handler, opts) => {
       rec.routes.push(path)
       rec.handlers.set(path, handler)
+      if (opts?.auth === false) rec.open.push(path)
       return undefined
     },
     logger: { warn: msg => rec.warns.push(msg) },
@@ -126,7 +123,7 @@ describe("mountCustomPages", () => {
       provider: plug,
       url: `/plugin/webui/custom/${plug}/index.html`
     })
-    expect(rec.statics).toContain(`custom/${plug}`)
+    expect(rec.open).toEqual([`/custom/${plug}/*file`])
   })
 
   it("**每插件只取第一页**，多注册的一律警告后丢弃 —— 否则一个插件能占满整条导航", async () => {
@@ -230,6 +227,30 @@ describe("mountCustomPages", () => {
     expect(pages[0]).toMatchObject({ id: plug, title: plug, provider: plug })
   })
 
+  // 早先整个 webadapter/ 走静态挂载：点文件、node 侧入口都拿得到，页面被直接打开时也没有 sandbox
+  it("页面资源只交浏览器要的：node 侧入口与点文件 404，页面带 sandbox", async () => {
+    const rec = recorder()
+    const plug = nameOf("files")
+    const root = await makePlugins({ [plug]: `export default {}` })
+    const dir = join(root, plug, "webadapter")
+    await writeFile(join(dir, "index.html"), "<html>页</html>", "utf8")
+    await writeFile(join(dir, "page.js"), "1", "utf8")
+    await writeFile(join(dir, ".env"), "SECRET=1", "utf8")
+
+    await mountCustomPages(ctxOf(rec), root)
+    const serve = rec.handlers.get(`/custom/${plug}/*file`) as (req: { params: Record<string, string> }) => Promise<{
+      status: number
+      headers?: Record<string, string>
+    }>
+    const html = await serve({ params: { file: "index.html" } })
+    expect(html.status).toBe(200)
+    expect(html.headers?.["content-security-policy"]).toBe("sandbox allow-scripts allow-forms")
+    expect((await serve({ params: { file: "page.js" } })).status).toBe(200)
+    for (const file of ["index.js", ".env", "../package.json", "nope.html"]) {
+      expect([file, (await serve({ params: { file } })).status]).toEqual([file, 404])
+    }
+  })
+
   it("没有 webadapter/index.js 的插件不出现在清单里", async () => {
     const rec = recorder()
     const plug = nameOf("plain")
@@ -238,7 +259,7 @@ describe("mountCustomPages", () => {
     await mountCustomPages(ctxOf(rec), root)
 
     expect(pagesOf(rec)).toHaveLength(0)
-    expect(rec.statics).toHaveLength(0)
+    expect(rec.open).toHaveLength(0)
   })
 
   it("插件自报的图标经解析进描述符，只留几何、丢掉上色属性", async () => {

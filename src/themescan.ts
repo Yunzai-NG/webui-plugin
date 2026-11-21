@@ -18,8 +18,8 @@
  *          扩展页的 iframe 是不透明源，跨源取字体要这个头。主题资源本就是公开的静态文件，
  *          与 `pp/` 下的面板插件文件同一待遇。
  */
-import { readdir, readFile, stat } from "node:fs/promises"
-import { extname, join, relative, resolve, sep } from "node:path"
+import { readdir, readFile, realpath, stat } from "node:fs/promises"
+import { extname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { isSafeEntryPath, isSafeName, panelsDir } from "./panelscan.js"
 
 /** 内置主题所在目录，位于 webui 安装目录之下 */
@@ -40,8 +40,8 @@ export const CLASSIC_ID = "classic"
 /** 主题 id 的合法字符：小写开头，可含数字与 `. _ -`；与浏览器侧 appearance.ts 一致 */
 const THEME_ID = /^[a-z0-9][a-z0-9._-]{0,63}$/
 
-/** 可作为主题资源的扩展名及其类型 */
-const MIME: Readonly<Record<string, string>> = {
+/** 可作为主题资源的扩展名及其类型；面板插件文件路由（panelfiles.ts）共用 */
+export const MIME: Readonly<Record<string, string>> = {
   ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".mjs": "text/javascript; charset=utf-8",
@@ -558,6 +558,54 @@ function joinInside(from: string, ref: string): string | undefined {
 /** `url(...)` 的三种写法：双引号、单引号、不带引号 */
 const URL_RE = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)'"\s]*))\s*\)/gi
 
+/**
+ * 把 `image-set()` / `-webkit-image-set()` 里顶层的裸字符串包成 `url("...")`
+ *
+ * `image-set("https://外站/x.png" 1x)` 不经 `url()` 也会发请求，只按 `url(` 过滤就漏了。
+ * 括号要配对着找：里面可能还有 `type("image/png")` 这类带括号的参数。
+ * @param css 样式表
+ * @returns 处理后的样式表
+ */
+function wrapImageSetStrings(css: string): string {
+  const head = /(?:-webkit-)?image-set\(/gi
+  let out = ""
+  let last = 0
+  for (let m = head.exec(css); m !== null; m = head.exec(css)) {
+    const start = m.index + m[0].length
+    let depth = 1
+    let i = start
+    for (; i < css.length && depth > 0; i++) {
+      const ch = css[i]
+      if (ch === '"' || ch === "'") {
+        const close = css.indexOf(ch, i + 1)
+        i = close < 0 ? css.length : close
+      } else if (ch === "(") depth++
+      else if (ch === ")") depth--
+    }
+    const inner = css.slice(start, i - 1)
+    // 只包顶层的字符串：`url("x")`、`type("image/png")` 里的不动
+    let level = 0
+    let wrapped = ""
+    for (let j = 0; j < inner.length; j++) {
+      const ch = inner[j] ?? ""
+      if (ch === "(") level++
+      else if (ch === ")") level--
+      if ((ch === '"' || ch === "'") && level === 0) {
+        const close = inner.indexOf(ch, j + 1)
+        const end = close < 0 ? inner.length : close
+        wrapped += `url(${inner.slice(j, end + 1)})`
+        j = end
+        continue
+      }
+      wrapped += ch
+    }
+    out += css.slice(last, start) + wrapped
+    last = i - 1
+    head.lastIndex = i
+  }
+  return out + css.slice(last)
+}
+
 /** 打头的 `@charset` / `@import` 语句：它们须在任何规则之前，不能进 `@layer` 块 */
 const LEADING_AT = /^\s*@(charset|import)\b[^;]*;/i
 
@@ -617,6 +665,11 @@ export function processThemeCss(css: string, file: string, base: string, wrap: b
     head.push(`@import url("${base}/${inside}");`)
   }
 
+  // `image-set()` 里的裸字符串同样是地址，先包成 url() 交给下面统一换写；`src()` 同理，直接剔除
+  body = wrapImageSetStrings(body).replace(/\bsrc\(\s*["'][^"']*["'][^)]*\)/gi, stmt => {
+    warnings.push(`${file} 的 ${stmt.slice(0, 60)} 不受支持，已剔除：请写成 url()`)
+    return "none"
+  })
   body = body.replace(URL_RE, (_all, dq: string | undefined, sq: string | undefined, bare: string | undefined) =>
     rewrite(dq ?? sq ?? bare ?? "")
   )
@@ -660,6 +713,9 @@ export async function readThemeAsset(theme: ScannedTheme, file: string): Promise
   if (rel === "" || rel.startsWith("..") || rel.includes(`..${sep}`)) return { status: 404, error: `主题 ${theme.info.id} 没有 ${file}` }
   let info
   try {
+    // 按真实路径再判一次：主题里一个指向主题外的符号链接按字面看在里面，读到的却是外面的文件
+    const real = relative(await realpath(theme.dir), await realpath(abs))
+    if (real === "" || real.startsWith("..") || isAbsolute(real)) return { status: 404, error: `主题 ${theme.info.id} 没有 ${file}` }
     info = await stat(abs)
   } catch {
     return { status: 404, error: `主题 ${theme.info.id} 没有 ${file}` }
